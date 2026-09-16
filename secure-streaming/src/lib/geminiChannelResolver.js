@@ -14,31 +14,27 @@ export async function resolveBroadcastChannelsWithGemini(match) {
 
   const prompt = `
 You are a live sports media QA system. Your task is to find the exact, verified broadcast channel for the given football match occurring today or this week.
-Return strict JSON only (no markdown formatting outside, just raw json if possible, or wrapped in json block), with this shape:
+Return strict JSON only with this exact shape:
 {"ar":["channel name"],"fr":["channel name"],"en":["channel name"],"confidence":0.0,"notes":"short reason with source name"}
 
 CRITICAL RULES:
-1. DO NOT GUESS. You MUST use your Google Search tool to find the live TV schedule for this specific match.
-2. Search trusted sources for exact TV listings, prioritizing: kooora.com, beinsports.com/ar/tv-guide, ssc.sa, canalplus.com, skysports.com.
+1. DO NOT GUESS. Use your Google Search tool to find the live TV schedule for this specific match.
+2. Search trusted sources for exact TV listings (e.g., kooora.com, beinsports.com).
 3. Return actual official or widely trusted broadcasters for this exact match.
-4. Prefer exact channel names with numbers when known (e.g., "beIN Sports HD 1").
-5. Arabic channels in "ar", French in "fr", English in "en".
-6. In notes, state exactly which website confirmed this.
-7. If you cannot find live confirmation via search, return empty arrays and confidence 0.0.
+4. Arabic channels in "ar", French in "fr", English in "en".
+5. If you cannot find live confirmation, return empty arrays and confidence 0.0.
 
-Match data to search for:
+Match data:
 ${JSON.stringify(match, null, 2)}
 `;
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_NAME}:generateContent?key=${apiKey}`, {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL_NAME}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      tools: [{ googleSearch: {} }], 
-      generationConfig: {
-        temperature: 0.1
-      }
+      tools: [{ googleSearch: {} }],
+      generationConfig: { temperature: 0.1 }
     })
   });
 
@@ -62,33 +58,26 @@ export async function resolveBroadcastChannelsBatchWithGemini(matches) {
   if (!matches.length) return new Map();
 
   const prompt = `
-You are a live sports media QA system. Your task is to find the exact, verified broadcast channel for the given football matches occurring today or this week.
-Return strict JSON only (no markdown formatting outside, just raw json if possible, or wrapped in json block), with this shape:
-{"items":[{"id":"match id","ar":["channel name"],"fr":["channel name"],"en":["channel name"],"confidence":0.0,"notes":"short reason with source name"}]}
+You are a live sports media QA system. Your task is to find the exact, verified broadcast channels for these football matches.
+Return strict JSON only with this exact shape:
+{"items":[{"id":"match id","ar":["channel name"],"fr":["channel name"],"en":["channel name"],"confidence":0.0,"notes":"short reason"}]}
 
 CRITICAL RULES:
-1. DO NOT GUESS. You MUST use your Google Search tool to find the live TV schedule for these specific matches.
-2. Search trusted sources for exact TV listings, prioritizing: kooora.com, beinsports.com/ar/tv-guide, ssc.sa, canalplus.com, skysports.com.
-3. Return actual official or widely trusted broadcasters for each exact match.
-4. Prefer exact channel names with numbers when known (e.g., "beIN Sports HD 1").
-5. Arabic channels in "ar", French in "fr", English in "en".
-6. In notes, state exactly which website confirmed this.
-7. If you cannot find live confirmation via search, return empty arrays and confidence 0.0.
-8. Preserve every input id exactly.
+1. DO NOT GUESS. Use your Google Search tool to find live TV schedules.
+2. Preserve every input id exactly.
+3. If not found, return empty arrays and confidence 0.0.
 
-Match data to search for:
+Matches:
 ${JSON.stringify(matches, null, 2)}
 `;
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_NAME}:generateContent?key=${apiKey}`, {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL_NAME}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       tools: [{ googleSearch: {} }],
-      generationConfig: {
-        temperature: 0.1
-      }
+      generationConfig: { temperature: 0.1 }
     })
   });
 
