@@ -1,0 +1,26 @@
+{
+  "today": [
+    {
+      "id": "match-$(date +%s)",
+      "homeTeam": {
+        "name": "الهلال",
+        "logo": "/images/teams/alhilal.png"
+      },
+      "awayTeam": {
+        "name": "النصر",
+        "logo": "/images/teams/alnassr.png"
+      },
+      "score": "VS",
+      "time": "21:00",
+      "date": "$(date -u +'%Y-%m-%dT21:00:00Z')",
+      "league": {
+        "name": "الدوري السعودي",
+        "logo": "/images/leagues/spl.png"
+      },
+      "channels": ["bein SPORTS HD1"],
+      "status": "قادم"
+    }
+  ],
+  "tomorrow": [],
+  "updatedAt": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+}

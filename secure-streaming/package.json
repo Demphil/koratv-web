@@ -1,0 +1,41 @@
+{
+  "name": "koralive-secure-streaming",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "import:m3u": "node scripts/import-m3u.js",
+    "import:m3u:dry": "node scripts/import-m3u.js --dry-run",
+    "test:streams": "node scripts/test-streams.js",
+    "check:supabase": "node scripts/check-supabase-setup.js",
+    "sync:matches": "node scripts/sync-matches-from-source.js",
+    "sync:matches:dry": "node scripts/sync-matches-from-source.js --dry-run",
+    "sync:iptv": "node scripts/sync-iptv-provider.js",
+    "sync:iptv:dry": "node scripts/sync-iptv-provider.js --dry-run",
+    "cron:iptv-provider": "node scripts/iptv-provider-cron.js",
+    "cron:matches": "node scripts/match-sync-cron.js",
+    "export:local": "node scripts/export-local-channels.js",
+    "enrich:languages": "node scripts/enrich-match-language-channels.js",
+    "enrich:languages:dry": "node scripts/enrich-match-language-channels.js --dry-run",
+    "disable:gemini-channels": "node scripts/disable-gemini-channel-suggestions.js",
+    "disable:gemini-channels:dry": "node scripts/disable-gemini-channel-suggestions.js --dry-run"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.116.0",
+    "@videojs/http-streaming": "3.17.5",
+    "cheerio": "^1.1.2",
+    "jsonwebtoken": "9.0.3",
+    "next": "16.3.5",
+    "node-cron": "^4.2.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "video.js": "8.24.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "eslint": "9.39.5"
+  }
+}

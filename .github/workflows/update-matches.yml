@@ -1,0 +1,36 @@
+name: Update Matches Data
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-matches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_ENRICH_AFTER_MATCH_SYNC: "true"
+      SUPABASE_MATCHES_TABLE: matches
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: secure-streaming/package-lock.json
+
+      - name: Install secure streaming dependencies
+        working-directory: secure-streaming
+        run: npm ci
+
+      - name: Sync matches and enrich broadcasters
+        working-directory: secure-streaming
+        run: npm run sync:matches

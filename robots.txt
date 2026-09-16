@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# Google يحتاج CSS وJavaScript لفهم الصفحات كما يراها الزائر.
+Allow: /assets/css/
+Allow: /assets/js/
+Allow: /assets/images/
+
+Sitemap: https://koratv.click/sitemap.xml

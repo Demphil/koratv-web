@@ -1,0 +1,61 @@
+# ملفات البيئة
+.env
+*.env
+.env.local
+.env.development
+.env.production
+
+# تبعيات node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+!package-lock.json
+!secure-streaming/package-lock.json
+yarn.lock
+
+# ملفات نظام التشغيل
+.DS_Store
+Thumbs.db
+
+# ملفات IDE
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ملفات البناء
+dist/
+build/
+out/
+.next/
+
+# ملفات الاختبار والغطاء
+coverage/
+*.lcov
+
+# ملفات السجلات
+*.log
+logs/
+
+# ملفات مؤقتة
+*.tmp
+*.temp
+
+# ملفات البيانات المحلية
+*.sqlite
+*.db
+
+# ملفات المستخدم المخصصة
+*.bak
+*.backup
+
+# استثناءات خاصة بالمشروع
+/assets/data/temp/
+secure-streaming/runtime/
+.htaccess
+.env

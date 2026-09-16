@@ -1,0 +1,731 @@
+/* 1. ملاحظة هامة: تم إزالة @import من هنا. */
+/* الرجاء إضافة السطر التالي إلى <head> في ملف HTML الخاص بك: */
+/* <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap"> */
+
+:root {
+  --primary-color: #e63946;
+  --secondary-color: #ffd166;
+  --dark-color: #1d3557;
+  --light-color: #f1faee;
+  --glass-effect: rgba(255, 255, 255, 0.1);
+  --header-height: 70px;
+}
+
+/* 2. التنسيقات العامة للجسم */
+body {
+  font-family: 'Cairo', sans-serif;
+  background: linear-gradient(135deg, var(--dark-color), var(--primary-color));
+  color: var(--light-color);
+  margin: 0;
+  padding-top: var(--header-height);
+  min-height: 100vh;
+}
+
+.matches-main {
+  padding: clamp(15px, 4vw, 30px);
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* 3. الهيدر والتنقل */
+.header {
+  background: rgba(29, 53, 87, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  height: var(--header-height);
+  padding: 0 clamp(15px, 4vw, 30px);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 1000;
+  box-shadow: 0 2px 15px rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.header .logo {
+  flex: 1;
+  display: flex;
+  justify-content: flex-start;
+}
+.header .logo img {
+  height: 55px;
+  width: auto;
+}
+.header .header-title {
+  flex: 2;
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--light-color);
+  text-align: center;
+  white-space: nowrap; 
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nav {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+}
+.nav ul {
+  display: flex;
+  gap: 15px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nav ul li a {
+  color: var(--light-color);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 30px;
+  transition: background-color 0.3s ease;
+}
+.nav ul li a:hover,
+.nav ul li a.active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* 4. تنسيق الأقسام والتبويبات */
+.matches-layout, .all-matches {
+  background: var(--glass-effect);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: clamp(15px, 4vw, 25px);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  margin-bottom: 30px;
+}
+.section-title {
+  font-size: clamp(1.3rem, 5vw, 1.6rem);
+  color: var(--light-color);
+  margin: 0 0 20px 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.matches-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+.tab-btn {
+  font-family: 'Cairo', sans-serif;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: none;
+  padding: 10px 15px;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.tab-btn:hover { color: var(--light-color); }
+.tab-btn.active {
+  color: var(--secondary-color);
+  border-bottom-color: var(--secondary-color);
+}
+.tab-content { display: none; }
+.tab-content.active {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+/* 5. بطاقة المباراة الموحدة */
+a.match-card-link {
+  text-decoration: none;
+  color: inherit;
+}
+.match-card {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 15px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.match-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+.league-info {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--secondary-color);
+  margin-bottom: 15px;
+  text-align: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.teams {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  flex: 1;
+}
+.team img {
+  width: 50px;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  margin-bottom: 8px;
+  background-color: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  padding: 3px;
+}
+.team-name {
+    font-size: 1rem;
+    font-weight: 700;
+    min-height: 40px;
+}
+.match-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+}
+.score {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.time {
+  font-size: 0.9rem;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-top: 5px;
+}
+.match-details-extra {
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin-top: 15px;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+.match-detail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.match-detail-item i {
+  color: var(--secondary-color);
+  width: 15px;
+  text-align: center;
+}
+.match-card-link.not-clickable {
+  cursor: not-allowed;
+}
+.no-stream-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: #c0392b;
+  color: white;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  direction: ltr;
+}
+
+/* 6. نظام التحميل والرسائل */
+#loading {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(29, 53, 87, 0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  backdrop-filter: blur(5px);
+}
+.loader {
+  border: 5px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: var(--primary-color);
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.no-matches {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 40px 20px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+  grid-column: 1 / -1;
+}
+.no-matches i {
+  font-size: 2.5rem;
+  margin-bottom: 15px;
+  display: block;
+  color: var(--secondary-color);
+}
+
+/* تنسيق زر "جارية الآن" */
+.match-card .time.live-now {
+    background: #e74c3c; /* أحمر بارز */
+    color: white !important;
+    font-weight: bold;
+    animation: pulse 1.5s infinite; /* تأثير نبض خفيف */
+    border-radius: 4px;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(231, 76, 60, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+    }
+}
+
+/* --- تنسيق شريط التواصل الاجتماعي العائم --- */
+.social-bar {
+    position: fixed; /* يجعله ثابتًا على الشاشة */
+    top: 50%; /* يبدأ من منتصف الشاشة */
+    right: 0; /* يثبته على اليمين */
+    transform: translateY(-50%); /* يوسطه عموديًا بدقة */
+    display: flex;
+    flex-direction: column; /* يجعله عموديًا */
+    gap: 8px; /* مسافة بين الأيقونات */
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2); /* خلفية زجاجية خفيفة */
+    backdrop-filter: blur(5px);
+    border-radius: 10px 0 0 10px; /* تدوير الحواف اليسرى */
+    z-index: 999; /* للتأكد من أنه فوق المحتوى */
+}
+
+.social-icon {
+    color: white;
+    font-size: 24px; /* حجم الأيقونة */
+    padding: 8px;
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.social-icon:hover {
+    transform: scale(1.2);
+}
+
+/* ألوان اختيارية لكل أيقونة عند مرور الماوس */
+.social-icon.tiktok:hover { color: #00f2ea; }
+.social-icon.instagram:hover { color: #e4405f; }
+.social-icon.youtube:hover { color: #ff0000; }
+/* 7. التجاوب مع الشاشات المختلفة (محسّن) */
+
+/* --- الهواتف (حتى 767px) --- */
+@media (max-width: 767px) {
+  .header {
+    padding: 0 15px;
+  }
+  /* --- التعديل الحاسم هنا --- */
+  .header .logo {
+    flex: 0 1 auto; /* السماح للشعار بالانكماش */
+  }
+  .header .logo img {
+    height: 40px;
+  }
+  .header .header-title {
+    flex: 1 1 auto; /* السماح للعنوان بالتمدد والانكماش */
+    font-size: 0.8rem; /* تصغير حجم الخط أكثر */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0; /* ضروري لعمل ellipsis في flexbox */
+  }
+  .nav {
+    display: none;
+  }
+  
+  /* ... بقية تنسيقات الهاتف ... */
+  .team img {
+    width: 45px;
+  }
+  .team-name {
+    font-size: 0.9rem;
+    min-height: 30px;
+  }
+  .score {
+    font-size: 1.3rem;
+  }
+  .tab-content.active {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- الأجهزة اللوحية (Tablets) --- */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .matches-layout {
+    grid-template-columns: 1fr;
+  }
+  .tab-content.active {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+  .header .header-title {
+    font-size: 1.2rem;
+  }
+}
+
+/* --- الشاشات الكبيرة (Desktops) --- */
+@media (min-width: 1024px) {
+  .matches-layout {
+    grid-template-columns: 350px 1fr;
+    align-items: start;
+  }
+}
+
+/* --- الشاشات الكبيرة جدًا (TVs) --- */
+@media (min-width: 1600px) {
+  body {
+    font-size: 18px;
+  }
+  .matches-main {
+    max-width: 1800px;
+  }
+  .team img {
+    width: 60px;
+  }
+  .score {
+    font-size: 1.8rem;
+  }
+}
+
+/* ================================================= */
+/* === تصميم قسم الأخبار الجديد (New News Grid) === */
+/* ================================================= */
+
+/* 1. حاوية الشبكة (The Grid) - إجبار التصميم الشبكي */
+#news-grid-container {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important; /* 3 أعمدة */
+    gap: 20px !important;
+    padding: 20px 0;
+    width: 100%;
+}
+
+/* 2. بطاقة الخبر (The Card) */
+.news-card {
+    background-color: #23232e !important; /* لون الخلفية الداكن */
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    border: 1px solid #2e2e3a;
+}
+
+.news-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(231, 76, 60, 0.2); /* توهج أحمر خفيف عند التحويم */
+}
+
+/* 3. صورة الخبر */
+.news-image-wrapper {
+    position: relative;
+    width: 100%;
+    height: 180px !important; /* تثبيت الارتفاع */
+    overflow: hidden;
+}
+
+.news-image-wrapper img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important; /* لضمان عدم تمطط الصورة */
+    transition: transform 0.5s ease;
+}
+
+.news-card:hover .news-image-wrapper img {
+    transform: scale(1.1); /* تكبير الصورة عند التحويم */
+}
+
+/* 4. بادج التصنيف (أعلى الصورة) */
+.news-category-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: #e74c3c;
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+    z-index: 2;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+
+/* 5. محتوى الخبر (النص) */
+.news-content {
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    text-align: right; /* محاذاة لليمين */
+}
+
+.news-title {
+    font-size: 16px !important;
+    font-weight: 700;
+    margin-bottom: 10px;
+    line-height: 1.5;
+    height: 48px; /* ارتفاع ثابت لسطرين */
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.news-title a {
+    color: #ffffff !important;
+    text-decoration: none !important;
+    transition: color 0.3s;
+}
+
+.news-title a:hover {
+    color: #e74c3c !important;
+}
+
+/* 6. معلومات إضافية (التاريخ ورابط القراءة) */
+.news-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto; /* دفع العنصر للأسفل */
+    padding-top: 15px;
+    border-top: 1px solid #2e2e3a;
+    font-size: 13px;
+    color: #aaa;
+}
+
+.read-more-link {
+    color: #e74c3c !important;
+    font-weight: bold;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.read-more-link:hover {
+    text-decoration: underline;
+}
+
+/* ================================================= */
+/* === تنسيق شريط البحث والفلاتر (News Controls) === */
+/* ================================================= */
+
+.news-controls-section {
+     background: var(--glass-effect);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 15px;
+  margin-bottom: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.news-search-container {
+     display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+#news-search-input {
+    flex-grow: 1;
+  padding: 12px 20px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 25px;
+  font-size: 1rem;
+  background: rgba(0,0,0,0.2);
+  color: var(--light-color);
+  font-family: 'Cairo', sans-serif;
+}
+
+#search-btn {
+     background: var(--primary-color);
+  color: white;
+  border: none;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+.news-filters {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.filter-btn {
+    background: #2a2a35;
+    color: #ccc;
+    border: 1px solid #3a3a45;
+    padding: 8px 20px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.filter-btn.active, .filter-btn:hover {
+    background: #e74c3c;
+    color: #fff;
+    border-color: #e74c3c;
+}
+.load-more-btn {
+  display: block;
+  margin: 20px auto 0;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 25px;
+  cursor: pointer;
+  font-family: 'Cairo', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+}
+/* شارات الحالة المباشرة */
+.live-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px; /* أو right حسب التصميم */
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    z-index: 5;
+    animation: pulse 2s infinite;
+}
+
+.live-badge.soon {
+    background-color: #ffd166; /* أصفر */
+    color: #000;
+}
+
+.live-badge.live {
+    background-color: #e63946; /* أحمر */
+    color: #fff;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+/* ========================================= */
+/* === تصميم نافذة الانتظار (Wait Modal) === */
+/* ========================================= */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.85); /* خلفية معتمة */
+    backdrop-filter: blur(5px);
+    display: none; /* مخفية افتراضياً */
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    animation: fadeIn 0.3s ease;
+}
+
+.modal-content {
+    background: #1e1e26; /* لون البطاقات الداكن */
+    padding: 30px;
+    border-radius: 20px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transform: scale(0.9);
+    animation: popUp 0.3s ease forwards;
+    position: relative;
+}
+
+/* أيقونة الساعة */
+.modal-icon {
+    width: 70px; height: 70px;
+    background: rgba(230, 57, 70, 0.1);
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0 auto 20px;
+}
+.modal-icon i {
+    font-size: 30px;
+    color: #e63946; /* اللون الأحمر الرسمي */
+}
+
+/* النصوص */
+.modal-content h3 {
+    color: #fff;
+    font-family: 'Cairo', sans-serif;
+    margin-bottom: 10px;
+    font-size: 1.2rem;
+}
+
+.modal-content p {
+    color: #bbb;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-bottom: 25px;
+}
+
+.highlight-time {
+    color: #ffd166; /* اللون الأصفر الذهبي */
+    font-weight: bold;
+}
+
+/* الزر */
+.modal-close-btn {
+    background: #e63946;
+    color: white;
+    border: none;
+    padding: 10px 30px;
+    border-radius: 25px;
+    font-family: 'Cairo', sans-serif;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: 0.3s;
+    width: 100%;
+}
+
+.modal-close-btn:hover {
+    background: #c92a35;
+    transform: translateY(-2px);
+}
+
+/* الحركات */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes popUp { from { transform: scale(0.8); } to { transform: scale(1); } }

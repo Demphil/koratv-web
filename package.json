@@ -1,0 +1,26 @@
+{
+  "name": "football-matches-tracker",
+  "version": "1.0.0",
+  "description": "موقع لمتابعة مباريات كرة القدم مباشرة",
+  "main": "scripts/generate-matches.js",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.112.4",
+    "axios": "^1.6.0",
+    "cheerio": "^1.2.0",
+    "dotenv": "^17.4.2",
+    "node-cron": "^4.2.1",
+    "puppeteer": "^25.9.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "scripts": {
+    "update": "node scripts/generate-matches.js",
+    "seo:apply": "node scripts/apply-seo.js",
+    "seo:check": "node scripts/check-seo.js",
+    "indexnow": "node scripts/submit-indexnow.js",
+    "matches:metadata": "node qa-media/metadata-scraper.js --once"
+  },
+  "author": "Your Name",
+  "license": "MIT"
+}
