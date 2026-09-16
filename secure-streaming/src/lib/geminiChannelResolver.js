@@ -14,7 +14,7 @@ export async function resolveBroadcastChannelsWithGemini(match) {
 
   const prompt = `
 You are a live sports media QA system. Your task is to find the exact, verified broadcast channel for the given football match occurring today or this week.
-Return strict JSON only, with this shape:
+Return strict JSON only (no markdown formatting outside, just raw json if possible, or wrapped in json block), with this shape:
 {"ar":["channel name"],"fr":["channel name"],"en":["channel name"],"confidence":0.0,"notes":"short reason with source name"}
 
 CRITICAL RULES:
@@ -37,8 +37,7 @@ ${JSON.stringify(match, null, 2)}
       contents: [{ parts: [{ text: prompt }] }],
       tools: [{ googleSearch: {} }], 
       generationConfig: {
-        temperature: 0.1,
-        responseMimeType: "application/json"
+        temperature: 0.1
       }
     })
   });
@@ -64,7 +63,7 @@ export async function resolveBroadcastChannelsBatchWithGemini(matches) {
 
   const prompt = `
 You are a live sports media QA system. Your task is to find the exact, verified broadcast channel for the given football matches occurring today or this week.
-Return strict JSON only, with this shape:
+Return strict JSON only (no markdown formatting outside, just raw json if possible, or wrapped in json block), with this shape:
 {"items":[{"id":"match id","ar":["channel name"],"fr":["channel name"],"en":["channel name"],"confidence":0.0,"notes":"short reason with source name"}]}
 
 CRITICAL RULES:
@@ -88,8 +87,7 @@ ${JSON.stringify(matches, null, 2)}
       contents: [{ parts: [{ text: prompt }] }],
       tools: [{ googleSearch: {} }],
       generationConfig: {
-        temperature: 0.1,
-        responseMimeType: "application/json"
+        temperature: 0.1
       }
     })
   });
