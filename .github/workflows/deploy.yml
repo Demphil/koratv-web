@@ -1,0 +1,63 @@
+name: Deploy streaming gateway
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: streaming-gateway-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Njalla VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Pull, test, build, and restart
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          timeout: 30s
+          command_timeout: 12m
+          script: |
+            set -euo pipefail
+
+            PROJECT_DIR=/opt/koratv/koratv-web
+            APP_DIR="$PROJECT_DIR/streaming-gateway"
+
+            test -d "$PROJECT_DIR/.git"
+            test -f "$APP_DIR/.env"
+
+            cd "$PROJECT_DIR"
+            git fetch --prune origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            cd "$APP_DIR"
+            npm install --omit=dev
+            npm test
+            npm run build:player
+
+            cd "$PROJECT_DIR"
+            pm2 startOrReload ecosystem.config.js --env production
+            pm2 save
+
+            for attempt in 1 2 3 4 5 6; do
+              if curl --fail --silent --show-error http://127.0.0.1:3100/healthz >/dev/null; then
+                exit 0
+              fi
+              sleep 2
+            done
+
+            pm2 logs koratv-gateway --lines 80 --nostream
+            exit 1

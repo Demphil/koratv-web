@@ -1,0 +1,25 @@
+{
+  "name": "koratv-streaming-gateway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "test": "node --test test/*.test.js",
+    "build:player": "node scripts/build-player.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
+    "express": "^5.2.1",
+    "hls.js": "^1.7.3",
+    "jsonwebtoken": "^9.0.3",
+    "proxy-addr": "^2.0.8",
+    "redis": "^6.2.1"
+  },
+  "devDependencies": {
+    "smol-toml": "^1.8.0",
+    "wrangler": "^4.135.0"
+  }
+}

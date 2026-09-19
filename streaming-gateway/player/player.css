@@ -1,0 +1,4 @@
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui}
+video{display:block;width:100%;height:100%;object-fit:contain}
+#status{position:absolute;bottom:15%;inset-inline:5%;text-align:center;background:#000b;padding:12px}
+#status:empty{display:none}
