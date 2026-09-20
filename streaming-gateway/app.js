@@ -4,9 +4,10 @@ import { createHash, createHmac, randomUUID, randomBytes, createCipheriv, create
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createClientIpResolver } from './client-ip.js';
+import { isAllowedLeague } from '../shared/league-whitelist.mjs';
 
 const issuer = 'koratv-gateway';
-const ttl = 300;
+const entryTtl = 300;
 const bot = /bot|crawler|spider|slurp|headless/i;
 
 function moroccoPart(value, options) {
@@ -19,7 +20,6 @@ function normalizeMatch(row) {
   const payload = row.payload || {};
   const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
   return {
-    ...payload,
     match_id: row.match_id || row.id,
     matchId: row.match_id || row.id,
     homeTeam: row.home_team || payload.homeTeam?.name || payload.homeTeam || '',
@@ -32,7 +32,8 @@ function normalizeMatch(row) {
     league: row.league || payload.league || '',
     channel: row.channel || payload.channel || '',
     commentator: payload.commentator || '',
-    streams: Array.isArray(payload.streams) ? payload.streams : [],
+    status: payload.status || payload.state || payload.matchStatus || '',
+    streams: [],
     isLive: Boolean(payload.isLive),
     updatedAt: row.updated_at
   };
@@ -44,7 +45,12 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   app.set('trust proxy', config.trustedProxies);
   app.use(express.json({ limit: '2kb' }));
   app.use((req, res, next) => {
-    res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' });
+    res.set({
+      'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff'
+    });
     const allowed = ['/api/generate-token', '/api/config', '/api/matches'].includes(req.path) ? config.frontend : config.player;
     if (req.headers.origin === allowed) {
       res.set({ 'Access-Control-Allow-Origin': allowed, Vary: 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Range' });
@@ -54,13 +60,12 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   });
   const clientIp = createClientIpResolver(config.cloudflareProxies);
   const ipHash = (req) => createHmac('sha256', config.hmacSecret).update(clientIp(req)).digest('hex');
-  const sign = (claims, audience) => jwt.sign(claims, config.secret, { algorithm: 'HS256', issuer, audience, expiresIn: ttl, jwtid: randomUUID() });
+  const sign = (claims, audience, expiresIn = entryTtl) => jwt.sign(claims, config.secret, { algorithm: 'HS256', issuer, audience, expiresIn, jwtid: randomUUID() });
   const verify = (token, req, audience) => {
     const claims = jwt.verify(token, config.secret, { algorithms: ['HS256'], issuer, audience });
-    if (claims.ip !== ipHash(req) || !config.streams[claims.channel]) throw new Error('Forbidden');
+    if (claims.ip !== ipHash(req) || !claims.channel || !claims.matchId) throw new Error('Forbidden');
     return claims;
   };
-  const enabled = async (matchId, channel) => (await config.getStreamingConfig(matchId, channel)).is_streaming_active === true;
   const requireOrigin = (req, expected) => {
     if (req.headers.origin !== expected) throw new Error('Forbidden');
   };
@@ -89,13 +94,18 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     cipher.setAuthTag(data.subarray(12, 28));
     return Buffer.concat([cipher.update(data.subarray(28)), cipher.final()]).toString('utf8');
   };
-  const allowedUrl = (value) => {
+  const allowedUrl = (value, runtimeOrigins = new Set()) => {
     const url = new URL(value);
-    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || !config.upstreamOrigins.has(url.origin)) throw new Error('Unapproved upstream');
+    const blockedHost = /^(?:localhost|0\.0\.0\.0|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|169\.254(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|\[?::1\]?)$/i;
+    const approved = config.upstreamOrigins.has(url.origin) || runtimeOrigins.has(url.origin);
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || blockedHost.test(url.hostname) || !approved) throw new Error('Unapproved upstream');
     return url;
   };
   app.get('/api/config', async (req, res) => {
-    try { res.json({ is_streaming_active: await enabled(req.query.matchId) }); }
+    try {
+      const playback = await config.getPlayback(String(req.query.matchId || ''));
+      res.json({ is_streaming_active: playback.is_streaming_active, reason: playback.reason || null });
+    }
     catch { res.status(503).json({ is_streaming_active: false }); }
   });
   app.get('/api/matches', async (req, res) => {
@@ -119,7 +129,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         : day === 'tomorrow'
           ? matches.filter((match) => moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === tomorrow)
           : matches;
-      res.json({ matches: filtered });
+      res.json({ matches: filtered.filter((match) => isAllowedLeague(match.league)) });
     } catch {
       res.status(503).json({ error: 'Match service is unavailable' });
     }
@@ -127,13 +137,15 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   app.post('/api/generate-token', async (req, res) => {
     try {
       requireOrigin(req, config.frontend);
-      if (!await enabled(req.body.matchId, req.body.channel) || bot.test(req.headers['user-agent'] || '') || !Object.hasOwn(config.streams, req.body.channel)) return res.sendStatus(403);
+      if (bot.test(req.headers['user-agent'] || '')) return res.sendStatus(403);
+      const playback = await config.getPlayback(String(req.body.matchId || ''));
+      if (!playback.is_streaming_active) return res.status(409).json({ error: playback.reason || 'stream_unavailable' });
       const rateKey = `stream-rate:${ipHash(req)}:${Math.floor(Date.now() / 60000)}`;
       const count = await redis.incr(rateKey);
       if (count === 1) await redis.expire(rateKey, 60);
       if (count > 20) return res.sendStatus(429);
-      const token = sign({ ip: ipHash(req), channel: req.body.channel, matchId: req.body.matchId }, 'player-entry');
-      res.json({ token, expiresIn: ttl });
+      const token = sign({ ip: ipHash(req), channel: playback.channel_id, matchId: playback.match_id }, 'player-entry');
+      res.json({ token, expiresIn: entryTtl });
     } catch { res.sendStatus(403); }
   });
   // Entry tickets are consumed atomically across workers; HLS sessions support repeated segment requests.
@@ -141,10 +153,16 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       requireOrigin(req, config.player);
       const claims = verify(req.body.token, req, 'player-entry');
-      if (!await enabled(claims.matchId, claims.channel)) return res.sendStatus(403);
-      const result = await redis.set(`stream-used:${claims.jti}`, '1', { NX: true, EX: ttl });
+      const playback = await config.getPlayback(claims.matchId);
+      if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
+      const result = await redis.set(`stream-used:${claims.jti}`, '1', { NX: true, EX: entryTtl });
       if (result !== 'OK') return res.sendStatus(403);
-      res.json({ token: sign({ ip: claims.ip, channel: claims.channel, matchId: claims.matchId }, 'hls-session'), expiresIn: ttl });
+      const sourceId = randomUUID();
+      await redis.set(`stream-source:${sourceId}`, playback.stream_url, { EX: config.sessionTtl });
+      res.json({
+        token: sign({ ip: claims.ip, channel: claims.channel, matchId: claims.matchId, sourceId }, 'hls-session', config.sessionTtl),
+        expiresIn: config.sessionTtl
+      });
     } catch { res.sendStatus(403); }
   });
   app.get(['/api/stream.m3u8', '/api/resource'], async (req, res) => {
@@ -152,10 +170,18 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       requireOrigin(req, config.player);
       claims = verify(req.query.token, req, 'hls-session');
-      if (!await enabled(claims.matchId, claims.channel)) return res.sendStatus(403);
+      if (!claims.sourceId) return res.sendStatus(403);
     } catch { return res.sendStatus(403); }
     try {
-      const source = allowedUrl(req.path === '/api/stream.m3u8' ? config.streams[claims.channel] : unseal(req.query.resource, claims.jti));
+      if (req.path === '/api/stream.m3u8') {
+        const playback = await config.getPlayback(claims.matchId);
+        if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
+      }
+      const rootSource = await redis.get(`stream-source:${claims.sourceId}`);
+      if (!rootSource) return res.sendStatus(403);
+      const rootUrl = new URL(rootSource);
+      const runtimeOrigins = new Set([rootUrl.origin]);
+      const source = allowedUrl(req.path === '/api/stream.m3u8' ? rootSource : unseal(req.query.resource, claims.jti), runtimeOrigins);
       const headers = {};
       if (req.headers.range) headers.Range = req.headers.range;
       const upstream = await fetchImpl(source, { headers, redirect: 'error', signal: AbortSignal.timeout(20000) });
@@ -165,7 +191,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         const text = await upstream.text();
         if (!text.trimStart().startsWith('#EXTM3U')) return res.sendStatus(502);
         const rewrite = (uri) => {
-          const target = allowedUrl(new URL(uri, source).href);
+          const target = allowedUrl(new URL(uri, source).href, runtimeOrigins);
           return `${config.api}/api/resource?token=${encodeURIComponent(req.query.token)}&resource=${seal(target.href, claims.jti)}`;
         };
         const manifest = text.split(/\r?\n/).map((line) => {

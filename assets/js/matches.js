@@ -6,7 +6,6 @@ import {
   getMoroccoWallClockNow,
   getMoroccoDay
 } from './api.js';
-import { streamLinks } from './streams.js';
 
 const publicSupabaseConfig = window.__SUPABASE_CONFIG__ || {};
 const supabaseClient = window.supabase?.createClient && publicSupabaseConfig.url && publicSupabaseConfig.anonKey
@@ -65,6 +64,11 @@ function getMatchDuration(leagueName) {
 
 // تصحيح التوقيت الذكي لتجاهل أخطاء قاعدة البيانات والمسافات المخفية (مثل 12:00)
 function matchStartDate(match) {
+  if (match?.scheduledAt) {
+    const scheduledDate = new Date(match.scheduledAt);
+    if (!Number.isNaN(scheduledDate.getTime())) return scheduledDate;
+  }
+
   if (match?.time && match.time !== 'مباشر الآن' && match.time.includes(':')) {
     // إزالة ^ و $ من البحث لكي نلتقط الوقت حتى لو كان محاطاً بمسافات مخفية
     const timeMatch = String(match.time).match(/(\d{1,2}):(\d{2})/);
@@ -72,21 +76,9 @@ function matchStartDate(match) {
       let hour = Number(timeMatch[1]);
       const minute = Number(timeMatch[2]);
       
-      // تحويل 1 إلى 11 إلى نظام 24 ساعة (مسائي)
-      if (hour >= 1 && hour <= 11) hour += 12;
-      
-      // التوقيت في الموقع هو توقيت السعودية (UTC+3)
-      const utcHour = hour - 3;
-      
       const now = new Date();
-      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), utcHour, minute, 0));
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
     }
-  }
-
-  // كخيار احتياطي
-  if (match?.scheduledAt) {
-    const scheduledDate = new Date(match.scheduledAt);
-    if (!Number.isNaN(scheduledDate.getTime())) return scheduledDate;
   }
 
   return null;
@@ -100,14 +92,10 @@ function renderMatch(match) {
   const awayTeamName = awayTeam.name;
   const homeLogo = homeTeam.logo || 'assets/images/default-logo.jpg';
   const awayLogo = awayTeam.logo || 'assets/images/default-logo.jpg';
-  const matchSpecificKey = `${homeTeamName}-${awayTeamName}`;
   const matchId = `${homeTeamName}_vs_${awayTeamName}`
     .toLocaleLowerCase('ar').trim().replace(/\s+/g, '_');
   const stableId = match.matchId || match.match_id || `${matchId}-${match.scheduledAt?.slice(0, 10) || 'undated'}`;
   const publicWatchId = opaqueWatchId(stableId);
-  
-  const hasStreams = Array.isArray(match.streams) && match.streams.length > 0;
-  const manualLink = streamLinks[match.channel] || streamLinks[matchSpecificKey];
   
   let watchUrl = `watch.html?id=${encodeURIComponent(publicWatchId)}`;
 
@@ -138,12 +126,16 @@ function renderMatch(match) {
       diffMins = 9999; 
   }
 
-  const hasData = hasStreams || manualLink;
+  const hasData = typeof match.channel === 'string'
+    && match.channel.trim()
+    && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(match.channel.trim());
 
   // ⏱️ حساب مدة المباراة بذكاء حسب البطولة
   const matchDuration = typeof getMatchDuration === 'function' ? getMatchDuration(match.league) : 120;
-  const isTimeAllowed = diffMins <= 25 && diffMins >= -matchDuration;
-  const isLive = diffMins <= 0 && diffMins >= -matchDuration;
+  const sourceStatus = String(match.status || match.state || match.matchStatus || '').toLowerCase();
+  const isEnded = /result|finished|ended|full.?time|انته/.test(sourceStatus) || diffMins < -matchDuration;
+  const isTimeAllowed = !isEnded && diffMins <= 20 && diffMins >= -matchDuration;
+  const isLive = !isEnded && (match.isLive === true || (diffMins <= 0 && diffMins >= -matchDuration));
   const isSoon = diffMins > 0 && diffMins <= 60; 
 
   const channelName = typeof match.channel === 'string' && match.channel.trim()
@@ -167,7 +159,7 @@ function renderMatch(match) {
   let matchStatusClass = '';
   
   let hrefAttribute = `href="javascript:void(0)"`;
-  let clickAction = `onclick="openWaitModal('عذراً، رابط البث سيفتح قبل بداية المباراة بـ 25 دقيقة.')"`;
+  let clickAction = `onclick="openWaitModal('عذراً، رابط البث سيفتح قبل بداية المباراة بـ 20 دقيقة.')"`;
   let isClickableClass = 'not-clickable';
   let topBadge = '';
 
@@ -179,13 +171,14 @@ function renderMatch(match) {
           hrefAttribute = `href="${watchUrl}" target="_blank"`;
           clickAction = '';
           isClickableClass = 'clickable';
-      } else if (diffMins < -matchDuration) {
-          // 🛑 المباراة انتهت بالفعل
-          clickAction = '';
-          topBadge = ''; // إزالة أي شارة من المباريات المنتهية
+       } else if (isEnded) {
+           // 🛑 المباراة انتهت بالفعل
+           clickAction = '';
+           statusBadge = '<span class="live-badge ended">انتهت</span>';
+           timeText = match.score && match.score !== 'VS' ? `<span class="live-score">${match.score}</span>` : 'انتهت';
       } else {
           // ⏳ المباراة قادمة ولم يحن وقت البث
-          clickAction = `onclick="openWaitModal('عذراً، رابط البث سيفتح قبل بداية المباراة بـ 25 دقيقة.')"`;
+           clickAction = `onclick="openWaitModal('عذراً، رابط البث سيفتح قبل بداية المباراة بـ 20 دقيقة.')"`;
           if (diffMins > 0 && diffMins <= 60) {
               topBadge = '<span class="no-stream-badge" style="background: #e67e22; color: #fff;">يفتح قريباً</span>';
           } else {
@@ -194,14 +187,18 @@ function renderMatch(match) {
       }
   } else {
       // إذا لم يكن هناك بيانات بث
-      if (diffMins < -matchDuration) {
-          topBadge = ''; // لا تعرض "غير جاهز" لمباراة منتهية
+       if (isEnded) {
+           statusBadge = '<span class="live-badge ended">انتهت</span>';
+           timeText = match.score && match.score !== 'VS' ? `<span class="live-score">${match.score}</span>` : 'انتهت';
+           topBadge = '';
       } else {
           topBadge = '<span class="no-stream-badge">غير جاهز الان</span>';
       }
   }
 
-  if (isSoon) {
+  if (isEnded) {
+      matchStatusClass = 'is-ended';
+  } else if (isSoon) {
       timeText = '<span class="soon-text-blink">ستبدأ قريباً</span>';
       statusBadge = '<span class="live-badge soon">قريباً</span>';
   } else if (isLive) {
@@ -273,7 +270,6 @@ function matchRenderSignature(match) {
     match.score || '',
     matchStartDate(match) && matchStartDate(match) <= new Date() ? 'live' : 'scheduled',
     match.channel || '',
-    Array.isArray(match.streams) ? match.streams.map((stream) => stream.url || '').join(',') : '',
     match.homeTeam?.logo || '',
     match.awayTeam?.logo || ''
   ].join('|');
@@ -331,11 +327,13 @@ async function loadAndRenderMatches() {
       const diffA = (matchStartDate(a) - now) / 60000;
       const diffB = (matchStartDate(b) - now) / 60000;
 
-      const fallbackA = streamLinks[a.channel] || streamLinks[`${a.homeTeam?.name}-${a.awayTeam?.name}`];
-      const hasLinkA = (Array.isArray(a.streams) && a.streams.length > 0) || !!fallbackA;
-    
-      const fallbackB = streamLinks[b.channel] || streamLinks[`${b.homeTeam?.name}-${b.awayTeam?.name}`];
-      const hasLinkB = (Array.isArray(b.streams) && b.streams.length > 0) || !!fallbackB;
+      const hasLinkA = typeof a.channel === 'string'
+        && a.channel.trim()
+        && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(a.channel.trim());
+
+      const hasLinkB = typeof b.channel === 'string'
+        && b.channel.trim()
+        && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(b.channel.trim());
 
       // ==========================================
       // 🚀 نظام الأوزان الجديد (الترتيب الذكي)

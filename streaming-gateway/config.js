@@ -1,4 +1,4 @@
-import { createMatchesReader, createStreamingConfigReader } from './supabase.js';
+import { createMatchesReader, createPlaybackResolver } from './supabase.js';
 
 export function loadConfig(env = process.env) {
   const secret = env.JWT_SECRET || '';
@@ -35,9 +35,9 @@ export function loadConfig(env = process.env) {
     api: publicOrigin('PUBLIC_API_ORIGIN', env.PUBLIC_API_ORIGIN),
     trustedProxies: (env.TRUSTED_PROXIES || '').split(',').filter(Boolean),
     cloudflareProxies: (env.CLOUDFLARE_HEADER_TRUSTED_PROXIES || '').split(',').filter(Boolean),
-    streams: JSON.parse(env.STREAMS_JSON || '{}'),
+    sessionTtl: Math.max(600, Number(env.STREAM_SESSION_TTL_SECONDS || 10800)),
     upstreamOrigins: new Set((env.UPSTREAM_ORIGINS || '').split(',').filter(Boolean).map(upstreamOrigin)),
-    getStreamingConfig: createStreamingConfigReader(env),
-    getMatches: createMatchesReader(env)
+    getMatches: createMatchesReader(env),
+    getPlayback: createPlaybackResolver(env)
   };
 }

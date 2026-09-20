@@ -118,7 +118,7 @@ function normalizeStagingMatch(match) {
     score: match.score || 'VS',
     league: match.league || '',
     channel: match.channel || match.channels?.[0] || 'تحدد لاحقاً',
-    streams: Array.isArray(match.streams) ? match.streams : [],
+    streams: [],
     isLive: Boolean(match.isLive),
     commentator: match.commentator || ''
   };

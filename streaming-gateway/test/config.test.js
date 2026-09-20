@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadConfig } from '../config.js';
+import { isAllowedLeague } from '../../shared/league-whitelist.mjs';
 
 const valid = {
   JWT_SECRET: 'j'.repeat(48),
@@ -10,12 +11,14 @@ const valid = {
   PLAYER_ORIGIN: 'https://medic.cymru',
   NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
   NEXT_PUBLIC_SUPABASE_ANON_KEY: 'public-test-key',
+  STREAM_SESSION_TTL_SECONDS: '7200',
   UPSTREAM_ORIGINS: 'https://media.example.com'
 };
 
 test('configuration accepts independent secrets and HTTPS origins', () => {
   const config = loadConfig(valid);
   assert.equal(config.api, valid.PUBLIC_API_ORIGIN);
+  assert.equal(config.sessionTtl, 7200);
   assert.ok(config.upstreamOrigins.has('https://media.example.com'));
 });
 
@@ -35,4 +38,11 @@ test('configuration identifies the unsafe origin variable', () => {
       }),
     /without credentials/
   );
+});
+
+test('league whitelist admits requested competitions and rejects lower divisions', () => {
+  assert.equal(isAllowedLeague('الدوري الإنجليزي الممتاز للسيدات'), true);
+  assert.equal(isAllowedLeague('البطولة الوطنية الاحترافية المغربية'), true);
+  assert.equal(isAllowedLeague('الدوري الإيطالي الدرجة الثالثة'), false);
+  assert.equal(isAllowedLeague('الدوري المكسيكي الممتاز'), false);
 });

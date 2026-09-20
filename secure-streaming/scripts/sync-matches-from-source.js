@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
 import { enrichMatchChannels } from "./enrich-match-language-channels.js";
 import { applyTrustedBroadcastChannels } from "./trusted-broadcast-sources.js";
+import { isAllowedLeague } from "../../shared/league-whitelist.mjs";
 
-const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://jsportlive.com";
+const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
 const dryRun = process.argv.includes("--dry-run");
 const enrichAfterSync = process.env.GEMINI_ENRICH_AFTER_MATCH_SYNC !== "false";
@@ -72,6 +73,8 @@ async function fetchHtml(url) {
 }
 
 function parseMatches(html, dayOffset) {
+  if (html.includes('__NEXT_DATA__')) return parseKoooraMatches(html);
+
   const $ = cheerio.load(html);
   const rows = [];
   const date = moroccoDateParts(dayOffset);
@@ -89,6 +92,7 @@ function parseMatches(html, dayOffset) {
     const time = convertSourceToMoroccoTime(matchEl.find(".MT_Time").first().text().trim());
     const infoItems = matchEl.find(".MT_Info ul li").map((__, item) => $(item).text().trim()).get();
     const league = infoItems[infoItems.length - 1] || "League";
+    if (!isAllowedLeague(league)) return;
     const commentator = infoItems[1] || "";
     const matchId = `${slugify(homeTeam)}_vs_${slugify(awayTeam)}`;
 
@@ -112,6 +116,83 @@ function parseMatches(html, dayOffset) {
       updated_at: new Date().toISOString()
     });
   });
+
+  return rows;
+}
+
+function scorePart(score, side) {
+  const value = score?.[side] ?? score?.[side === "teamA" ? "home" : "away"];
+  if (value && typeof value === "object") return value.score ?? value.value ?? value.total;
+  return value;
+}
+
+function normalizeKoooraChannel(value) {
+  const name = String(value || '').trim();
+  const beinNumber = name.match(/beIN\s*Sports\s*Mena\s*(\d+)/i)?.[1];
+  return beinNumber ? `beIN SPORTS HD ${beinNumber}` : name || null;
+}
+
+function parseKoooraMatches(html) {
+  const $ = cheerio.load(html);
+  const raw = $('#__NEXT_DATA__').text();
+  if (!raw) throw new Error('Kooora __NEXT_DATA__ payload is missing.');
+  const page = JSON.parse(raw);
+  const groups = Array.isArray(page?.props?.pageProps?.data) ? page.props.pageProps.data : [];
+  const rows = [];
+
+  for (const group of groups) {
+    const league = group?.competition?.name || '';
+    if (!isAllowedLeague(league)) continue;
+
+    for (const match of group.matches || []) {
+      const homeTeam = match?.teamA?.name?.trim();
+      const awayTeam = match?.teamB?.name?.trim();
+      const kickoff = match?.startDate;
+      if (!homeTeam || !awayTeam || !kickoff) continue;
+
+      const status = String(match.status || 'FIXTURE').toUpperCase();
+      const homeScore = scorePart(match.score, 'teamA');
+      const awayScore = scorePart(match.score, 'teamB');
+      const score = Number.isFinite(Number(homeScore)) && Number.isFinite(Number(awayScore))
+        ? `${homeScore} - ${awayScore}`
+        : 'VS';
+      const channelNames = (match.tvChannels || []).map((channel) => channel?.name).filter(Boolean);
+      const preferredChannel = normalizeKoooraChannel(
+        channelNames.find((name) => /beIN Sports Mena/i.test(name)) || channelNames[0]
+      );
+      const matchId = `${slugify(homeTeam)}_vs_${slugify(awayTeam)}`;
+      const date = String(kickoff).slice(0, 10);
+
+      rows.push({
+        id: `${date}_${matchId}`,
+        match_id: matchId,
+        home_team: homeTeam,
+        away_team: awayTeam,
+        league,
+        kickoff_time: kickoff,
+        channel: preferredChannel,
+        source: 'kooora',
+        active: true,
+        payload: {
+          score,
+          status,
+          isLive: status === 'LIVE',
+          time: new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Africa/Casablanca', hourCycle: 'h23', hour: '2-digit', minute: '2-digit'
+          }).format(new Date(kickoff)),
+          homeLogo: match?.teamA?.image?.url || '',
+          awayLogo: match?.teamB?.image?.url || '',
+          channels: channelNames,
+          channel: preferredChannel,
+          commentator: '',
+          sourceMatchId: match.id || '',
+          matchLink: match?.link?.slug ? `https://www.kooora.com/${match.link.slug}/${match.id}` : '',
+          channelSource: 'kooora-live-scores'
+        },
+        updated_at: new Date().toISOString()
+      });
+    }
+  }
 
   return rows;
 }
@@ -147,10 +228,7 @@ async function mergeExistingChannels(supabase, rows) {
 }
 
 export async function syncMatchesFromSource({ dryRunMode = dryRun } = {}) {
-  const pages = [
-    { url: `${BASE_SITE_URL}/`, dayOffset: 0 },
-    { url: `${BASE_SITE_URL}/matches-tomorrow/`, dayOffset: 1 }
-  ];
+  const pages = [{ url: BASE_SITE_URL, dayOffset: 0 }];
   const rows = [];
 
   for (const page of pages) {

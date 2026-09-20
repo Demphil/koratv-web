@@ -10,17 +10,6 @@ function createServerClient(env) {
   });
 }
 
-export function createStreamingConfigReader(env) {
-  const client = createServerClient(env);
-  return async (matchId, channel) => {
-    if (typeof matchId !== 'string' || !matchId || matchId.length > 128) return { is_streaming_active: false };
-    const { data, error } = await client.from('live_matches')
-      .select('is_streaming_active,channel_id').eq('id', matchId).maybeSingle();
-    if (error) throw new Error(`Streaming configuration unavailable (${error.code || 'network'})`);
-    return { is_streaming_active: data?.is_streaming_active === true && (!channel || data.channel_id === channel) };
-  };
-}
-
 export function createMatchesReader(env) {
   const client = createServerClient(env);
   return async () => {
@@ -29,8 +18,69 @@ export function createMatchesReader(env) {
       .select('id,match_id,home_team,away_team,league,kickoff_time,channel,payload,active,updated_at')
       .eq('active', true)
       .order('kickoff_time', { ascending: true, nullsFirst: false })
-      .limit(150);
+      .limit(500);
     if (error) throw new Error(`Match storage unavailable (${error.code || 'network'})`);
     return Array.isArray(data) ? data : [];
+  };
+}
+
+function isEndedStatus(payload = {}) {
+  const value = String(payload.status || payload.state || payload.matchStatus || '').toLowerCase();
+  return /result|finished|ended|full.?time|انته/.test(value);
+}
+
+async function findMatch(client, table, matchId) {
+  const columns = 'id,match_id,kickoff_time,channel,payload,active';
+  const byMatchId = await client.from(table).select(columns).eq('match_id', matchId).maybeSingle();
+  if (byMatchId.error) throw new Error(`Match lookup unavailable (${byMatchId.error.code || 'network'})`);
+  if (byMatchId.data) return byMatchId.data;
+  const byId = await client.from(table).select(columns).eq('id', matchId).maybeSingle();
+  if (byId.error) throw new Error(`Match lookup unavailable (${byId.error.code || 'network'})`);
+  return byId.data;
+}
+
+export function createPlaybackResolver(env) {
+  const client = createServerClient(env);
+  const table = env.SUPABASE_MATCHES_TABLE || 'matches';
+  const opensBeforeMs = Number(env.STREAM_OPENS_BEFORE_MINUTES || 20) * 60_000;
+  const closesAfterMs = Number(env.STREAM_CLOSES_AFTER_MINUTES || 150) * 60_000;
+
+  return async (matchId) => {
+    if (typeof matchId !== 'string' || !matchId.trim() || matchId.length > 160) {
+      return { is_streaming_active: false, reason: 'invalid_match' };
+    }
+
+    const match = await findMatch(client, table, matchId.trim());
+    if (!match || match.active !== true) return { is_streaming_active: false, reason: 'match_unavailable' };
+
+    const payload = match.payload || {};
+    const kickoff = new Date(match.kickoff_time || payload.scheduledAt || '');
+    if (Number.isNaN(kickoff.getTime())) return { is_streaming_active: false, reason: 'invalid_kickoff' };
+
+    const now = Date.now();
+    if (isEndedStatus(payload) || now > kickoff.getTime() + closesAfterMs) {
+      return { is_streaming_active: false, reason: 'ended' };
+    }
+    if (now < kickoff.getTime() - opensBeforeMs) {
+      return { is_streaming_active: false, reason: 'upcoming' };
+    }
+
+    const channelName = String(match.channel || payload.channel || '').trim();
+    if (!channelName) return { is_streaming_active: false, reason: 'channel_unavailable' };
+
+    const { data: channel, error } = await client.from('channels')
+      .select('id,name,original_url,active')
+      .eq('name', channelName)
+      .eq('active', true)
+      .maybeSingle();
+    if (error) throw new Error(`Channel lookup unavailable (${error.code || 'network'})`);
+    if (!channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
+
+    return {
+      is_streaming_active: true,
+      match_id: match.match_id || match.id,
+      channel_id: channel.name,
+      stream_url: channel.original_url,
+    };
   };
 }

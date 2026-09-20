@@ -1,9 +1,6 @@
 // assets/js/watch.js
-import { streamLinks } from './streams.js';
-
-function makeMatchKey(homeTeam, awayTeam) {
-  return `${homeTeam || ''}-${awayTeam || ''}`;
-}
+const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
+const PLAYER_ORIGIN = 'https://medic.cymru';
 
 function normalizeMatchId(value) {
   return String(value || '').trim();
@@ -19,20 +16,10 @@ function opaqueWatchId(value) {
   return String(hash).padStart(10, '0');
 }
 
-function streamFromUrl(url, label = 'سيرفر 1') {
-  if (!url) return null;
-  return {
-    url,
-    type: /\.m3u8(?:$|[?#])/i.test(url) ? 'hls' : 'iframe',
-    label
-  };
-}
-
 async function fetchMatchById(matchId) {
   if (!matchId) return null;
   try {
-    const matchesApiOrigin = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
-    const response = await fetch(`${matchesApiOrigin}/api/matches?t=${Date.now()}`, { cache: 'no-store' });
+    const response = await fetch(`${STREAM_API_ORIGIN}/api/matches?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) return null;
     const body = await response.json();
     const matches = Array.isArray(body.matches) ? body.matches : [];
@@ -47,21 +34,12 @@ async function fetchMatchById(matchId) {
   }
 }
 
-function streamsFromMatch(match) {
+function playbackOptions(match) {
   if (!match) return [];
-  const directStreams = Array.isArray(match.streams)
-    ? match.streams
-        .map((item, index) => streamFromUrl(item.url || item.src, item.label || `سيرفر ${index + 1}`))
-        .filter(Boolean)
-    : [];
-
-  if (directStreams.length) return directStreams;
-
-  const homeName = typeof match.homeTeam === 'object' ? match.homeTeam.name : match.homeTeam;
-  const awayName = typeof match.awayTeam === 'object' ? match.awayTeam.name : match.awayTeam;
-  const channel = match.channel || match.channels?.[0] || '';
-  const mapped = streamLinks[channel] || streamLinks[makeMatchKey(homeName, awayName)];
-  return [streamFromUrl(mapped)].filter(Boolean);
+  const matchId = normalizeMatchId(match.match_id || match.matchId);
+  const channel = String(match.channel || '').trim();
+  if (!matchId || !channel) return [];
+  return [{ matchId, channel, label: channel || 'البث الرئيسي' }];
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -76,7 +54,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let streams = [];
   if (matchId) {
-    streams = streamsFromMatch(await fetchMatchById(matchId));
+    streams = playbackOptions(await fetchMatchById(matchId));
   }
 
   if (streams.length === 0) {
@@ -208,14 +186,14 @@ function renderServers(streams, playerContainer, playerLoader, serversContainer)
   loadPlayer(streams[0], playerContainer, playerLoader);
 }
 
-function loadPlayer(stream, container, loader) {
+async function loadPlayer(stream, container, loader) {
   container.innerHTML = '';
   if (loader) {
     loader.style.display = 'block';
     container.appendChild(loader);
   }
 
-  if (!stream || !stream.url) {
+  if (!stream || !stream.matchId) {
     if (loader) loader.style.display = 'none';
     container.innerHTML = '<p style="color:#ffcc00; text-align:center; padding: 60px; font-weight: bold; font-size: 16px;">عذراً، البث غير متوفر حالياً. يرجى المحاولة لاحقاً.</p>';
     return;
@@ -223,55 +201,82 @@ function loadPlayer(stream, container, loader) {
 
   container.style.position = 'relative';
   container.style.width = '100%';
-  container.style.height = '0';
-  container.style.paddingBottom = '56.25%';
+  container.style.height = 'auto';
+  container.style.aspectRatio = '16 / 9';
+  container.style.paddingBottom = '0';
   container.style.overflow = 'hidden';
   container.style.backgroundColor = '#000';
   container.style.borderRadius = '12px';
 
-  // --- الحل القاطع: جلب الـ ID من الرابط مباشرة كبديل آمن ---
-  const urlParams = new URLSearchParams(window.location.search);
-  const matchId = urlParams.get('id') || 'bein1';
-  
-  let channelName = stream.url;
-  if (channelName && channelName.includes('/')) {
-    const parts = channelName.split('/').filter(Boolean);
-    channelName = parts.pop() || matchId;
+  const showError = (message) => {
+    container.innerHTML = `<div class="player-error" role="alert"><strong>تعذر تشغيل البث</strong><span>${escapeHtml(message)}</span><button type="button" id="player-retry">إعادة المحاولة</button></div>`;
+    container.querySelector('#player-retry')?.addEventListener('click', () => loadPlayer(stream, container, loader));
+  };
+
+  let response;
+  try {
+    response = await fetch(`${STREAM_API_ORIGIN}/api/generate-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      credentials: 'omit',
+      body: JSON.stringify({ matchId: stream.matchId })
+    });
+  } catch {
+    showError('تعذر الاتصال بخادم البث. تحقق من الشبكة ثم حاول مجدداً.');
+    return;
   }
-  channelName = channelName ? channelName.replace('.m3u8', '').replace('.html', '').split('?')[0] : matchId;
-  
-  // إذا فشل الاستخراج لأي سبب، نستخدم الـ ID الموجود في الرابط لضمان عدم حدوث خطأ 403
-  const finalTarget = (channelName && channelName.length > 1) ? channelName : matchId;
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const messages = {
+      upcoming: 'سيُفتح البث قبل بداية المباراة بعشرين دقيقة.',
+      ended: 'انتهت المباراة وتم إغلاق البث.',
+      channel_unavailable: 'لم تُحدد القناة الناقلة بعد.',
+      source_unavailable: 'مصدر القناة غير متوفر حالياً.'
+    };
+    showError(messages[payload.error] || 'البث غير متاح حالياً. حاول مرة أخرى لاحقاً.');
+    return;
+  }
+
+  const { token } = await response.json();
+  if (!token) {
+    showError('لم يتمكن الخادم من إنشاء جلسة مشاهدة آمنة.');
+    return;
+  }
 
   const iframe = document.createElement('iframe');
-  // تمرير القناة أو الـ ID بشكل صحيح ومباشر إلى جسر Cloudflare ومنه إلى سيرفر Oracle
-  iframe.src = `https://withered-mud-4e52.koora-live.workers.dev/embed/${finalTarget}`;
-  // ----------------------------------------------------------------
-
+  iframe.src = `${PLAYER_ORIGIN}/player.html?token=${encodeURIComponent(token)}`;
+  iframe.title = `مشغل ${stream.channel}`;
   iframe.frameBorder = '0';
   iframe.scrolling = 'no';
   iframe.allowFullscreen = true;
-  iframe.referrerPolicy = 'no-referrer-when-downgrade';
+  iframe.allow = 'autoplay; fullscreen; picture-in-picture';
+  iframe.referrerPolicy = 'strict-origin-when-cross-origin';
   iframe.style.position = 'absolute';
   iframe.style.top = '0';
   iframe.style.left = '0';
   iframe.style.width = '100%';
   iframe.style.height = '100%';
   iframe.style.border = 'none';
-  iframe.onload = () => { if (loader) loader.style.display = 'none'; };
+  const connectionTimer = window.setTimeout(() => {
+    if (loader) loader.textContent = 'استغرق الاتصال وقتاً أطول من المعتاد...';
+  }, 15000);
+  const onPlayerMessage = (event) => {
+    if (event.origin !== PLAYER_ORIGIN || event.source !== iframe.contentWindow || event.data?.source !== 'koratv-player') return;
+    if (event.data.state === 'playing' || event.data.state === 'ready') {
+      window.clearTimeout(connectionTimer);
+      if (loader) loader.style.display = 'none';
+    } else if (event.data.state === 'error') {
+      window.clearTimeout(connectionTimer);
+      window.removeEventListener('message', onPlayerMessage);
+      iframe.remove();
+      showError(event.data.message || 'فشل تحميل رابط البث من الخادم.');
+    }
+  };
+  window.addEventListener('message', onPlayerMessage);
+  iframe.onload = () => { if (loader) loader.textContent = 'جاري الاتصال بمصدر القناة...'; };
   container.appendChild(iframe);
-
-  const clickTrap = document.createElement('div');
-  clickTrap.style.position = 'absolute';
-  clickTrap.style.inset = '0';
-  clickTrap.style.zIndex = '3';
-  clickTrap.style.cursor = 'pointer';
-  clickTrap.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    clickTrap.remove();
-  }, { once: true });
-  container.appendChild(clickTrap);
 }
 
 async function loadWatchNews() {

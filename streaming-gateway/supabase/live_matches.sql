@@ -12,5 +12,5 @@ drop policy if exists streaming_flag_read on public.live_matches;
 create policy streaming_flag_read on public.live_matches for select to anon, authenticated using (true);
 commit;
 
--- Add a real match ID and its exact STREAMS_JSON channel key through the dashboard.
--- Leave is_streaming_active false until its source is configured and tested.
+-- Legacy compatibility only. The current gateway resolves live sources from
+-- public.matches.channel -> public.channels.name -> public.channels.original_url.

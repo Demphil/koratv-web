@@ -638,6 +638,20 @@ a.match-card-link {
     color: #fff;
 }
 
+.live-badge.ended {
+  background: #4b5563;
+  color: #fff;
+}
+
+.match-card.is-ended {
+  filter: saturate(0.7);
+  opacity: 0.86;
+}
+
+.match-card-link.not-clickable {
+  cursor: default;
+}
+
 @keyframes pulse {
     0% { opacity: 1; }
     50% { opacity: 0.7; }

@@ -4,25 +4,44 @@ import jwt from 'jsonwebtoken';
 import { createApp } from '../app.js';
 
 test('token lifecycle, IP checks and protected HLS resources', async (t) => {
-  const used = new Set();
+  const store = new Map();
   const config = {
     secret: 'test-only-secret-with-at-least-32-bytes',
     hmacSecret: 'test-only-separate-hmac-secret-with-32-bytes',
     frontend: 'https://koratv.click', player: 'https://medic.cymru', api: 'https://api.example.com',
-    trustedProxies: ['loopback'], streams: { demo: 'https://media.example.com/master.m3u8' },
+    trustedProxies: ['loopback'], sessionTtl: 7200,
     upstreamOrigins: new Set(['https://media.example.com']),
-    getStreamingConfig: async () => ({ is_streaming_active: true }),
+    getPlayback: async () => ({
+      is_streaming_active: true,
+      match_id: 'match-1',
+      channel_id: 'demo',
+      stream_url: 'https://media.example.com/master.m3u8'
+    }),
     getMatches: async () => [{
       id: 'match-1', match_id: 'match-1', home_team: 'Home', away_team: 'Away',
-      league: 'League', kickoff_time: '2026-09-20T12:00:00Z', channel: 'demo',
-      payload: { homeLogo: 'https://images.example.com/home.png', awayLogo: 'https://images.example.com/away.png' },
+      league: 'الدوري الإسباني', kickoff_time: '2026-09-20T12:00:00Z', channel: 'demo',
+      payload: {
+        homeLogo: 'https://images.example.com/home.png',
+        awayLogo: 'https://images.example.com/away.png',
+        streams: [{ url: 'https://media.example.com/leak.m3u8' }],
+        original_url: 'https://media.example.com/leak.m3u8'
+      },
       active: true, updated_at: '2026-09-20T10:00:00Z'
+    }, {
+      id: 'match-lower', match_id: 'match-lower', home_team: 'Lower Home', away_team: 'Lower Away',
+      league: 'الدوري الإيطالي الدرجة الثالثة', kickoff_time: '2026-09-20T13:00:00Z', channel: 'demo',
+      payload: {}, active: true, updated_at: '2026-09-20T10:00:00Z'
     }],
   };
   const redis = {
     incr: async () => 1, expire: async () => 1,
     ping: async () => 'PONG',
-    set: async (key) => { if (used.has(key)) return null; used.add(key); return 'OK'; },
+    set: async (key, value, options = {}) => {
+      if (options.NX && store.has(key)) return null;
+      store.set(key, value);
+      return 'OK';
+    },
+    get: async (key) => store.get(key) || null,
   };
   const server = createApp({ config, redis, fetchImpl: async (url) => {
     if (url.pathname.endsWith('.m3u8')) return new Response('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:6,\nsegment.ts\n', { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } });
@@ -39,13 +58,20 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   const matchesResponse = await request('/api/matches', config.frontend);
   assert.equal(matchesResponse.status, 200);
   assert.equal(matchesResponse.headers.get('access-control-allow-origin'), config.frontend);
-  assert.deepEqual((await matchesResponse.json()).matches.map(({ matchId, homeTeam, awayTeam }) => ({ matchId, homeTeam, awayTeam })), [
+  const matchesBody = await matchesResponse.json();
+  assert.deepEqual(matchesBody.matches.map(({ matchId, homeTeam, awayTeam }) => ({ matchId, homeTeam, awayTeam })), [
     { matchId: 'match-1', homeTeam: 'Home', awayTeam: 'Away' }
   ]);
+  assert.deepEqual(matchesBody.matches[0].streams, []);
+  assert.equal(matchesBody.matches[0].original_url, undefined);
   assert.equal((await request('/api/generate-token', 'https://bad.example', { channel: 'demo' })).status, 403);
-  const entry = await (await request('/api/generate-token', config.frontend, { channel: 'demo' })).json();
+  const entry = await (await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).json();
+  assert.equal(entry.expiresIn, 300);
+  assert.equal(jwt.decode(entry.token).stream_url, undefined);
   assert.equal((await request('/api/redeem-token', config.player, { token: entry.token }, '203.0.113.2')).status, 403);
   const session = await (await request('/api/redeem-token', config.player, { token: entry.token })).json();
+  assert.equal(session.expiresIn, 7200);
+  assert.equal(jwt.decode(session.token).stream_url, undefined);
   assert.equal((await request('/api/redeem-token', config.player, { token: entry.token })).status, 403);
   assert.equal((await request(`/api/stream.m3u8?token=${entry.token}`, config.player)).status, 403);
   assert.equal((await request('/api/stream.m3u8?token=invalid', config.player)).status, 403);
@@ -62,7 +88,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   const segment = new URL(content.trim().split('\n').at(-1));
   assert.equal((await request(segment.pathname + segment.search, config.player)).status, 200);
   assert.ok(content.includes('URI="https://api.example.com/api/resource?token='));
-  config.getStreamingConfig = async () => ({ is_streaming_active: false });
+  config.getPlayback = async () => ({ is_streaming_active: false, reason: 'ended' });
   assert.equal((await request(`/api/stream.m3u8?token=${session.token}`, config.player)).status, 403);
-  assert.equal((await request('/api/generate-token', config.frontend, { channel: 'demo' })).status, 403);
+  assert.equal((await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).status, 409);
 });

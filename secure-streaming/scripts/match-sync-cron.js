@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { syncMatchesFromSource } from "./sync-matches-from-source.js";
 
-const schedule = process.env.MATCH_SYNC_CRON || "0 */3 * * *";
+const schedule = process.env.MATCH_SYNC_CRON || "*/2 * * * *";
 const timezone = process.env.MATCH_SYNC_TIMEZONE || "Africa/Casablanca";
 const runOnStart = process.env.MATCH_SYNC_ON_START === "true";
 

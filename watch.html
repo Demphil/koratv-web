@@ -6,6 +6,7 @@
   <title>مشاهدة المباراة بث مباشر | KoraLive</title>
   <meta name="description" content="صفحة مشاهدة كورة لايف تعرض مشغل المباراة وروابط السيرفرات المتاحة قبل بداية اللقاء مع أخبار رياضية محدثة.">
   <meta name="robots" content="noindex, follow">
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests; frame-src https://medic.cymru; connect-src 'self' https://stream-api.koratv.click https://api.rss2json.com">
   <link rel="canonical" href="https://koratv.click/watch.html">
   <link rel="icon" href="/assets/images/favicon.ico" type="image/x-icon">
   <meta property="og:site_name" content="KoraLive Football">
@@ -16,7 +17,6 @@
   <meta property="og:image" content="https://koratv.click/assets/images/default-news.jpg">
   
   <!-- المكتبات وملفات التنسيق -->
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <link rel="stylesheet" href="assets/css/watch.css">
   
   <style>
@@ -89,7 +89,7 @@
       <div class="main-content">
           <!-- المشغل -->
           <main id="player-container" class="iframe-container" aria-live="polite" style="background-color: #000; border-radius: 8px; overflow: hidden; margin-bottom: 30px;">
-            <p id="player-loader" style="text-align: center; padding: 50px;">جاري تحميل البث...</p>
+            <p id="player-loader" class="player-state" role="status">جاري التحقق من اتصال البث...</p>
           </main>
           
           <!-- قسم الأخبار -->
