@@ -10,6 +10,51 @@ function createServerClient(env) {
   });
 }
 
+const sourceHealthCache = new Map();
+
+async function isPlayableHlsSource(sourceUrl) {
+  const url = String(sourceUrl || '').trim();
+  if (!url) return false;
+  const cached = sourceHealthCache.get(url);
+  if (cached && cached.expiresAt > Date.now()) return cached.ok;
+
+  let ok = false;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
+        'User-Agent': 'Mozilla/5.0 KoraTV/1.0'
+      },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(4500)
+    });
+    if (response.ok) {
+      const text = await response.text();
+      ok = text.trimStart().startsWith('#EXTM3U');
+    } else {
+      await response.body?.cancel();
+    }
+  } catch {
+    ok = false;
+  }
+  sourceHealthCache.set(url, { ok, expiresAt: Date.now() + 60_000 });
+  return ok;
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const output = [];
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      output[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return output;
+}
+
 export function createMatchesReader(env) {
   const client = createServerClient(env);
   const normalizeName = (value) => String(value || '').trim().toLocaleLowerCase('en');
@@ -28,9 +73,18 @@ export function createMatchesReader(env) {
     ]);
     if (error) throw new Error(`Match storage unavailable (${error.code || 'network'})`);
     if (channelsResult.error) throw new Error(`Channel storage unavailable (${channelsResult.error.code || 'network'})`);
-    const readyChannels = new Set((channelsResult.data || [])
+    const channelsByName = new Map((channelsResult.data || [])
       .filter((channel) => channel?.original_url)
-      .map((channel) => normalizeName(channel.name)));
+      .map((channel) => [normalizeName(channel.name), channel.original_url]));
+    const usedChannelNames = [...new Set((data || [])
+      .map((row) => normalizeName(row.channel || row.payload?.channel || ''))
+      .filter((name) => channelsByName.has(name)))];
+    const healthChecks = env.CHECK_MATCH_SOURCE_HEALTH === 'false'
+      ? usedChannelNames.map((name) => [name, true])
+      : await mapWithConcurrency(usedChannelNames, 6, async (name) => [name, await isPlayableHlsSource(channelsByName.get(name))]);
+    const readyChannels = new Set(healthChecks
+      .filter(([, ok]) => ok)
+      .map(([name]) => name));
     return Array.isArray(data)
       ? data.map((row) => {
           const payload = row.payload || {};
@@ -92,6 +146,9 @@ export function createPlaybackResolver(env) {
       .maybeSingle();
     if (error) throw new Error(`Channel lookup unavailable (${error.code || 'network'})`);
     if (!channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
+    if (env.CHECK_PLAYBACK_SOURCE_HEALTH !== 'false' && !(await isPlayableHlsSource(channel.original_url))) {
+      return { is_streaming_active: false, reason: 'source_unavailable' };
+    }
 
     return {
       is_streaming_active: true,
