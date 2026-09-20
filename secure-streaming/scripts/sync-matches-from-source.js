@@ -2,14 +2,32 @@ import "../src/lib/loadEnv.js";
 import * as cheerio from "cheerio";
 import { fileURLToPath } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
-import { enrichMatchChannels } from "./enrich-match-language-channels.js";
-import { applyTrustedBroadcastChannels } from "./trusted-broadcast-sources.js";
 import { isAllowedLeague } from "../../shared/league-whitelist.mjs";
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
 const dryRun = process.argv.includes("--dry-run");
-const enrichAfterSync = process.env.GEMINI_ENRICH_AFTER_MATCH_SYNC !== "false";
+const enrichAfterSync = process.env.GEMINI_ENRICH_AFTER_MATCH_SYNC === "true";
+
+const KOOORA_LEAGUE_CHANNEL_FALLBACKS = [
+  { pattern: /الدوري الانجليزي الممتاز|premier league/i, channels: ["beIN SPORTS HD 2", "beIN SPORTS HD 1"] },
+  { pattern: /الدوري الاسباني|la ?liga/i, channels: ["beIN SPORTS HD 3", "beIN SPORTS Mena 3", "beIN SPORTS HD 4"] },
+  { pattern: /الدوري الفرنسي|ligue 1/i, channels: ["beIN SPORTS HD 1", "beIN SPORTS HD 5"] },
+  { pattern: /الدوري الالماني|bundesliga/i, channels: ["beIN SPORTS HD 5", "beIN SPORTS HD 7"] },
+  { pattern: /الدوري الايطالي|serie a/i, channels: ["beIN SPORTS HD 4", "beIN SPORTS HD 1"] },
+  { pattern: /دوري ابطال اوروبا|champions league/i, channels: ["beIN SPORTS HD 1", "beIN SPORTS HD 2", "beIN SPORTS HD 3"] },
+  { pattern: /الدوري الاوروبي|europa league/i, channels: ["beIN SPORTS HD 1", "beIN SPORTS HD 2"] },
+  { pattern: /دوري المؤتمر الاوروبي|conference league/i, channels: ["beIN SPORTS HD 3", "beIN SPORTS HD 4"] },
+  { pattern: /كاس السوبر الاوروبي|european super cup/i, channels: ["beIN SPORTS HD 1"] },
+  { pattern: /دوري الامم الاوروبيه|nations league/i, channels: ["beIN SPORTS HD 1", "beIN SPORTS HD 2"] },
+  { pattern: /بطوله امم اوروبا|uefa euro|كاس امم افريقيا|afcon/i, channels: ["beIN SPORTS MAX 1", "beIN SPORTS MAX 2", "beIN SPORTS HD 1"] },
+  { pattern: /دوري ابطال افريقيا|كاس الكونف|كاس السوبر الافريقي|بطوله امم افريقيا للمحليين/i, channels: ["beIN SPORTS HD 6", "beIN SPORTS HD 7", "beIN SPORTS HD 1"] },
+  { pattern: /الدوري المصري الممتاز/i, channels: ["On Time Sports 1", "ON TIME SPORTS 2", "أون سبورت 1"] },
+  { pattern: /البطوله الوطنيه الاحترافيه المغربيه|الدوري المغربي/i, channels: ["الرياضية المغربية", "Arryadia TNT", "الرياضية المغربية 1"] },
+  { pattern: /الرابطه التونسيه المحترفه الاولي|الرابطة التونسية المحترفة الأولى/i, channels: ["beIN SPORTS HD 6", "beIN SPORTS HD 7"] },
+  { pattern: /الرابطه الجزائريه المحترفه الاولي|الرابطة الجزائرية المحترفة الأولى/i, channels: ["beIN SPORTS HD 6", "beIN SPORTS HD 7"] },
+  { pattern: /دوري روشن السعودي|saudi pro/i, channels: ["ثمانية 1", "ثمانية 2", "ثمانية 3"] },
+];
 
 function moroccoDateParts(offsetDays = 0) {
   const now = new Date();
@@ -132,6 +150,72 @@ function normalizeKoooraChannel(value) {
   return beinNumber ? `beIN SPORTS HD ${beinNumber}` : name || null;
 }
 
+function normalizeLookup(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pickExistingChannel(channelNames, candidates) {
+  const normalized = channelNames.map((name) => ({ name, key: normalizeLookup(name) }));
+  for (const candidate of candidates) {
+    const key = normalizeLookup(candidate);
+    const exact = normalized.find((channel) => channel.key === key);
+    if (exact) return exact.name;
+    const partial = normalized.find((channel) => key.length >= 5 && (channel.key.includes(key) || key.includes(channel.key)));
+    if (partial) return partial.name;
+  }
+  return "";
+}
+
+async function readActiveChannelNames(supabase) {
+  const { data, error } = await supabase
+    .from("channels")
+    .select("name,active")
+    .eq("active", true);
+  if (error) {
+    console.warn(`Could not read active channels before Kooora fallback mapping: ${error.message}`);
+    return [];
+  }
+  return (data || []).map((channel) => channel.name).filter(Boolean);
+}
+
+async function applyKoooraChannelFallbacks(supabase, rows) {
+  const channelNames = await readActiveChannelNames(supabase);
+  if (!channelNames.length) return { rows, updated: 0 };
+
+  let updated = 0;
+  const output = rows.map((row) => {
+    if (row.channel) return row;
+    const league = normalizeLookup(row.league);
+    const rule = KOOORA_LEAGUE_CHANNEL_FALLBACKS.find((item) => item.pattern.test(league));
+    const channel = rule ? pickExistingChannel(channelNames, rule.channels) : "";
+    if (!channel) return row;
+    updated += 1;
+    return {
+      ...row,
+      channel,
+      payload: {
+        ...(row.payload || {}),
+        channel,
+        channelResolvedBy: "kooora-league-fallback",
+        channelConfidence: 0.7,
+        channelNotes: "Kooora did not expose tvChannels for this match; selected the configured IPTV channel fallback for this Kooora league.",
+        channelResolvedAt: new Date().toISOString()
+      }
+    };
+  });
+
+  return { rows: output, updated };
+}
+
 function parseKoooraMatches(html) {
   const $ = cheerio.load(html);
   const raw = $('#__NEXT_DATA__').text();
@@ -252,10 +336,10 @@ export async function syncMatchesFromSource({ dryRunMode = dryRun } = {}) {
 
   const supabase = getSupabaseAdmin();
   const rowsForUpsert = await mergeExistingChannels(supabase, uniqueRows);
-  const trustedResult = await applyTrustedBroadcastChannels(supabase, rowsForUpsert);
-  const finalRowsForUpsert = trustedResult.rows;
-  if (trustedResult.updated) {
-    console.log(`Trusted broadcast sources filled ${trustedResult.updated} match channels.`);
+  const fallbackResult = await applyKoooraChannelFallbacks(supabase, rowsForUpsert);
+  const finalRowsForUpsert = fallbackResult.rows;
+  if (fallbackResult.updated) {
+    console.log(`Kooora league fallbacks filled ${fallbackResult.updated} match channels.`);
   }
 
   const { error } = await supabase
@@ -268,6 +352,7 @@ export async function syncMatchesFromSource({ dryRunMode = dryRun } = {}) {
   let enrichmentResult = null;
   if (enrichAfterSync) {
     try {
+      const { enrichMatchChannels } = await import("./enrich-match-language-channels.js");
       enrichmentResult = await enrichMatchChannels({ rows: finalRowsForUpsert, table: matchesTable, dryRun: false });
       console.log(`Gemini post-sync enrichment: processed=${enrichmentResult.processed}, arabicUpdated=${enrichmentResult.arabicUpdated}, alternativesUpdated=${enrichmentResult.alternativesUpdated}.`);
     } catch (error) {
@@ -275,7 +360,7 @@ export async function syncMatchesFromSource({ dryRunMode = dryRun } = {}) {
     }
   }
 
-  return { parsed: uniqueRows.length, upserted: finalRowsForUpsert.length, trustedChannels: trustedResult.updated, enriched: enrichmentResult };
+  return { parsed: uniqueRows.length, upserted: finalRowsForUpsert.length, koooraFallbackChannels: fallbackResult.updated, enriched: enrichmentResult };
 }
 
 async function main() {

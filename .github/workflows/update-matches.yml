@@ -12,8 +12,7 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_ENRICH_AFTER_MATCH_SYNC: "true"
+      GEMINI_ENRICH_AFTER_MATCH_SYNC: "false"
       SUPABASE_MATCHES_TABLE: matches
 
     steps:

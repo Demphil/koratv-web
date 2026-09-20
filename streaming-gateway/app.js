@@ -16,9 +16,26 @@ function moroccoPart(value, options) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Casablanca', ...options }).format(date);
 }
 
-function normalizeMatch(row) {
+function matchPlaybackState(row, config) {
   const payload = row.payload || {};
   const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
+  const kickoff = new Date(scheduledAt);
+  const status = String(payload.status || payload.state || payload.matchStatus || '').toLowerCase();
+  if (/result|finished|ended|full.?time|انته/.test(status)) return 'ended';
+  if (Number.isNaN(kickoff.getTime())) return 'upcoming';
+
+  const opensBeforeMs = Number(process.env.STREAM_OPENS_BEFORE_MINUTES || config.streamOpensBeforeMinutes || 20) * 60_000;
+  const closesAfterMs = Number(process.env.STREAM_CLOSES_AFTER_MINUTES || config.streamClosesAfterMinutes || 150) * 60_000;
+  const now = Date.now();
+  if (now > kickoff.getTime() + closesAfterMs) return 'ended';
+  if (now >= kickoff.getTime() - opensBeforeMs) return 'live';
+  return 'upcoming';
+}
+
+function normalizeMatch(row, config) {
+  const payload = row.payload || {};
+  const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
+  const playbackState = matchPlaybackState(row, config);
   return {
     match_id: row.match_id || row.id,
     matchId: row.match_id || row.id,
@@ -34,8 +51,10 @@ function normalizeMatch(row) {
     commentator: payload.commentator || '',
     status: payload.status || payload.state || payload.matchStatus || '',
     streams: [],
-    sourceReady: row.source_ready === true,
-    isLive: Boolean(payload.isLive),
+    sourceReady: row.source_ready === true && playbackState === 'live',
+    sourceAvailable: row.source_ready === true,
+    playbackState,
+    isLive: playbackState === 'live',
     updatedAt: row.updated_at
   };
 }
@@ -113,7 +132,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       const seen = new Set();
       const matches = (await config.getMatches())
-        .map(normalizeMatch)
+        .map((row) => normalizeMatch(row, config))
         .filter((match) => match.homeTeam && match.awayTeam && match.scheduledAt)
         .filter((match) => String(match.homeTeam).trim() !== String(match.awayTeam).trim())
         .filter((match) => {

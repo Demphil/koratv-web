@@ -5,6 +5,7 @@ import { createApp } from '../app.js';
 
 test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   const store = new Map();
+  const liveKickoff = new Date(Date.now() + 10 * 60_000).toISOString();
   const config = {
     secret: 'test-only-secret-with-at-least-32-bytes',
     hmacSecret: 'test-only-separate-hmac-secret-with-32-bytes',
@@ -19,7 +20,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     }),
     getMatches: async () => [{
       id: 'match-1', match_id: 'match-1', home_team: 'Home', away_team: 'Away',
-      league: 'الدوري الإسباني', kickoff_time: '2026-09-20T12:00:00Z', channel: 'demo',
+      league: 'الدوري الإسباني', kickoff_time: liveKickoff, channel: 'demo',
       payload: {
         homeLogo: 'https://images.example.com/home.png',
         awayLogo: 'https://images.example.com/away.png',
