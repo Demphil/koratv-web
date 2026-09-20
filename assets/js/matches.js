@@ -19,6 +19,15 @@ const supabaseClient = window.supabase?.createClient && publicSupabaseConfig.url
 
 if (!supabaseClient) console.info('[MATCHES] Public Supabase client is not configured; using the server match feed.');
 
+const automatedClient = (() => {
+  const ua = navigator.userAgent || '';
+  return navigator.webdriver === true
+    || /HeadlessChrome|PhantomJS|SlimerJS|Puppeteer|Playwright|Selenium/i.test(ua)
+    || /bot|crawler|spider|slurp|bingpreview|facebookexternalhit|whatsapp|telegrambot|google-inspectiontool|lighthouse/i.test(ua);
+})();
+
+if (automatedClient) document.documentElement.classList.add('crawler-view');
+
 const DOM = {
   featuredContainer: document.getElementById('featured-matches'),
   broadcastContainer: document.getElementById('broadcast-matches'),
@@ -87,6 +96,34 @@ function matchStartDate(match) {
   return null;
 }
 
+function liveMinuteText(match, matchDate) {
+  const explicit = Number(match.liveMinute);
+  if (Number.isFinite(explicit) && explicit >= 0) return `${Math.round(explicit)}'`;
+  if (!matchDate || Number.isNaN(matchDate.getTime())) return 'مباشر';
+  const minutes = Math.max(0, Math.min(130, Math.floor((Date.now() - matchDate.getTime()) / 60000)));
+  return `${minutes}'`;
+}
+
+function cardsTotal(cards) {
+  if (!cards || typeof cards !== 'object') return 0;
+  const home = Number(cards.home || 0);
+  const away = Number(cards.away || 0);
+  return (Number.isFinite(home) ? home : 0) + (Number.isFinite(away) ? away : 0);
+}
+
+function renderLiveData(match, matchDate, isLive) {
+  if (!isLive) return '';
+  const score = match.score && match.score !== 'VS' ? match.score : '0 - 0';
+  return `
+    <div class="live-data-strip" aria-label="بيانات المباراة الحية">
+      <span class="live-stat"><i class="fas fa-stopwatch" aria-hidden="true"></i>${liveMinuteText(match, matchDate)}</span>
+      <span class="live-stat live-stat-score">${score}</span>
+      <span class="live-stat"><span class="card-dot yellow"></span>${cardsTotal(match.yellowCards)}</span>
+      <span class="live-stat"><span class="card-dot red"></span>${cardsTotal(match.redCards)}</span>
+    </div>
+  `;
+}
+
 function renderMatch(match) {
   if (!match || !match.homeTeam || !match.awayTeam) return '';
 
@@ -129,10 +166,7 @@ function renderMatch(match) {
       diffMins = 9999; 
   }
 
-  const hasData = typeof match.channel === 'string'
-    && match.channel.trim()
-    && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(match.channel.trim())
-    && match.sourceReady === true;
+  const hasData = match.sourceReady === true && match.playbackState === 'live';
 
   // ⏱️ حساب مدة المباراة بذكاء حسب البطولة
   const matchDuration = typeof getMatchDuration === 'function' ? getMatchDuration(match.league) : 120;
@@ -141,11 +175,6 @@ function renderMatch(match) {
   const isTimeAllowed = !isEnded && diffMins <= 20 && diffMins >= -matchDuration;
   const isLive = !isEnded && (match.isLive === true || (diffMins <= 0 && diffMins >= -matchDuration));
   const isSoon = diffMins > 0 && diffMins <= 60; 
-
-  const channelName = typeof match.channel === 'string' && match.channel.trim()
-    && !['غير محدد', 'Unknown', 'غير معروف'].includes(match.channel.trim())
-    ? match.channel.trim()
-    : 'تحدد لاحقاً';
 
   let timeText = match.time;
   
@@ -172,9 +201,15 @@ function renderMatch(match) {
   // ==========================================
   if (hasData) {
       if (isTimeAllowed) {
-          hrefAttribute = `href="${watchUrl}" data-secure-match-id="${encodeURIComponent(stableId)}"`;
-          clickAction = '';
-          isClickableClass = 'clickable';
+          if (automatedClient) {
+              hrefAttribute = '';
+              clickAction = '';
+              isClickableClass = 'crawler-disabled';
+          } else {
+              hrefAttribute = `href="${watchUrl}" data-secure-match-id="${encodeURIComponent(stableId)}"`;
+              clickAction = '';
+              isClickableClass = 'clickable';
+          }
        } else if (isEnded) {
            // 🛑 المباراة انتهت بالفعل
            clickAction = '';
@@ -214,10 +249,6 @@ function renderMatch(match) {
   }
 
   const matchDetailsHTML = `
-    <div class="match-detail-item">
-      <i class="fas fa-tv" aria-hidden="true"></i>
-      <span>${channelName}</span>
-    </div>
     ${match.commentator ? `
       <div class="match-detail-item">
         <i class="fas fa-microphone-alt" aria-hidden="true"></i>
@@ -246,6 +277,7 @@ function renderMatch(match) {
             <span class="team-name">${awayTeamName}</span>
           </div>
         </div>
+        ${renderLiveData(match, matchDate, isLive)}
         ${matchDetailsHTML.trim() ? `<div class="match-details-extra">${matchDetailsHTML}</div>` : ''}
       </article>
     </a>
@@ -319,8 +351,11 @@ function matchRenderSignature(match) {
     match.scheduledAt || '',
     match.time || '',
     match.score || '',
-    matchStartDate(match) && matchStartDate(match) <= new Date() ? 'live' : 'scheduled',
-    match.channel || '',
+    match.playbackState || '',
+    match.sourceReady === true ? 'ready' : 'blocked',
+    Number.isFinite(Number(match.liveMinute)) ? String(match.liveMinute) : '',
+    JSON.stringify(match.yellowCards || null),
+    JSON.stringify(match.redCards || null),
     match.homeTeam?.logo || '',
     match.awayTeam?.logo || ''
   ].join('|');
@@ -349,10 +384,10 @@ function renderSection(container, matches, message) {
   }
 }
 
-async function loadAndRenderMatches() {
+async function loadAndRenderMatches(options = {}) {
   const [rawTodayMatches, rawTomorrowMatches] = await Promise.all([
-    getTodayMatches(),
-    getTomorrowMatches()
+    getTodayMatches(options),
+    getTomorrowMatches(options)
   ]);
 
   hideLoading();
@@ -378,15 +413,8 @@ async function loadAndRenderMatches() {
       const diffA = (matchStartDate(a) - now) / 60000;
       const diffB = (matchStartDate(b) - now) / 60000;
 
-      const hasLinkA = typeof a.channel === 'string'
-        && a.channel.trim()
-        && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(a.channel.trim())
-        && a.sourceReady === true;
-
-      const hasLinkB = typeof b.channel === 'string'
-        && b.channel.trim()
-        && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(b.channel.trim())
-        && b.sourceReady === true;
+      const hasLinkA = a.sourceReady === true && a.playbackState === 'live';
+      const hasLinkB = b.sourceReady === true && b.playbackState === 'live';
 
       // ==========================================
       // 🚀 نظام الأوزان الجديد (الترتيب الذكي)
@@ -431,6 +459,23 @@ async function loadAndRenderMatches() {
   renderSection(DOM.tomorrowContainer, trueTomorrowMatches, 'لا توجد مباريات غداً.');
 }
 
+function startLiveRefresh() {
+    setInterval(() => {
+        if (document.hidden) return;
+        loadAndRenderMatches({ force: true }).catch(error => {
+            console.warn('[MATCHES] live refresh failed:', error);
+        });
+    }, 30000);
+
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            loadAndRenderMatches({ force: true }).catch(error => {
+                console.warn('[MATCHES] resume refresh failed:', error);
+            });
+        }
+    });
+}
+
 function setupTabs() {
     const handleTabClick = (activeTab, inactiveTab, activeContainer, inactiveContainer) => {
         if (!activeTab || !inactiveTab || !activeContainer || !inactiveContainer) return;
@@ -456,4 +501,5 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("An error occurred while loading matches:", error);
         hideLoading();
     });
+    startLiveRefresh();
 });

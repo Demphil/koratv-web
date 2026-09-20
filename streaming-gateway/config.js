@@ -35,7 +35,7 @@ export function loadConfig(env = process.env) {
     api: publicOrigin('PUBLIC_API_ORIGIN', env.PUBLIC_API_ORIGIN),
     trustedProxies: (env.TRUSTED_PROXIES || '').split(',').filter(Boolean),
     cloudflareProxies: (env.CLOUDFLARE_HEADER_TRUSTED_PROXIES || '').split(',').filter(Boolean),
-    sessionTtl: Math.max(600, Number(env.STREAM_SESSION_TTL_SECONDS || 10800)),
+    sessionTtl: Math.max(300, Number(env.STREAM_SESSION_TTL_SECONDS || 300)),
     streamOpensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || 20),
     streamClosesAfterMinutes: Number(env.STREAM_CLOSES_AFTER_MINUTES || 150),
     upstreamUserAgent: env.IPTV_UPSTREAM_USER_AGENT || 'VLC/3.0.20 LibVLC/3.0.20',

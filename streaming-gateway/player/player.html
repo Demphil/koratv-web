@@ -19,7 +19,12 @@
 
     <main class="main-content">
       <section id="player-container" class="player-container" aria-live="polite">
-        <video id="video" controls playsinline></video>
+        <video id="video" controls playsinline controlslist="nodownload noplaybackrate"></video>
+        <div class="site-watermark" aria-hidden="true">
+          <span class="site-watermark-mark"></span>
+          <strong>Koratv.click</strong>
+        </div>
+        <div class="control-brand" aria-hidden="true">Koratv.click</div>
         <div id="status" class="player-state" role="status">جاري تحميل البث...</div>
       </section>
 

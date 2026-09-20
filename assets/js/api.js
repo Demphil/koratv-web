@@ -1,6 +1,6 @@
 // --- 1. Cache Configuration ---
 
-const CACHE_EXPIRY_MS = 2 * 60 * 1000;
+const CACHE_EXPIRY_MS = 20 * 1000;
 
 const MATCHES_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
 
@@ -97,6 +97,7 @@ function stableMatchId(homeTeam, awayTeam, scheduledAt = '') {
 // --- 3. Database API ---
 
 let stagingMatchesPromise = null;
+let stagingMatchesExpiresAt = 0;
 
 function normalizeStagingMatch(match) {
   const homeName = typeof match.homeTeam === 'object' ? match.homeTeam.name : match.homeTeam;
@@ -117,14 +118,23 @@ function normalizeStagingMatch(match) {
     rawMinutes: dateParts.hour * 60 + dateParts.minute,
     score: match.score || 'VS',
     league: match.league || '',
-    channel: match.channel || match.channels?.[0] || 'تحدد لاحقاً',
+    channel: '',
     streams: [],
+    sourceReady: match.sourceReady === true,
+    sourceAvailable: match.sourceAvailable === true,
+    playbackState: match.playbackState || '',
     isLive: Boolean(match.isLive),
-    commentator: match.commentator || ''
+    commentator: match.commentator || '',
+    liveMinute: Number.isFinite(Number(match.liveMinute)) ? Number(match.liveMinute) : null,
+    yellowCards: match.yellowCards || null,
+    redCards: match.redCards || null
   };
 }
 
-async function getStagingMatches() {
+async function getStagingMatches({ force = false } = {}) {
+  if (force || Date.now() >= stagingMatchesExpiresAt) {
+    stagingMatchesPromise = null;
+  }
   if (!stagingMatchesPromise) {
     stagingMatchesPromise = fetch(`${MATCHES_API_ORIGIN}/api/matches?t=${Date.now()}`, { cache: 'no-store' })
       .then((response) => {
@@ -132,6 +142,10 @@ async function getStagingMatches() {
         return response.json();
       })
       .then((body) => (Array.isArray(body.matches) ? body.matches : []).map(normalizeStagingMatch).filter(Boolean))
+      .then((matches) => {
+        stagingMatchesExpiresAt = Date.now() + CACHE_EXPIRY_MS;
+        return matches;
+      })
       .catch((error) => {
         stagingMatchesPromise = null;
         throw error;
@@ -142,9 +156,9 @@ async function getStagingMatches() {
 
 
 
-export async function getTodayMatches() {
+export async function getTodayMatches(options = {}) {
   try {
-    const matches = await getStagingMatches();
+    const matches = await getStagingMatches(options);
     return matches.filter((match) => getMoroccoDay(match.scheduledAt) === 'today');
   } catch (error) {
     console.error(`Today matches fetch failed: ${error.message}`);
@@ -152,9 +166,9 @@ export async function getTodayMatches() {
   }
 }
 
-export async function getTomorrowMatches() {
+export async function getTomorrowMatches(options = {}) {
   try {
-    const matches = await getStagingMatches();
+    const matches = await getStagingMatches(options);
     return matches.filter((match) => getMoroccoDay(match.scheduledAt) === 'tomorrow');
   } catch (error) {
     console.error(`Tomorrow matches fetch failed: ${error.message}`);

@@ -237,6 +237,54 @@ a.match-card-link {
 .match-card-link.not-clickable {
   cursor: not-allowed;
 }
+.match-card-link.crawler-disabled,
+html.crawler-view .match-card-link {
+  cursor: default;
+  pointer-events: none;
+}
+.match-card.is-live {
+  border-color: rgba(46, 204, 113, 0.5);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22), inset 0 0 0 1px rgba(46, 204, 113, 0.24);
+}
+.live-data-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.live-stat {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 5px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.live-stat-score {
+  color: #ffd166;
+  letter-spacing: 0;
+}
+.card-dot {
+  width: 9px;
+  height: 12px;
+  border-radius: 2px;
+  display: inline-block;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+}
+.card-dot.yellow {
+  background: #ffd60a;
+}
+.card-dot.red {
+  background: #e63946;
+}
 .no-stream-badge {
   position: absolute;
   top: 10px;

@@ -48,6 +48,58 @@ video {
   background: #000;
 }
 
+.site-watermark {
+  position: absolute;
+  top: clamp(10px, 3vw, 28px);
+  right: clamp(10px, 4vw, 48px);
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 118px;
+  max-width: 190px;
+  padding: 7px 12px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, rgba(97, 24, 155, 0.94), rgba(221, 20, 128, 0.94));
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  user-select: none;
+}
+
+.site-watermark strong {
+  font-size: clamp(0.7rem, 1.1vw, 0.95rem);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.site-watermark-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-block;
+  background:
+    radial-gradient(circle at center, transparent 36%, #fff 38% 48%, transparent 50%),
+    conic-gradient(from 18deg, #fff 0 18%, transparent 18% 32%, #fff 32% 50%, transparent 50% 64%, #fff 64% 82%, transparent 82% 100%);
+  flex: 0 0 auto;
+}
+
+.control-brand {
+  position: absolute;
+  right: clamp(12px, 3vw, 34px);
+  bottom: clamp(34px, 5vw, 54px);
+  z-index: 4;
+  padding: 4px 9px;
+  border-radius: 4px;
+  background: rgba(221, 20, 128, 0.9);
+  color: #fff;
+  font-size: clamp(0.62rem, 0.9vw, 0.82rem);
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
 .player-state {
   position: absolute;
   inset: 0;

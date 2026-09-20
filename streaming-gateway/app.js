@@ -32,10 +32,32 @@ function matchPlaybackState(row, config) {
   return 'upcoming';
 }
 
+function clampLiveMinute(row) {
+  const payload = row.payload || {};
+  const explicit = Number(payload.minute ?? payload.liveMinute ?? payload.matchMinute);
+  if (Number.isFinite(explicit) && explicit >= 0) return Math.min(130, Math.max(0, Math.round(explicit)));
+
+  const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
+  const kickoff = new Date(scheduledAt);
+  if (Number.isNaN(kickoff.getTime())) return null;
+  return Math.min(130, Math.max(0, Math.floor((Date.now() - kickoff.getTime()) / 60_000)));
+}
+
+function normalizeCardCount(value) {
+  if (!value || typeof value !== 'object') return null;
+  const home = Number(value.home ?? value.homeTeam ?? value.local ?? 0);
+  const away = Number(value.away ?? value.awayTeam ?? value.visitor ?? 0);
+  return {
+    home: Number.isFinite(home) ? home : 0,
+    away: Number.isFinite(away) ? away : 0
+  };
+}
+
 function normalizeMatch(row, config) {
   const payload = row.payload || {};
   const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
   const playbackState = matchPlaybackState(row, config);
+  const cards = payload.cards || payload.stats?.cards || {};
   return {
     match_id: row.match_id || row.id,
     matchId: row.match_id || row.id,
@@ -47,7 +69,7 @@ function normalizeMatch(row, config) {
     time: payload.time || moroccoPart(scheduledAt, { hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }),
     score: payload.score || 'VS',
     league: row.league || payload.league || '',
-    channel: row.channel || payload.channel || '',
+    channel: '',
     commentator: payload.commentator || '',
     status: payload.status || payload.state || payload.matchStatus || '',
     streams: [],
@@ -55,6 +77,9 @@ function normalizeMatch(row, config) {
     sourceAvailable: row.source_ready === true,
     playbackState,
     isLive: playbackState === 'live',
+    liveMinute: playbackState === 'live' ? clampLiveMinute(row) : null,
+    yellowCards: normalizeCardCount(payload.yellowCards || cards.yellow || payload.stats?.yellowCards),
+    redCards: normalizeCardCount(payload.redCards || cards.red || payload.stats?.redCards),
     updatedAt: row.updated_at
   };
 }
