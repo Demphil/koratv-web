@@ -51,8 +51,8 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   await new Promise((resolve) => server.once('listening', resolve));
   t.after(() => { server.closeAllConnections(); server.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;
-  const request = (path, origin, body, ip = '203.0.113.1') => fetch(base + path, {
-    method: body ? 'POST' : 'GET', headers: { Origin: origin, 'Content-Type': 'application/json', 'X-Forwarded-For': ip, 'User-Agent': 'Browser test' },
+  const request = (path, origin, body, ip = '203.0.113.1', extraHeaders = {}) => fetch(base + path, {
+    method: body ? 'POST' : 'GET', headers: { Origin: origin, 'Content-Type': 'application/json', 'X-Forwarded-For': ip, 'User-Agent': 'Browser test', ...extraHeaders },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   assert.equal((await request('/healthz', config.player)).status, 200);
@@ -87,9 +87,11 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal(playlist.status, 200);
   const content = await playlist.text();
   assert.ok(!content.includes('media.example.com'));
+  assert.ok(!content.includes('token='));
+  assert.ok(content.includes('URI="https://api.example.com/api/resource?resource='));
   const segment = new URL(content.trim().split('\n').at(-1));
-  assert.equal((await request(segment.pathname + segment.search, config.player)).status, 200);
-  assert.ok(content.includes('URI="https://api.example.com/api/resource?token='));
+  assert.equal((await request(segment.pathname + segment.search, config.player)).status, 403);
+  assert.equal((await request(segment.pathname + segment.search, config.player, null, '203.0.113.1', { Authorization: `Bearer ${session.token}` })).status, 200);
   config.getPlayback = async () => ({ is_streaming_active: false, reason: 'ended' });
   assert.equal((await request(`/api/stream.m3u8?token=${session.token}`, config.player)).status, 403);
   assert.equal((await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).status, 409);

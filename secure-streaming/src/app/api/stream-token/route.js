@@ -34,7 +34,7 @@ export async function POST(request) {
       {
         token,
         expiresIn: 300,
-        streamUrl: `/api/stream/${encodeURIComponent(channel.name)}?token=${encodeURIComponent(token)}`
+        streamUrl: `/api/stream/${encodeURIComponent(channel.name)}`
       },
       { headers: corsHeaders(request) }
     );

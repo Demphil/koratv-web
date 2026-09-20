@@ -19,5 +19,23 @@ module.exports = {
         NODE_ENV: "production",
       },
     },
+    {
+      name: "koratv-daily-refresh",
+      cwd: "/opt/koratv/koratv-web/secure-streaming",
+      script: "scripts/daily-refresh-cron.js",
+      interpreter: "node",
+      exec_mode: "fork",
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: "512M",
+      kill_timeout: 10000,
+      restart_delay: 5000,
+      env_production: {
+        NODE_ENV: "production",
+        DAILY_REFRESH_CRON: "59 23 * * *",
+        DAILY_REFRESH_TIMEZONE: "Africa/Casablanca",
+      },
+    },
   ],
 };

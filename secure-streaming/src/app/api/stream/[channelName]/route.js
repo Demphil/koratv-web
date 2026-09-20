@@ -6,11 +6,16 @@ export async function OPTIONS(request) {
   return new Response(null, { headers: securityHeaders(request) });
 }
 
+function requestToken(request, url) {
+  const bearer = String(request.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i)?.[1];
+  return bearer || url.searchParams.get("token") || "";
+}
+
 export async function GET(request, { params }) {
   const resolvedParams = await params;
   const channelName = decodeURIComponent(resolvedParams.channelName);
   const url = new URL(request.url);
-  const token = url.searchParams.get("token") || "";
+  const token = requestToken(request, url);
   const ticket = url.searchParams.get("ticket");
   const ip = getClientIp(request);
   const sessionId = getSessionId(request);

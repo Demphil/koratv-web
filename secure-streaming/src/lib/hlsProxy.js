@@ -10,7 +10,7 @@ function resolveMediaUrl(baseUrl, item) {
   return isAbsoluteUrl(item) ? item : new URL(item, baseUrl).toString();
 }
 
-function rewriteUri(line, baseUrl, channelName, token, requestPath) {
+function rewriteUri(line, baseUrl, channelName, requestPath) {
   const cleanLine = line.trim();
   if (!cleanLine || cleanLine.startsWith("#")) return line;
   const targetUrl = resolveMediaUrl(baseUrl, cleanLine);
@@ -18,17 +18,17 @@ function rewriteUri(line, baseUrl, channelName, token, requestPath) {
     url: targetUrl,
     exp: Date.now() + 5 * 60 * 1000
   });
-  return proxiedUrl(requestPath, { token, ticket, channel: channelName });
+  return proxiedUrl(requestPath, { ticket, channel: channelName });
 }
 
-function rewriteAttributeUris(line, baseUrl, channelName, token, requestPath) {
+function rewriteAttributeUris(line, baseUrl, channelName, requestPath) {
   return line.replace(/URI="([^"]+)"/g, (_, uri) => {
     const targetUrl = resolveMediaUrl(baseUrl, uri);
     const ticket = sealJson({
       url: targetUrl,
       exp: Date.now() + 5 * 60 * 1000
     });
-    const proxy = proxiedUrl(requestPath, { token, ticket, channel: channelName });
+    const proxy = proxiedUrl(requestPath, { ticket, channel: channelName });
     return `URI="${proxy}"`;
   });
 }
@@ -48,7 +48,7 @@ export async function fetchUpstream(url, request) {
   }).finally(() => clearTimeout(timer));
 }
 
-export async function proxyPlaylist({ sourceUrl, channelName, token, request }) {
+export async function proxyPlaylist({ sourceUrl, channelName, request }) {
   const upstream = await fetchUpstream(sourceUrl, request);
   if (!upstream.ok) {
     return new Response("Upstream playlist unavailable.", { status: 502 });
@@ -59,10 +59,9 @@ export async function proxyPlaylist({ sourceUrl, channelName, token, request }) 
   const rewritten = body
     .split(/\r?\n/)
     .map((line) => rewriteUri(
-      rewriteAttributeUris(line, sourceUrl, channelName, token, requestPath),
+      rewriteAttributeUris(line, sourceUrl, channelName, requestPath),
       sourceUrl,
       channelName,
-      token,
       requestPath
     ))
     .join("\n");

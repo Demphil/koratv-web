@@ -34,6 +34,7 @@ jobs:
 
             PROJECT_DIR=/opt/koratv/koratv-web
             APP_DIR="$PROJECT_DIR/streaming-gateway"
+            SECURE_APP_DIR="$PROJECT_DIR/secure-streaming"
 
             test -d "$PROJECT_DIR/.git"
             test -f "$APP_DIR/.env"
@@ -50,6 +51,11 @@ jobs:
             npm test
             npm run check:supabase
             npm run build:player
+
+            cd "$SECURE_APP_DIR"
+            npm install --omit=dev
+            node --check scripts/daily-refresh-cron.js
+            node --check scripts/refresh-streaming-data.js
 
             install -d -m 0755 /var/www/koratv-player
             cp -a dist/. /var/www/koratv-player/

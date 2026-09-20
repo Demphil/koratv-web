@@ -24,8 +24,8 @@ function configuredAdScripts() {
   return custom.length ? custom : DEFAULT_AD_SCRIPTS;
 }
 
-function buildStreamSrc(channelName, token) {
-  return `/api/stream/${encodeURIComponent(channelName)}?token=${encodeURIComponent(token)}`;
+function buildStreamSrc(channelName) {
+  return `/api/stream/${encodeURIComponent(channelName)}`;
 }
 
 function parentOrigin() {
@@ -178,8 +178,18 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
 
     async function boot() {
       const data = await issueToken();
-      const src = data.streamUrl || buildStreamSrc(channelName, data.token);
+      const src = data.streamUrl || buildStreamSrc(channelName);
       if (disposed || !videoRef.current) return;
+
+      if (videojs.Vhs?.xhr) {
+        videojs.Vhs.xhr.beforeRequest = (options) => {
+          const headers = { ...(options.headers || {}) };
+          if (tokenRef.current && String(options.uri || "").includes("/api/stream/")) {
+            headers.Authorization = `Bearer ${tokenRef.current}`;
+          }
+          return { ...options, headers };
+        };
+      }
 
       playerRef.current = videojs(videoRef.current, {
         controls: true,
@@ -227,7 +237,7 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
         tokenRef.current = data.token;
         activeChannelRef.current = targetChannelName;
         const wasPaused = playerRef.current.paused();
-        playerRef.current.src({ src: data.streamUrl || buildStreamSrc(targetChannelName, data.token), type: "application/x-mpegURL" });
+        playerRef.current.src({ src: data.streamUrl || buildStreamSrc(targetChannelName), type: "application/x-mpegURL" });
         if (!wasPaused) playerRef.current.play().catch(() => {});
       } catch {
         setBlocked("تعذر تشغيل هذا السيرفر الآن.");
@@ -287,7 +297,7 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
         const allServers = [...QUALITY_OPTIONS, ...languageServers];
         const selected = allServers.find((item) => item.id === selectedServerId) || QUALITY_OPTIONS[0];
         const targetChannelName = selected.channelName || activeChannelRef.current;
-        playerRef.current.src({ src: data.streamUrl || buildStreamSrc(targetChannelName, data.token), type: "application/x-mpegURL" });
+        playerRef.current.src({ src: data.streamUrl || buildStreamSrc(targetChannelName), type: "application/x-mpegURL" });
         playerRef.current.play().catch(() => {});
       }
     } catch {

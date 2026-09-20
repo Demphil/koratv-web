@@ -1,10 +1,12 @@
 import "../src/lib/loadEnv.js";
+import { pathToFileURL } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
 import { syncMatchesFromSource } from "./sync-matches-from-source.js";
 import { syncIptvProvider } from "./sync-iptv-provider.js";
 
 const dryRun = process.argv.includes("--dry-run");
 const cleanAudit = process.argv.includes("--clean-audit");
+const resetChannels = process.argv.includes("--reset-channels") || process.env.DAILY_REFRESH_RESET_CHANNELS === "true";
 
 function log(event, details = {}) {
   console.log(JSON.stringify({
@@ -38,11 +40,12 @@ async function deleteRows(supabase, { table, idColumn = "id", sentinel = "__kora
   return { table, deleted: count || 0 };
 }
 
-async function cleanSupabaseData() {
+export async function cleanSupabaseData() {
   log("cleanup_started");
 
   if (dryRun) {
     const tables = ["channel_language_alternatives", "live_matches", process.env.SUPABASE_MATCHES_TABLE || "matches"];
+    if (resetChannels) tables.push("channels");
     log("cleanup_skipped_dry_run", { tables });
     return tables.map((table) => ({ table, deleted: 0, dryRun: true }));
   }
@@ -53,6 +56,9 @@ async function cleanSupabaseData() {
   results.push(await deleteRows(supabase, { table: "channel_language_alternatives", idColumn: "id", sentinel: -1 }));
   results.push(await deleteRows(supabase, { table: "live_matches", idColumn: "id" }));
   results.push(await deleteRows(supabase, { table: process.env.SUPABASE_MATCHES_TABLE || "matches", idColumn: "id" }));
+  if (resetChannels) {
+    results.push(await deleteRows(supabase, { table: "channels", idColumn: "id", sentinel: "00000000-0000-0000-0000-000000000000" }));
+  }
   if (cleanAudit) {
     results.push(await deleteRows(supabase, { table: "stream_access_audit", idColumn: "id", sentinel: -1 }));
   }
@@ -132,10 +138,12 @@ export async function refreshStreamingData() {
   return { matches, iptv, audit };
 }
 
-refreshStreamingData().catch((error) => {
-  log("manual_refresh_failed", {
-    message: error?.message || String(error),
-    stack: process.env.NODE_ENV === "production" ? undefined : error?.stack
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  refreshStreamingData().catch((error) => {
+    log("manual_refresh_failed", {
+      message: error?.message || String(error),
+      stack: process.env.NODE_ENV === "production" ? undefined : error?.stack
+    });
+    process.exit(1);
   });
-  process.exit(1);
-});
+}

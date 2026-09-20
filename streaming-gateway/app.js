@@ -111,6 +111,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     if (claims.ip !== ipHash(req) || !claims.channel || !claims.matchId) throw new Error('Forbidden');
     return claims;
   };
+  const requestToken = (req) => {
+    const bearer = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1];
+    return req.query.token || bearer || '';
+  };
   const requireOrigin = (req, expected) => {
     if (req.headers.origin !== expected) throw new Error('Forbidden');
   };
@@ -214,7 +218,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     let claims;
     try {
       requireOrigin(req, config.player);
-      claims = verify(req.query.token, req, 'hls-session');
+      const token = requestToken(req);
+      claims = verify(token, req, 'hls-session');
       if (!claims.sourceId) return res.sendStatus(403);
     } catch { return res.sendStatus(403); }
     try {
@@ -254,7 +259,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         }
         const rewrite = (uri) => {
           const target = allowedUrl(new URL(uri, source).href, runtimeOrigins);
-          return `${config.api}/api/resource?token=${encodeURIComponent(req.query.token)}&resource=${seal(target.href, claims.jti)}`;
+          return `${config.api}/api/resource?resource=${seal(target.href, claims.jti)}`;
         };
         const manifest = text.split(/\r?\n/).map((line) => {
           if (!line.trim()) return line;

@@ -6,6 +6,7 @@ const entry = params.get('k') || params.get('token');
 history.replaceState(null, '', location.pathname);
 let hls;
 let expiryTimer;
+let hlsSessionToken = "";
 const notifyParent = (state, message = '') => {
   if (window.parent !== window) window.parent.postMessage({ source: 'koratv-player', state, message }, '*');
 };
@@ -46,7 +47,13 @@ async function start() {
   });
   if (!response.ok) throw new Error('Playback ticket expired, was already used, or access was denied.');
   const { token, expiresIn } = await response.json();
-  hls = new Hls({ enableWorker: true });
+  hlsSessionToken = token;
+  hls = new Hls({
+    enableWorker: true,
+    xhrSetup(xhr) {
+      if (hlsSessionToken) xhr.setRequestHeader('Authorization', `Bearer ${hlsSessionToken}`);
+    }
+  });
   hls.on(Hls.Events.ERROR, (_, data) => {
     if (data.fatal) {
       hls.destroy();
@@ -59,7 +66,7 @@ async function start() {
     status.classList.remove('error');
     notifyParent('ready');
   });
-  hls.loadSource(`${STREAM_API_ORIGIN}/api/stream.m3u8?token=${encodeURIComponent(token)}`);
+  hls.loadSource(`${STREAM_API_ORIGIN}/api/stream.m3u8`);
   hls.attachMedia(video);
   expiryTimer = setTimeout(() => {
     hls.destroy();

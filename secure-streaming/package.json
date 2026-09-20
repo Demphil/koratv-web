@@ -19,6 +19,7 @@
     "refresh:manual:dry": "node scripts/refresh-streaming-data.js --dry-run",
     "cron:iptv-provider": "node scripts/iptv-provider-cron.js",
     "cron:matches": "node scripts/match-sync-cron.js",
+    "cron:daily-refresh": "node scripts/daily-refresh-cron.js",
     "export:local": "node scripts/export-local-channels.js",
     "enrich:languages": "node scripts/enrich-match-language-channels.js",
     "enrich:languages:dry": "node scripts/enrich-match-language-channels.js --dry-run",
