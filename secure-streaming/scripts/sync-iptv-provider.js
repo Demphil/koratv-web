@@ -1,3 +1,4 @@
+import "../src/lib/loadEnv.js";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 import nextEnv from "@next/env";
@@ -193,10 +194,10 @@ export async function syncIptvProvider(options = {}) {
     return { ok: false, skipped: true, reason: "missing_provider_url" };
   }
 
-  const supabaseUrl = env("SUPABASE_URL");
-  const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
+  const supabaseUrl = env("SUPABASE_URL") || env("NEXT_PUBLIC_SUPABASE_URL");
+  const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY") || env("SUPABASE_SECRET_KEY");
   if (!supabaseUrl || !serviceKey) {
-    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for IPTV provider sync.");
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for IPTV provider sync. NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY are also accepted.");
   }
 
   const startedAt = Date.now();

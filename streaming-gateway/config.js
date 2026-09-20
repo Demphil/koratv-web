@@ -36,6 +36,7 @@ export function loadConfig(env = process.env) {
     trustedProxies: (env.TRUSTED_PROXIES || '').split(',').filter(Boolean),
     cloudflareProxies: (env.CLOUDFLARE_HEADER_TRUSTED_PROXIES || '').split(',').filter(Boolean),
     sessionTtl: Math.max(600, Number(env.STREAM_SESSION_TTL_SECONDS || 10800)),
+    upstreamUserAgent: env.IPTV_UPSTREAM_USER_AGENT || 'KoraLiveProviderProbe/1.0',
     upstreamOrigins: new Set((env.UPSTREAM_ORIGINS || '').split(',').filter(Boolean).map(upstreamOrigin)),
     getMatches: createMatchesReader(env),
     getPlayback: createPlaybackResolver(env)

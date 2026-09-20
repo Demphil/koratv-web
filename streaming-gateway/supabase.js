@@ -19,23 +19,28 @@ async function isPlayableHlsSource(sourceUrl) {
   if (cached && cached.expiresAt > Date.now()) return cached.ok;
 
   let ok = false;
-  try {
-    const response = await fetch(url, {
-      headers: {
-        Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
-        'User-Agent': 'Mozilla/5.0 KoraTV/1.0'
-      },
-      redirect: 'manual',
-      signal: AbortSignal.timeout(4500)
-    });
-    if (response.ok) {
-      const text = await response.text();
-      ok = text.trimStart().startsWith('#EXTM3U');
-    } else {
-      await response.body?.cancel();
+  for (let attempt = 1; attempt <= 2 && !ok; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
+          'User-Agent': process.env.IPTV_UPSTREAM_USER_AGENT || 'KoraLiveProviderProbe/1.0'
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(7000)
+      });
+      if (response.ok) {
+        const text = await response.text();
+        ok = text.trimStart().startsWith('#EXTM3U');
+      } else {
+        await response.body?.cancel();
+      }
+    } catch {
+      ok = false;
     }
-  } catch {
-    ok = false;
+    if (!ok && attempt === 1) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
   }
   sourceHealthCache.set(url, { ok, expiresAt: Date.now() + 60_000 });
   return ok;
@@ -81,7 +86,7 @@ export function createMatchesReader(env) {
       .filter((name) => channelsByName.has(name)))];
     const healthChecks = env.CHECK_MATCH_SOURCE_HEALTH === 'false'
       ? usedChannelNames.map((name) => [name, true])
-      : await mapWithConcurrency(usedChannelNames, 6, async (name) => [name, await isPlayableHlsSource(channelsByName.get(name))]);
+      : await mapWithConcurrency(usedChannelNames, Number(env.CHECK_SOURCE_HEALTH_CONCURRENCY || 2), async (name) => [name, await isPlayableHlsSource(channelsByName.get(name))]);
     const readyChannels = new Set(healthChecks
       .filter(([, ok]) => ok)
       .map(([name]) => name));

@@ -183,7 +183,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const rootUrl = new URL(rootSource);
       const runtimeOrigins = new Set([rootUrl.origin]);
       const source = allowedUrl(req.path === '/api/stream.m3u8' ? rootSource : unseal(req.query.resource, claims.jti), runtimeOrigins);
-      const headers = {};
+      const headers = {
+        'User-Agent': config.upstreamUserAgent,
+        Accept: '*/*'
+      };
       if (req.headers.range) headers.Range = req.headers.range;
       const upstream = await fetchImpl(source, { headers, redirect: 'error', signal: AbortSignal.timeout(20000) });
       if (!upstream.ok) { await upstream.body?.cancel(); return res.sendStatus(502); }
