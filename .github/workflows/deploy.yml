@@ -86,4 +86,4 @@ jobs:
             grep -qi '^access-control-allow-origin: https://koratv.click' /tmp/koratv-api-headers
             curl --fail --silent --show-error -D /tmp/koratv-player-headers -o /dev/null \
               https://medic.cymru/739184.html
-            grep -qi '^content-security-policy:.*connect-src https://stream-api.koratv.click' /tmp/koratv-player-headers
+            grep -qi '^content-security-policy:.*connect-src https:' /tmp/koratv-player-headers

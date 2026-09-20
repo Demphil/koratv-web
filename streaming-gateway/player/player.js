@@ -23,29 +23,77 @@ async function start() {
   hls.on(Hls.Events.ERROR, (_, data) => {
     if (data.fatal) {
       hls.destroy();
-      status.textContent = 'Playback failed. Open the match again.';
+      showError('تعذر تشغيل البث الآن', 'مصدر القناة غير متوفر حالياً.');
       notifyParent('error', 'تعذر تحميل البث من مصدر القناة.');
     }
   });
-  hls.on(Hls.Events.MANIFEST_PARSED, () => notifyParent('ready'));
+  hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    status.textContent = '';
+    status.classList.remove('error');
+    notifyParent('ready');
+  });
   hls.loadSource(`${STREAM_API_ORIGIN}/api/stream.m3u8?token=${encodeURIComponent(token)}`);
   hls.attachMedia(video);
   expiryTimer = setTimeout(() => {
     hls.destroy();
     video.removeAttribute('src');
     video.load();
-    status.textContent = 'Session expired. Open the match again.';
+    showError('انتهت جلسة المشاهدة', 'أعد فتح المباراة للمتابعة.');
     notifyParent('error', 'انتهت جلسة المشاهدة. أعد فتح المباراة للمتابعة.');
   }, expiresIn * 1000);
 }
-video.addEventListener('playing', () => notifyParent('playing'));
+function showError(title, message) {
+  status.classList.add('error');
+  status.innerHTML = `<div class="player-error-box"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(message)}</span><a href="https://koratv.click/">حسناً، فهمت</a></div>`;
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function loadWatchNews() {
+  const container = document.getElementById('watch-news-container');
+  if (!container) return;
+  try {
+    const feeds = [
+      'https://arabic.rt.com/rss/sport/',
+      'https://www.skynewsarabia.com/web/rss/sport'
+    ];
+    const responses = await Promise.all(feeds.map((feed) =>
+      fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed)}`).catch(() => null)
+    ));
+    const payloads = await Promise.all(responses.map((response) => response?.ok ? response.json() : { items: [] }));
+    const items = payloads.flatMap((payload) => payload.items || [])
+      .sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0))
+      .slice(0, 4);
+    container.innerHTML = items.length ? items.map((item) => {
+      const title = item.title || 'أحدث الأخبار الرياضية';
+      const image = item.thumbnail || item.enclosure?.link || 'https://koratv.click/assets/images/default-news.jpg';
+      const date = item.pubDate ? new Date(item.pubDate.replace(/-/g, '/')).toLocaleDateString('ar-EG-u-nu-latn') : '';
+      return `<a class="watch-news-card" href="${escapeHtml(item.link || '#')}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(image)}" alt="${escapeHtml(title)}" loading="lazy"><div><h4>${escapeHtml(title)}</h4><span>${escapeHtml(date)}</span></div></a>`;
+    }).join('') : '<p>لا توجد أخبار حالياً.</p>';
+  } catch {
+    container.innerHTML = '<p>حدث خطأ أثناء تحميل الأخبار.</p>';
+  }
+}
+
+video.addEventListener('playing', () => {
+  status.textContent = '';
+  status.classList.remove('error');
+  notifyParent('playing');
+});
 // Convenience restrictions only. Browser menus and network inspection remain accessible.
 document.addEventListener('contextmenu', (event) => event.preventDefault());
 document.addEventListener('keydown', (event) => {
   if (event.key === 'F12' || ((event.ctrlKey || event.metaKey) && event.shiftKey && /^[ijc]$/i.test(event.key))) event.preventDefault();
 });
 window.addEventListener('pagehide', () => { clearTimeout(expiryTimer); hls?.destroy(); });
-start().catch((error) => {
-  status.textContent = error.message;
+loadWatchNews();
+start().catch(() => {
+  showError('عذراً، البث غير متاح الآن', 'مصدر القناة غير متوفر حالياً.');
   notifyParent('error', 'تعذر إنشاء اتصال آمن مع البث.');
 });

@@ -12,15 +12,32 @@ function createServerClient(env) {
 
 export function createMatchesReader(env) {
   const client = createServerClient(env);
+  const normalizeName = (value) => String(value || '').trim().toLocaleLowerCase('en');
   return async () => {
-    const { data, error } = await client
+    const [{ data, error }, channelsResult] = await Promise.all([
+      client
       .from(env.SUPABASE_MATCHES_TABLE || 'matches')
       .select('id,match_id,home_team,away_team,league,kickoff_time,channel,payload,active,updated_at')
       .eq('active', true)
       .order('kickoff_time', { ascending: true, nullsFirst: false })
-      .limit(500);
+        .limit(500),
+      client
+        .from('channels')
+        .select('name,original_url,active')
+        .eq('active', true)
+    ]);
     if (error) throw new Error(`Match storage unavailable (${error.code || 'network'})`);
-    return Array.isArray(data) ? data : [];
+    if (channelsResult.error) throw new Error(`Channel storage unavailable (${channelsResult.error.code || 'network'})`);
+    const readyChannels = new Set((channelsResult.data || [])
+      .filter((channel) => channel?.original_url)
+      .map((channel) => normalizeName(channel.name)));
+    return Array.isArray(data)
+      ? data.map((row) => {
+          const payload = row.payload || {};
+          const channelName = row.channel || payload.channel || '';
+          return { ...row, source_ready: readyChannels.has(normalizeName(channelName)) };
+        })
+      : [];
   };
 }
 

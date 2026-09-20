@@ -2,16 +2,58 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>KoraTV Player</title>
+  <title>مشاهدة المباراة بث مباشر | KoraTV</title>
+  <meta name="robots" content="noindex, follow">
   <link rel="stylesheet" href="./player.css">
 </head>
 <body>
-  <video id="video" controls playsinline></video>
-  <p id="status" role="status"></p>
+  <div class="layout-wrapper">
+    <aside class="ad-sidebar">
+      <a href="https://omg10.com/4/11795894" target="_blank" rel="noopener noreferrer">
+        <span class="ad-title blue">سيرفر احتياطي</span>
+        <span class="ad-copy">اضغط هنا للمشاهدة بدون تقطيع</span>
+      </a>
+    </aside>
+
+    <main class="main-content">
+      <section id="player-container" class="player-container" aria-live="polite">
+        <video id="video" controls playsinline></video>
+        <div id="status" class="player-state" role="status">جاري تحميل البث...</div>
+      </section>
+
+      <section class="watch-news-section">
+        <h3 class="watch-news-title">أحدث الأخبار الرياضية</h3>
+        <div id="watch-news-container" class="watch-news-grid"></div>
+      </section>
+    </main>
+
+    <aside class="ad-sidebar">
+      <a href="https://omg10.com/4/11795894" target="_blank" rel="noopener noreferrer">
+        <span class="ad-title red">تطبيق كورة</span>
+        <span class="ad-copy">حمل التطبيق لمتابعة المباريات</span>
+      </a>
+    </aside>
+  </div>
+
   <script src="./config.js"></script>
   <script src="./hls.min.js"></script>
   <script src="./player.js"></script>
+  <script>
+    (function(s) {
+      s.dataset.zone = '11704762';
+      s.src = 'https://nap5k.com/tag.min.js';
+      (document.body || document.documentElement).appendChild(s);
+    })(document.createElement('script'));
+  </script>
+  <script>
+    (function(s) {
+      s.dataset.zone = '11795901';
+      s.src = 'https://nap5k.com/tag.min.js';
+      (document.body || document.documentElement).appendChild(s);
+    })(document.createElement('script'));
+  </script>
+  <script src="https://quge5.com/88/tag.min.js" data-zone="260051" async data-cfasync="false"></script>
 </body>
 </html>

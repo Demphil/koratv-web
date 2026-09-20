@@ -26,7 +26,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
         streams: [{ url: 'https://media.example.com/leak.m3u8' }],
         original_url: 'https://media.example.com/leak.m3u8'
       },
-      active: true, updated_at: '2026-09-20T10:00:00Z'
+      source_ready: true, active: true, updated_at: '2026-09-20T10:00:00Z'
     }, {
       id: 'match-lower', match_id: 'match-lower', home_team: 'Lower Home', away_team: 'Lower Away',
       league: 'الدوري الإيطالي الدرجة الثالثة', kickoff_time: '2026-09-20T13:00:00Z', channel: 'demo',
@@ -64,6 +64,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   ]);
   assert.deepEqual(matchesBody.matches[0].streams, []);
   assert.equal(matchesBody.matches[0].original_url, undefined);
+  assert.equal(matchesBody.matches[0].sourceReady, true);
   assert.equal((await request('/api/generate-token', 'https://bad.example', { channel: 'demo' })).status, 403);
   const entry = await (await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).json();
   assert.equal(entry.expiresIn, 300);

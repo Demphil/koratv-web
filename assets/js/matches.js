@@ -131,7 +131,8 @@ function renderMatch(match) {
 
   const hasData = typeof match.channel === 'string'
     && match.channel.trim()
-    && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(match.channel.trim());
+    && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(match.channel.trim())
+    && match.sourceReady === true;
 
   // ⏱️ حساب مدة المباراة بذكاء حسب البطولة
   const matchDuration = typeof getMatchDuration === 'function' ? getMatchDuration(match.league) : 120;
@@ -379,11 +380,13 @@ async function loadAndRenderMatches() {
 
       const hasLinkA = typeof a.channel === 'string'
         && a.channel.trim()
-        && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(a.channel.trim());
+        && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(a.channel.trim())
+        && a.sourceReady === true;
 
       const hasLinkB = typeof b.channel === 'string'
         && b.channel.trim()
-        && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(b.channel.trim());
+        && !['غير محدد', 'Unknown', 'غير معروف', 'تحدد لاحقاً'].includes(b.channel.trim())
+        && b.sourceReady === true;
 
       // ==========================================
       // 🚀 نظام الأوزان الجديد (الترتيب الذكي)

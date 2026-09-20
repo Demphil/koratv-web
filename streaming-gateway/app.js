@@ -34,6 +34,7 @@ function normalizeMatch(row) {
     commentator: payload.commentator || '',
     status: payload.status || payload.state || payload.matchStatus || '',
     streams: [],
+    sourceReady: row.source_ready === true,
     isLive: Boolean(payload.isLive),
     updatedAt: row.updated_at
   };
