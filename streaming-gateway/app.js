@@ -188,12 +188,26 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         Accept: '*/*'
       };
       if (req.headers.range) headers.Range = req.headers.range;
-      const upstream = await fetchImpl(source, { headers, redirect: 'error', signal: AbortSignal.timeout(20000) });
-      if (!upstream.ok) { await upstream.body?.cancel(); return res.sendStatus(502); }
+      const upstream = await fetchImpl(source, { headers, redirect: 'follow', signal: AbortSignal.timeout(20000) });
+      if (!upstream.ok) {
+        console.error('[stream-proxy] upstream rejected request', {
+          status: upstream.status,
+          source: `${source.origin}${source.pathname}`,
+          type: upstream.headers.get('content-type') || ''
+        });
+        await upstream.body?.cancel();
+        return res.sendStatus(502);
+      }
       const type = upstream.headers.get('content-type') || '';
       if (/mpegurl/i.test(type) || source.pathname.endsWith('.m3u8')) {
         const text = await upstream.text();
-        if (!text.trimStart().startsWith('#EXTM3U')) return res.sendStatus(502);
+        if (!text.trimStart().startsWith('#EXTM3U')) {
+          console.error('[stream-proxy] upstream response is not an HLS manifest', {
+            source: `${source.origin}${source.pathname}`,
+            type
+          });
+          return res.sendStatus(502);
+        }
         const rewrite = (uri) => {
           const target = allowedUrl(new URL(uri, source).href, runtimeOrigins);
           return `${config.api}/api/resource?token=${encodeURIComponent(req.query.token)}&resource=${seal(target.href, claims.jti)}`;
@@ -210,7 +224,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       }
       res.status(upstream.status);
       await pipeline(Readable.fromWeb(upstream.body), res);
-    } catch {
+    } catch (error) {
+      console.error('[stream-proxy] failed to proxy stream', {
+        path: req.path,
+        message: error?.message || String(error)
+      });
       if (!res.headersSent) res.sendStatus(502);
       else res.destroy();
     }
