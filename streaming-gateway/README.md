@@ -48,7 +48,7 @@ Origin/CORS checks restrict ordinary browsers, but are not authentication: non-b
 npm run build:player
 ```
 
-Deploy `dist/player.html`, `player.js`, `player.css`, `config.js`, and `hls.min.js` to `https://medic.cymru`. Apply the HTTP headers in `dist/headers.txt` through the host configuration; that text file is a deployment checklist, not an automatically applied configuration. `frame-ancestors` must be an HTTP response header. Configure `PUBLIC_API_ORIGIN` in the build environment if the API hostname differs.
+Deploy `dist/739184.html`, `player.js`, `player.css`, `config.js`, and `hls.min.js` to `https://medic.cymru`. Apply the HTTP headers in `dist/headers.txt` through the host configuration; that text file is a deployment checklist, not an automatically applied configuration. `frame-ancestors` must be an HTTP response header. Configure `PUBLIC_API_ORIGIN` in the build environment if the API hostname differs.
 
 The player requires MediaSource support. hls.js attaches a blob media URL; native-HLS-only browsers get an explicit unsupported message instead of a direct URL fallback. Blob URLs, disabled right-click and key shortcuts do not hide requests from network inspection or provide DRM. No implementation can guarantee invisibility from DMCA crawlers using User-Agent matching.
 
@@ -74,7 +74,7 @@ import MatchCard from "@/components/isolated-player/MatchCard";
 />;
 ```
 
-`watch.html` embeds only `https://medic.cymru/player.html?token=...`. The browser never receives the raw upstream `.m3u8`; all media URLs are rewritten through `stream-api.koratv.click`.
+Playable match cards open only `https://medic.cymru/739184.html?k=...`. The browser never receives the raw upstream `.m3u8`; all media URLs are rewritten through `stream-api.koratv.click`.
 
 ## Verification
 

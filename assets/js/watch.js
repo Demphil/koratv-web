@@ -1,6 +1,7 @@
 // assets/js/watch.js
 const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
 const PLAYER_ORIGIN = 'https://medic.cymru';
+const PLAYER_PATH = '/739184.html';
 
 function normalizeMatchId(value) {
   return String(value || '').trim();
@@ -246,7 +247,7 @@ async function loadPlayer(stream, container, loader) {
   }
 
   const iframe = document.createElement('iframe');
-  iframe.src = `${PLAYER_ORIGIN}/player.html?token=${encodeURIComponent(token)}`;
+  iframe.src = `${PLAYER_ORIGIN}${PLAYER_PATH}?k=${encodeURIComponent(token)}`;
   iframe.title = `مشغل ${stream.channel}`;
   iframe.frameBorder = '0';
   iframe.scrolling = 'no';

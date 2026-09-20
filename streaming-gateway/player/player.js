@@ -1,7 +1,8 @@
 /* global Hls, STREAM_API_ORIGIN */
 const video = document.getElementById('video');
 const status = document.getElementById('status');
-const entry = new URL(location.href).searchParams.get('token');
+const params = new URL(location.href).searchParams;
+const entry = params.get('k') || params.get('token');
 history.replaceState(null, '', location.pathname);
 let hls;
 let expiryTimer;

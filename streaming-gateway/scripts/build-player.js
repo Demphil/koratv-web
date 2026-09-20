@@ -5,6 +5,7 @@ const api = new URL(process.env.PUBLIC_API_ORIGIN || 'https://stream-api.koratv.
 if (api.protocol !== 'https:') throw new Error('HTTPS required');
 await mkdir('dist', { recursive: true });
 await cp('player', 'dist', { recursive: true });
+await cp('player/player.html', 'dist/739184.html');
 await cp(require.resolve('hls.js/dist/hls.min.js'), 'dist/hls.min.js');
 await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\n`);
 await writeFile('dist/headers.txt', [

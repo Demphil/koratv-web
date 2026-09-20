@@ -7,6 +7,9 @@ import {
   getMoroccoDay
 } from './api.js';
 
+const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
+const PLAYER_ORIGIN = 'https://medic.cymru';
+const PLAYER_PATH = '/739184.html';
 const publicSupabaseConfig = window.__SUPABASE_CONFIG__ || {};
 const supabaseClient = window.supabase?.createClient && publicSupabaseConfig.url && publicSupabaseConfig.anonKey
   ? window.supabase.createClient(publicSupabaseConfig.url, publicSupabaseConfig.anonKey, {
@@ -97,7 +100,7 @@ function renderMatch(match) {
   const stableId = match.matchId || match.match_id || `${matchId}-${match.scheduledAt?.slice(0, 10) || 'undated'}`;
   const publicWatchId = opaqueWatchId(stableId);
   
-  let watchUrl = `watch.html?id=${encodeURIComponent(publicWatchId)}`;
+  let watchUrl = `${PLAYER_ORIGIN}${PLAYER_PATH}?m=${encodeURIComponent(publicWatchId)}`;
 
   // ==========================================
   // 🚀 الإصلاح الجذري لمشكلة منتصف الليل والتوقيت
@@ -168,7 +171,7 @@ function renderMatch(match) {
   // ==========================================
   if (hasData) {
       if (isTimeAllowed) {
-          hrefAttribute = `href="${watchUrl}" target="_blank"`;
+          hrefAttribute = `href="${watchUrl}" data-secure-match-id="${encodeURIComponent(stableId)}"`;
           clickAction = '';
           isClickableClass = 'clickable';
        } else if (isEnded) {
@@ -260,6 +263,53 @@ function opaqueWatchId(value) {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return String(hash).padStart(10, '0');
+}
+
+async function openSecurePlayer(matchId) {
+  if (!matchId) return;
+  window.openWaitModal?.('جاري تجهيز المشغل الآمن...');
+  let response;
+  try {
+    response = await fetch(`${STREAM_API_ORIGIN}/api/generate-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      credentials: 'omit',
+      body: JSON.stringify({ matchId })
+    });
+  } catch {
+    window.openWaitModal?.('تعذر الاتصال بخادم البث. حاول مرة أخرى.');
+    return;
+  }
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const messages = {
+      upcoming: 'سيُفتح البث قبل بداية المباراة بعشرين دقيقة.',
+      ended: 'انتهت المباراة وتم إغلاق البث.',
+      channel_unavailable: 'لم تُحدد القناة الناقلة بعد.',
+      source_unavailable: 'مصدر القناة غير متوفر حالياً.'
+    };
+    window.openWaitModal?.(messages[payload.error] || 'البث غير متاح حالياً. حاول مرة أخرى لاحقاً.');
+    return;
+  }
+
+  const { token } = await response.json().catch(() => ({}));
+  if (!token) {
+    window.openWaitModal?.('لم يتمكن الخادم من إنشاء جلسة مشاهدة آمنة.');
+    return;
+  }
+  window.location.href = `${PLAYER_ORIGIN}${PLAYER_PATH}?k=${encodeURIComponent(token)}`;
+}
+
+function setupSecurePlayerLinks() {
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest?.('.match-card-link.clickable[data-secure-match-id]');
+    if (!link) return;
+    event.preventDefault();
+    const matchId = decodeURIComponent(link.dataset.secureMatchId || '');
+    openSecurePlayer(matchId);
+  });
 }
 
 function matchRenderSignature(match) {
@@ -398,6 +448,7 @@ function setupTabs() {
 
 document.addEventListener('DOMContentLoaded', () => {
     setupTabs();
+    setupSecurePlayerLinks();
     loadAndRenderMatches().catch(error => {
         console.error("An error occurred while loading matches:", error);
         hideLoading();
