@@ -1,35 +1,82 @@
-# Install valid TLS certificates before enabling these server blocks.
-# This example assumes Nginx directly receives the public client connection.
+# Production Nginx configuration for the gateway and isolated player.
+# TLS certificates must exist before this file is enabled.
+
 server {
-    listen 443 ssl;
+    listen 80;
+    server_name stream-api.koratv.click medic.cymru www.medic.cymru;
+    return 301 https://$host$request_uri;
+}
+
+# Preserve the existing frontend route while its VPS migration is completed.
+server {
+    listen 80;
+    server_name koratv.click www.koratv.click;
+
+    location / {
+        proxy_pass http://127.0.0.1:3100;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_set_header CF-Connecting-IP "";
+    }
+}
+
+server {
+    listen 443 ssl http2;
     server_name stream-api.koratv.click;
+
     ssl_certificate /etc/letsencrypt/live/stream-api.koratv.click/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/stream-api.koratv.click/privkey.pem;
-    # Query strings contain short-lived credentials.
     access_log off;
-    location /api/ {
+
+    location = /healthz {
         proxy_pass http://127.0.0.1:3100;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
-        # Direct-facing example: do not forward a user-supplied Cloudflare IP.
+        proxy_set_header CF-Connecting-IP "";
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:3100;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        # Nginx receives the client directly, so never trust a supplied Cloudflare header.
         proxy_set_header CF-Connecting-IP "";
         proxy_buffering off;
         proxy_read_timeout 30s;
     }
-    location / { return 404; }
+
+    location / {
+        return 404;
+    }
 }
 
 server {
-    listen 443 ssl;
-    server_name medic.cymru;
-    ssl_certificate /etc/letsencrypt/live/medic.cymru/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/medic.cymru/privkey.pem;
+    listen 443 ssl http2;
+    server_name medic.cymru www.medic.cymru;
+
+    ssl_certificate /etc/letsencrypt/live/koratv.click/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/koratv.click/privkey.pem;
     root /var/www/koratv-player;
     access_log off;
-    add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; media-src blob:; connect-src https://stream-api.koratv.click; worker-src blob:; frame-ancestors https://koratv.click; base-uri 'none'; form-action 'none'" always;
+
+    add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; media-src blob:; connect-src https://stream-api.koratv.click; worker-src blob:; frame-ancestors *; base-uri 'none'; form-action 'none'" always;
     add_header Referrer-Policy no-referrer always;
     add_header X-Content-Type-Options nosniff always;
     add_header Cache-Control no-store always;
-    location / { try_files $uri =404; }
+
+    location = / {
+        try_files /player.html =404;
+    }
+
+    location / {
+        try_files $uri =404;
+    }
 }

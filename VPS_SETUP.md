@@ -4,7 +4,7 @@ Run these commands once as `root` on Ubuntu 24.04:
 
 ```bash
 apt-get update
-apt-get install -y ca-certificates curl git redis-server build-essential
+apt-get install -y ca-certificates curl git redis-server build-essential nginx certbot python3-certbot-nginx
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
 npm install --global pm2

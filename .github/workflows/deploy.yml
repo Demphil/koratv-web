@@ -50,16 +50,33 @@ jobs:
             npm test
             npm run build:player
 
+            install -d -m 0755 /var/www/koratv-player
+            cp -a dist/. /var/www/koratv-player/
+            find /var/www/koratv-player -type d -exec chmod 0755 {} +
+            find /var/www/koratv-player -type f -exec chmod 0644 {} +
+            install -m 0644 nginx.conf.example /etc/nginx/sites-available/koratv
+            ln -sfn /etc/nginx/sites-available/koratv /etc/nginx/sites-enabled/koratv
+            rm -f /etc/nginx/sites-enabled/stream-api-bootstrap
+            nginx -t
+
             cd "$PROJECT_DIR"
             pm2 startOrReload ecosystem.config.js --env production
             pm2 save
+            systemctl reload nginx
 
+            healthy=false
             for attempt in 1 2 3 4 5 6; do
               if curl --fail --silent --show-error http://127.0.0.1:3100/healthz >/dev/null; then
-                exit 0
+                healthy=true
+                break
               fi
               sleep 2
             done
 
-            pm2 logs koratv-gateway --lines 80 --nostream
-            exit 1
+            if [ "$healthy" != true ]; then
+              pm2 logs koratv-gateway --lines 80 --nostream
+              exit 1
+            fi
+
+            curl --fail --silent --show-error https://stream-api.koratv.click/healthz >/dev/null
+            curl --fail --silent --show-error https://medic.cymru/player.html >/dev/null
