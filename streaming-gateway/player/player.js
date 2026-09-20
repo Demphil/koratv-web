@@ -9,7 +9,34 @@ let expiryTimer;
 const notifyParent = (state, message = '') => {
   if (window.parent !== window) window.parent.postMessage({ source: 'koratv-player', state, message }, '*');
 };
+
+function embedIntegrityOk() {
+  const viewportOk = window.innerWidth >= 320 && window.innerHeight >= 420;
+  const ads = [...document.querySelectorAll('.ad-sidebar')];
+  const adsOk = ads.length >= 2 && ads.every((ad) => {
+    const style = getComputedStyle(ad);
+    const rect = ad.getBoundingClientRect();
+    return style.display !== 'none'
+      && style.visibility !== 'hidden'
+      && Number(style.opacity) > 0
+      && rect.width >= 90
+      && rect.height >= 80;
+  });
+  return viewportOk && adsOk;
+}
+
+function enforceEmbedIntegrity() {
+  if (embedIntegrityOk()) return true;
+  hls?.destroy();
+  video.removeAttribute('src');
+  video.load();
+  showError('تعذر تشغيل البث', 'يجب تضمين المشغل كاملاً بدون قص أو إخفاء عناصر الصفحة.');
+  notifyParent('error', 'player_integrity_failed');
+  return false;
+}
+
 async function start() {
+  if (!enforceEmbedIntegrity()) return;
   notifyParent('connecting');
   if (!entry) throw new Error('Missing playback ticket. Open the match again.');
   if (!Hls.isSupported()) throw new Error('This browser does not support the required MediaSource playback.');
@@ -92,6 +119,12 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'F12' || ((event.ctrlKey || event.metaKey) && event.shiftKey && /^[ijc]$/i.test(event.key))) event.preventDefault();
 });
 window.addEventListener('pagehide', () => { clearTimeout(expiryTimer); hls?.destroy(); });
+window.addEventListener('resize', () => {
+  if (hls) enforceEmbedIntegrity();
+});
+setInterval(() => {
+  if (hls) enforceEmbedIntegrity();
+}, 15000);
 loadWatchNews();
 start().catch(() => {
   showError('عذراً، البث غير متاح الآن', 'مصدر القناة غير متوفر حالياً.');

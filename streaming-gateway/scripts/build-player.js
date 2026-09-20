@@ -10,9 +10,9 @@ await cp(require.resolve('hls.js/dist/hls.min.js'), 'dist/hls.min.js');
 await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\n`);
 await writeFile('dist/headers.txt', [
   'Set these HTTP response headers on the player host:',
-  `Content-Security-Policy: default-src 'none'; script-src 'self' https: 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; media-src blob:; connect-src https:; worker-src blob:; frame-ancestors 'self' https://koratv.click; base-uri 'none'; form-action 'none'`,
+  `Content-Security-Policy: default-src 'none'; script-src 'self' https: 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; media-src blob:; connect-src https:; worker-src blob:; frame-ancestors https: http:; base-uri 'none'; form-action 'none'`,
   'Referrer-Policy: no-referrer',
   'Cache-Control: no-store',
   'X-Content-Type-Options: nosniff',
-  'Do not send X-Frame-Options on this host; CSP frame-ancestors allows koratv.click and denies other sites.',
+  'Do not send X-Frame-Options on this host; public embeds are controlled by the in-player integrity guard.',
 ].join('\n'));
