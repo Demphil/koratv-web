@@ -48,7 +48,6 @@ export default async function WatchPage({ params, searchParams }) {
   const resolvedParams = await params;
   const resolvedSearchParams = await searchParams;
   const routeToken = decodeURIComponent(resolvedParams.channelName);
-  const abr = resolvedSearchParams?.abr !== "0";
   const matchId = resolvedSearchParams?.matchId || "";
   const seo = await getWatchSeoDetails({ routeToken, matchId });
   const channelName = seo.playerChannelName || routeToken;
@@ -65,7 +64,7 @@ export default async function WatchPage({ params, searchParams }) {
         <h1 className="player-title">{seo.title}</h1>
         <p className="player-seo-description">{seo.description}</p>
         <div className="alert-box">تنبيه: في حال توقف البث، قم بتحديث الصفحة أو جرّب جودة أقل.</div>
-        <SecureVideoPlayer channelName={channelName} matchId={matchId || seo.matchId} publicStreamId={publicStreamId} abr={abr} />
+        <SecureVideoPlayer channelName={channelName} matchId={matchId || seo.matchId} publicStreamId={publicStreamId} />
         <WatchNews />
       </section>
     </main>

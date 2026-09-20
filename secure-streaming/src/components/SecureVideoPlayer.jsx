@@ -6,9 +6,7 @@ import "video.js/dist/video-js.css";
 import "@videojs/http-streaming";
 
 const QUALITY_OPTIONS = [
-  { id: "1080p", type: "quality", label: "سيرفر 1", sub: "1080 HD", file: "1080p.m3u8" },
-  { id: "720p", type: "quality", label: "سيرفر 2", sub: "720 HD", file: "720p.m3u8" },
-  { id: "360p", type: "quality", label: "سيرفر 3", sub: "360 SD", file: "360p.m3u8" }
+  { id: "origin", type: "source", label: "البث الأصلي", sub: "Original" }
 ];
 
 const DEFAULT_AD_SCRIPTS = [
@@ -26,9 +24,8 @@ function configuredAdScripts() {
   return custom.length ? custom : DEFAULT_AD_SCRIPTS;
 }
 
-function buildAbrSrc(channelName, server, token) {
-  const selected = server?.file ? server : QUALITY_OPTIONS.find((item) => item.id === server) || QUALITY_OPTIONS[0];
-  return `/api/abr/${encodeURIComponent(channelName)}/${selected.file}?token=${encodeURIComponent(token)}`;
+function buildStreamSrc(channelName, token) {
+  return `/api/stream/${encodeURIComponent(channelName)}?token=${encodeURIComponent(token)}`;
 }
 
 function parentOrigin() {
@@ -50,12 +47,12 @@ function opaqueWatchId(value) {
   return String(hash).padStart(10, "0");
 }
 
-export default function SecureVideoPlayer({ channelName, matchId = "", publicStreamId = "", embed = false, abr = true }) {
+export default function SecureVideoPlayer({ channelName, matchId = "", publicStreamId = "", embed = false }) {
   const videoRef = useRef(null);
   const playerRef = useRef(null);
   const tokenRef = useRef("");
   const activeChannelRef = useRef(channelName);
-  const [selectedServerId, setSelectedServerId] = useState("1080p");
+  const [selectedServerId, setSelectedServerId] = useState("origin");
   const [languageServers, setLanguageServers] = useState([]);
   const [blocked, setBlocked] = useState("");
   const [adNotice, setAdNotice] = useState("");
@@ -108,7 +105,6 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
             type: "language",
             label: item.language.toUpperCase(),
             sub: item.language === "fr" ? "Audio FR" : "Audio EN",
-            file: "720p.m3u8",
             channelName: item.channelName
           }));
         if (!disposed) setLanguageServers(nextServers);
@@ -182,7 +178,7 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
 
     async function boot() {
       const data = await issueToken();
-      const src = abr ? buildAbrSrc(channelName, QUALITY_OPTIONS[0], data.token) : data.streamUrl;
+      const src = data.streamUrl || buildStreamSrc(channelName, data.token);
       if (disposed || !videoRef.current) return;
 
       playerRef.current = videojs(videoRef.current, {
@@ -209,13 +205,14 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
         playerRef.current = null;
       }
     };
-  }, [channelName, abr]);
+  }, [channelName]);
 
   useEffect(() => {
-    if (!playerRef.current || !abr) return;
+    if (!playerRef.current) return;
     const allServers = [...QUALITY_OPTIONS, ...languageServers];
     const selected = allServers.find((item) => item.id === selectedServerId) || QUALITY_OPTIONS[0];
     const targetChannelName = selected.channelName || channelName;
+    if (targetChannelName === activeChannelRef.current && selected.id === "origin") return;
 
     async function switchServer() {
       try {
@@ -230,7 +227,7 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
         tokenRef.current = data.token;
         activeChannelRef.current = targetChannelName;
         const wasPaused = playerRef.current.paused();
-        playerRef.current.src({ src: buildAbrSrc(targetChannelName, selected, data.token), type: "application/x-mpegURL" });
+        playerRef.current.src({ src: data.streamUrl || buildStreamSrc(targetChannelName, data.token), type: "application/x-mpegURL" });
         if (!wasPaused) playerRef.current.play().catch(() => {});
       } catch {
         setBlocked("تعذر تشغيل هذا السيرفر الآن.");
@@ -238,7 +235,7 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
     }
 
     switchServer();
-  }, [selectedServerId, languageServers, channelName, embed, abr]);
+  }, [selectedServerId, languageServers, channelName, embed]);
 
   useEffect(() => {
     if (blocked && playerRef.current) playerRef.current.pause();
@@ -289,7 +286,8 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
       if (playerRef.current) {
         const allServers = [...QUALITY_OPTIONS, ...languageServers];
         const selected = allServers.find((item) => item.id === selectedServerId) || QUALITY_OPTIONS[0];
-        playerRef.current.src({ src: buildAbrSrc(activeChannelRef.current, selected, data.token), type: "application/x-mpegURL" });
+        const targetChannelName = selected.channelName || activeChannelRef.current;
+        playerRef.current.src({ src: data.streamUrl || buildStreamSrc(targetChannelName, data.token), type: "application/x-mpegURL" });
         playerRef.current.play().catch(() => {});
       }
     } catch {

@@ -8,7 +8,6 @@ export default async function EmbedPage({ params, searchParams }) {
   const resolvedSearchParams = await searchParams;
   const requestHeaders = await headers();
   const routeToken = decodeURIComponent(resolvedParams.channelName);
-  const abr = resolvedSearchParams?.abr !== "0";
   const matchId = resolvedSearchParams?.matchId || "";
   const target = await getEmbedTarget({ routeToken, matchId });
   const channelName = target.channelName || routeToken;
@@ -30,7 +29,7 @@ export default async function EmbedPage({ params, searchParams }) {
     <main className="embed-page">
       <section className="player-card">
         <div className="alert-box">تنبيه: إذا توقف البث أو واجهت تقطيعاً، يرجى تجربة سيرفر أو جودة أخرى.</div>
-        <SecureVideoPlayer channelName={channelName} matchId={matchId || target.match?.match_id || ""} publicStreamId={publicStreamId} embed abr={abr} />
+        <SecureVideoPlayer channelName={channelName} matchId={matchId || target.match?.match_id || ""} publicStreamId={publicStreamId} embed />
       </section>
     </main>
   );

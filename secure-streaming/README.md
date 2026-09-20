@@ -5,11 +5,11 @@ This is a Node/Next.js streaming control plane for purchased IPTV links. The ori
 ## Folder Structure
 
 - `scripts/import-m3u.js` parses the private M3U file and matches entries with `../assets/js/streams.js`.
+- `scripts/refresh-streaming-data.js` is the manual full refresh pipeline: clean match data, fetch matches, refresh IPTV URLs, then audit working channel links.
 - `supabase/migrations/001_channels.sql` creates the private `channels` table and audit table.
 - `src/app/api/stream-token/route.js` issues short-lived stream tokens.
 - `src/app/api/stream/[channelName]/route.js` proxies HLS playlists and media segments with encrypted opaque segment tickets.
-- `src/server/transcoder.js` starts FFmpeg ABR transcoding when enabled.
-- `src/app/api/abr/[channelName]/[[...path]]/route.js` serves FFmpeg-generated 1080p/720p/360p HLS output.
+- The player uses the original provider HLS quality only. FFmpeg/ABR transcoding has been removed.
 - `src/app/watch/[channelName]/page.jsx` is the first-party watch page.
 - `src/app/embed/[channelName]/page.jsx` is the iframe-friendly embed page with ad/integrity checks.
 
@@ -40,6 +40,20 @@ npm run sync:iptv:dry
 npm run sync:iptv
 ```
 
+To run the full manual refresh in the exact operational order:
+
+```bash
+npm run refresh:manual:dry
+npm run refresh:manual
+```
+
+From the repository root you can run the same pipeline with:
+
+```bash
+npm run refresh:streaming:dry
+npm run refresh:streaming
+```
+
 Run the background cron next to the Next.js PM2 app:
 
 ```bash
@@ -57,4 +71,4 @@ npm run dev
 
 ## Important Deployment Note
 
-Real FFmpeg transcoding cannot run on Cloudflare Pages. Deploy this `secure-streaming` app to a Node server/VPS/container with FFmpeg installed, or keep `TRANSCODE_ENABLED=false` and use the secure HLS proxy only.
+No FFmpeg process is required. Deploy this app with the secure HLS proxy and keep the provider URL as the single source quality.

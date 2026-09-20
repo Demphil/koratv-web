@@ -15,6 +15,8 @@
     "sync:matches:dry": "node scripts/sync-matches-from-source.js --dry-run",
     "sync:iptv": "node scripts/sync-iptv-provider.js",
     "sync:iptv:dry": "node scripts/sync-iptv-provider.js --dry-run",
+    "refresh:manual": "node scripts/refresh-streaming-data.js",
+    "refresh:manual:dry": "node scripts/refresh-streaming-data.js --dry-run",
     "cron:iptv-provider": "node scripts/iptv-provider-cron.js",
     "cron:matches": "node scripts/match-sync-cron.js",
     "export:local": "node scripts/export-local-channels.js",

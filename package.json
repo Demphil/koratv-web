@@ -20,7 +20,9 @@
     "seo:apply": "node scripts/apply-seo.js",
     "seo:check": "node scripts/check-seo.js",
     "indexnow": "node scripts/submit-indexnow.js",
-    "matches:metadata": "node qa-media/metadata-scraper.js --once"
+    "matches:metadata": "node qa-media/metadata-scraper.js --once",
+    "refresh:streaming": "npm --prefix secure-streaming run refresh:manual",
+    "refresh:streaming:dry": "npm --prefix secure-streaming run refresh:manual:dry"
   },
   "author": "Your Name",
   "license": "MIT"

@@ -72,6 +72,64 @@ function withTimeout(promise, timeoutMs, label) {
   return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeout));
 }
 
+async function mapWithConcurrency(items, limit, worker) {
+  const output = [];
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      output[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return output;
+}
+
+async function isWorkingHlsUrl(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "accept": "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
+        "user-agent": "KoraLiveProviderProbe/1.0"
+      }
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return false;
+    }
+    const text = await response.text();
+    return text.trimStart().startsWith("#EXTM3U");
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function chooseWorkingProviderLinks(matched, { timeoutMs, concurrency, enabled }) {
+  if (!enabled) return matched;
+  const checked = await mapWithConcurrency(matched, concurrency, async (item) => {
+    const candidates = item.candidates?.length ? item.candidates : [item];
+    for (const candidate of candidates) {
+      if (await isWorkingHlsUrl(candidate.original_url, timeoutMs)) {
+        return {
+          ...item,
+          original_url: candidate.original_url,
+          source_name: candidate.source_name || item.source_name,
+          checked_candidates: candidates.indexOf(candidate) + 1
+        };
+      }
+    }
+    return null;
+  });
+  return checked.filter(Boolean);
+}
+
 async function readExistingChannels(supabase) {
   const pageSize = 1000;
   const channels = [];
@@ -123,6 +181,10 @@ export async function syncIptvProvider(options = {}) {
   const providerUrl = options.providerUrl || env("IPTV_PROVIDER_URL");
   const dryRun = Boolean(options.dryRun ?? process.argv.includes("--dry-run"));
   const timeoutMs = Number(options.timeoutMs || env("IPTV_PROVIDER_TIMEOUT_MS", DEFAULT_TIMEOUT_MS));
+  const probeTimeoutMs = Number(options.probeTimeoutMs || env("IPTV_PROVIDER_PROBE_TIMEOUT_MS", 10000));
+  const probeConcurrency = Number(options.probeConcurrency || env("IPTV_PROVIDER_PROBE_CONCURRENCY", 6));
+  const candidatesPerChannel = Number(options.candidatesPerChannel || env("IPTV_SYNC_CANDIDATES_PER_CHANNEL", 8));
+  const validateStreams = String(options.validateStreams ?? env("IPTV_VALIDATE_STREAMS", "true")) !== "false";
   const deactivateMissing = String(options.deactivateMissing ?? env("IPTV_SYNC_DEACTIVATE_MISSING", "false")) === "true";
   const sportsOnly = String(options.sportsOnly ?? env("IPTV_SYNC_ONLY_SPORTS", "true")) !== "false";
 
@@ -157,7 +219,12 @@ export async function syncIptvProvider(options = {}) {
   const entries = sportsOnly ? providerEntries.filter(isSportsProviderEntry) : providerEntries;
   const targetChannels = sportsOnly ? existingChannels.filter(isSportsChannel) : existingChannels;
   const streamNames = targetChannels.map((channel) => channel.name);
-  const matched = matchChannels(streamNames, entries);
+  const rawMatched = matchChannels(streamNames, entries, { candidatesPerChannel });
+  const matched = await chooseWorkingProviderLinks(rawMatched, {
+    timeoutMs: probeTimeoutMs,
+    concurrency: probeConcurrency,
+    enabled: validateStreams
+  });
   const { updates, unchanged, missing } = buildUpdatePayload(targetChannels, matched);
 
   log("sync_plan", {
@@ -165,12 +232,15 @@ export async function syncIptvProvider(options = {}) {
     targetChannels: targetChannels.length,
     providerEntries: providerEntries.length,
     providerSportsEntries: entries.length,
-    matched: matched.length,
+    matchedCandidates: rawMatched.length,
+    matchedWorking: matched.length,
     updates: updates.length,
     unchanged: unchanged.length,
     missing: missing.length,
     sportsOnly,
-    deactivateMissing
+    deactivateMissing,
+    validateStreams,
+    candidatesPerChannel
   });
 
   if (!dryRun && updates.length > 0) {
@@ -201,7 +271,8 @@ export async function syncIptvProvider(options = {}) {
     providerSportsEntries: entries.length,
     existingChannels: existingChannels.length,
     targetChannels: targetChannels.length,
-    matched: matched.length,
+    matchedCandidates: rawMatched.length,
+    matchedWorking: matched.length,
     updated: dryRun ? 0 : updates.length,
     wouldUpdate: updates.length,
     unchanged: unchanged.length,

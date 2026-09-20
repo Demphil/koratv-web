@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 let loaded = false;
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 function parseEnvLine(line) {
   const trimmed = line.trim();
@@ -23,8 +25,15 @@ export function loadLocalEnv() {
   if (loaded) return;
   loaded = true;
 
-  for (const fileName of [".env.local", ".env"]) {
-    const filePath = path.resolve(process.cwd(), fileName);
+  const envFiles = [
+    path.resolve(process.cwd(), ".env.local"),
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(packageRoot, ".env.local"),
+    path.resolve(packageRoot, ".env"),
+    path.resolve(packageRoot, "..", "streaming-gateway", ".env")
+  ];
+
+  for (const filePath of envFiles) {
     if (!fs.existsSync(filePath)) continue;
 
     const text = fs.readFileSync(filePath, "utf8");
