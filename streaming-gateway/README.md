@@ -26,7 +26,7 @@ Apply `supabase/live_matches.sql` in Supabase, then add rows with the match ID, 
 
 Cloudflare header priority is enabled only for immediate peers in `CLOUDFLARE_HEADER_TRUSTED_PROXIES`. For Nginx on loopback, set that value to `loopback` only after locking its inbound traffic to Cloudflare and sanitizing headers. Express retains explicit `TRUSTED_PROXIES` rather than trusting arbitrary forwarding headers with `true`. The direct-facing Nginx example should strip incoming CF headers with `proxy_set_header CF-Connecting-IP "";` until Cloudflare ingress is configured.
 
-Only server-configured HTTPS HLS sources are accepted. Redirecting sources must be configured with their final URL. Include every playlist, segment and key origin in `UPSTREAM_ORIGINS`. Source DNS and these allowlists must be administrator-controlled. No transcoding occurs. MPEG-TS-only sources must first be packaged as HLS.
+Only server-configured HLS sources are accepted. HTTPS is preferred; HTTP is supported for legacy IPTV providers only when its exact origin is listed in the server-owned `UPSTREAM_ORIGINS` allowlist. Public frontend, player, and API origins always require HTTPS. Redirecting sources must be configured with their final URL. Include every playlist, segment and key origin in `UPSTREAM_ORIGINS`. Source DNS and these allowlists must be administrator-controlled. No transcoding occurs. MPEG-TS-only sources must first be packaged as HLS.
 
 Bind Express to loopback and block direct external access to port 3100. For a directly internet-facing Nginx instance use `proxy_set_header X-Forwarded-For $remote_addr`, not a client-supplied forwarding chain. If Cloudflare or another proxy fronts Nginx, configure Nginx real-IP handling for the exact trusted proxy ranges first. Set Express `TRUSTED_PROXIES` to the actual immediate proxy addresses. Both token and media requests must reach the same API hostname and resolve the same client IP. IP changes invalidate the session.
 
@@ -49,12 +49,19 @@ The entry ticket is removed from the address bar immediately and redeemed once. 
 Set `NEXT_PUBLIC_STREAM_GATEWAY_ORIGIN=https://stream-api.koratv.click` in the Next.js build environment. Import `src/components/isolated-player/MatchCard.jsx` in a server-rendered match page:
 
 ```jsx
-import MatchCard from '@/components/isolated-player/MatchCard';
+import MatchCard from "@/components/isolated-player/MatchCard";
 
-<MatchCard match={{
-  homeTeam: 'Home', awayTeam: 'Away', homeScore: 1, awayScore: 0,
-  id: 'your-match-id', status: 'LIVE', channelId: 'demo'
-}} />
+<MatchCard
+  match={{
+    homeTeam: "Home",
+    awayTeam: "Away",
+    homeScore: 1,
+    awayScore: 0,
+    id: "your-match-id",
+    status: "LIVE",
+    channelId: "demo",
+  }}
+/>;
 ```
 
 Pass your live match data as props and refresh it using the existing score-fetching flow. The component does not create another score scraper. Keep the page dynamic/private: it reads request headers and fetches the flag with `cache: 'no-store'`; do not cache bot-specific HTML at the CDN. Allow the API in frontend CSP `connect-src` and `https://medic.cymru` in `frame-src` if your frontend sets those directives.

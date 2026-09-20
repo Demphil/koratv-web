@@ -62,7 +62,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   };
   const allowedUrl = (value) => {
     const url = new URL(value);
-    if (url.protocol !== 'https:' || url.username || url.password || !config.upstreamOrigins.has(url.origin)) throw new Error('Unapproved upstream');
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || !config.upstreamOrigins.has(url.origin)) throw new Error('Unapproved upstream');
     return url;
   };
   app.get('/api/config', async (req, res) => {

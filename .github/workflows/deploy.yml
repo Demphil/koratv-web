@@ -45,6 +45,8 @@ jobs:
 
             cd "$APP_DIR"
             npm install --omit=dev
+            node scripts/setup-env.js
+            node --env-file=.env --input-type=module -e "import { loadConfig } from './config.js'; loadConfig(); console.log('Gateway configuration is valid')"
             npm test
             npm run build:player
 

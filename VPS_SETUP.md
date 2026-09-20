@@ -18,6 +18,7 @@ cd /opt/koratv/koratv-web/streaming-gateway
 npm install --omit=dev
 cp .env.example .env
 chmod 600 .env
+node scripts/setup-env.js
 nano .env
 
 npm test
