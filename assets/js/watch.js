@@ -31,7 +31,8 @@ function streamFromUrl(url, label = 'سيرفر 1') {
 async function fetchMatchById(matchId) {
   if (!matchId) return null;
   try {
-    const response = await fetch(`/api/matches?t=${Date.now()}`, { cache: 'no-store' });
+    const matchesApiOrigin = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
+    const response = await fetch(`${matchesApiOrigin}/api/matches?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) return null;
     const body = await response.json();
     const matches = Array.isArray(body.matches) ? body.matches : [];

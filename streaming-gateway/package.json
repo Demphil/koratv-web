@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node --env-file=.env server.js",
     "test": "node --test test/*.test.js",
-    "build:player": "node scripts/build-player.js"
+    "build:player": "node scripts/build-player.js",
+    "check:supabase": "node --env-file=.env scripts/check-supabase.js"
   },
   "engines": {
     "node": ">=22"

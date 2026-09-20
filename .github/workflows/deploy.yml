@@ -48,6 +48,7 @@ jobs:
             node scripts/setup-env.js
             node --env-file=.env --input-type=module -e "import { loadConfig } from './config.js'; loadConfig(); console.log('Gateway configuration is valid')"
             npm test
+            npm run check:supabase
             npm run build:player
 
             install -d -m 0755 /var/www/koratv-player

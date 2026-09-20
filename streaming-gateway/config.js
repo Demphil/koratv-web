@@ -1,4 +1,4 @@
-import { createStreamingConfigReader } from './supabase.js';
+import { createMatchesReader, createStreamingConfigReader } from './supabase.js';
 
 export function loadConfig(env = process.env) {
   const secret = env.JWT_SECRET || '';
@@ -37,6 +37,7 @@ export function loadConfig(env = process.env) {
     cloudflareProxies: (env.CLOUDFLARE_HEADER_TRUSTED_PROXIES || '').split(',').filter(Boolean),
     streams: JSON.parse(env.STREAMS_JSON || '{}'),
     upstreamOrigins: new Set((env.UPSTREAM_ORIGINS || '').split(',').filter(Boolean).map(upstreamOrigin)),
-    getStreamingConfig: createStreamingConfigReader(env)
+    getStreamingConfig: createStreamingConfigReader(env),
+    getMatches: createMatchesReader(env)
   };
 }

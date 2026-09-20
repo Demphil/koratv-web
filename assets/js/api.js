@@ -2,6 +2,8 @@
 
 const CACHE_EXPIRY_MS = 2 * 60 * 1000;
 
+const MATCHES_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
+
 const CACHE_KEY_TODAY = 'matches_cache_today_v2';
 
 const CACHE_KEY_TOMORROW = 'matches_cache_tomorrow_v2';
@@ -124,7 +126,7 @@ function normalizeStagingMatch(match) {
 
 async function getStagingMatches() {
   if (!stagingMatchesPromise) {
-    stagingMatchesPromise = fetch(`/api/matches?t=${Date.now()}`, { cache: 'no-store' })
+    stagingMatchesPromise = fetch(`${MATCHES_API_ORIGIN}/api/matches?t=${Date.now()}`, { cache: 'no-store' })
       .then((response) => {
         if (!response.ok) throw new Error(`Status: ${response.status}`);
         return response.json();

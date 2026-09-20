@@ -9,6 +9,35 @@ const issuer = 'koratv-gateway';
 const ttl = 300;
 const bot = /bot|crawler|spider|slurp|headless/i;
 
+function moroccoPart(value, options) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Casablanca', ...options }).format(date);
+}
+
+function normalizeMatch(row) {
+  const payload = row.payload || {};
+  const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
+  return {
+    ...payload,
+    match_id: row.match_id || row.id,
+    matchId: row.match_id || row.id,
+    homeTeam: row.home_team || payload.homeTeam?.name || payload.homeTeam || '',
+    awayTeam: row.away_team || payload.awayTeam?.name || payload.awayTeam || '',
+    homeLogo: payload.homeLogo || payload.homeTeam?.logo || '',
+    awayLogo: payload.awayLogo || payload.awayTeam?.logo || '',
+    scheduledAt,
+    time: payload.time || moroccoPart(scheduledAt, { hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }),
+    score: payload.score || 'VS',
+    league: row.league || payload.league || '',
+    channel: row.channel || payload.channel || '',
+    commentator: payload.commentator || '',
+    streams: Array.isArray(payload.streams) ? payload.streams : [],
+    isLive: Boolean(payload.isLive),
+    updatedAt: row.updated_at
+  };
+}
+
 export function createApp({ config, redis, fetchImpl = fetch }) {
   const app = express();
   app.disable('x-powered-by');
@@ -16,7 +45,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   app.use(express.json({ limit: '2kb' }));
   app.use((req, res, next) => {
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' });
-    const allowed = req.path === '/api/generate-token' || req.path === '/api/config' ? config.frontend : config.player;
+    const allowed = ['/api/generate-token', '/api/config', '/api/matches'].includes(req.path) ? config.frontend : config.player;
     if (req.headers.origin === allowed) {
       res.set({ 'Access-Control-Allow-Origin': allowed, Vary: 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Range' });
     }
@@ -68,6 +97,32 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   app.get('/api/config', async (req, res) => {
     try { res.json({ is_streaming_active: await enabled(req.query.matchId) }); }
     catch { res.status(503).json({ is_streaming_active: false }); }
+  });
+  app.get('/api/matches', async (req, res) => {
+    try {
+      const seen = new Set();
+      const matches = (await config.getMatches())
+        .map(normalizeMatch)
+        .filter((match) => match.homeTeam && match.awayTeam && match.scheduledAt)
+        .filter((match) => String(match.homeTeam).trim() !== String(match.awayTeam).trim())
+        .filter((match) => {
+          const key = `${String(match.homeTeam).trim().normalize('NFKC').toLocaleLowerCase('ar')}|${String(match.awayTeam).trim().normalize('NFKC').toLocaleLowerCase('ar')}|${String(match.scheduledAt).slice(0, 10)}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      const day = req.query.day;
+      const today = moroccoPart(Date.now(), { year: 'numeric', month: '2-digit', day: '2-digit' });
+      const tomorrow = moroccoPart(Date.now() + 86400000, { year: 'numeric', month: '2-digit', day: '2-digit' });
+      const filtered = day === 'today'
+        ? matches.filter((match) => moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === today)
+        : day === 'tomorrow'
+          ? matches.filter((match) => moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === tomorrow)
+          : matches;
+      res.json({ matches: filtered });
+    } catch {
+      res.status(503).json({ error: 'Match service is unavailable' });
+    }
   });
   app.post('/api/generate-token', async (req, res) => {
     try {

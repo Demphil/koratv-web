@@ -12,6 +12,12 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     trustedProxies: ['loopback'], streams: { demo: 'https://media.example.com/master.m3u8' },
     upstreamOrigins: new Set(['https://media.example.com']),
     getStreamingConfig: async () => ({ is_streaming_active: true }),
+    getMatches: async () => [{
+      id: 'match-1', match_id: 'match-1', home_team: 'Home', away_team: 'Away',
+      league: 'League', kickoff_time: '2026-09-20T12:00:00Z', channel: 'demo',
+      payload: { homeLogo: 'https://images.example.com/home.png', awayLogo: 'https://images.example.com/away.png' },
+      active: true, updated_at: '2026-09-20T10:00:00Z'
+    }],
   };
   const redis = {
     incr: async () => 1, expire: async () => 1,
@@ -30,6 +36,12 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   assert.equal((await request('/healthz', config.player)).status, 200);
+  const matchesResponse = await request('/api/matches', config.frontend);
+  assert.equal(matchesResponse.status, 200);
+  assert.equal(matchesResponse.headers.get('access-control-allow-origin'), config.frontend);
+  assert.deepEqual((await matchesResponse.json()).matches.map(({ matchId, homeTeam, awayTeam }) => ({ matchId, homeTeam, awayTeam })), [
+    { matchId: 'match-1', homeTeam: 'Home', awayTeam: 'Away' }
+  ]);
   assert.equal((await request('/api/generate-token', 'https://bad.example', { channel: 'demo' })).status, 403);
   const entry = await (await request('/api/generate-token', config.frontend, { channel: 'demo' })).json();
   assert.equal((await request('/api/redeem-token', config.player, { token: entry.token }, '203.0.113.2')).status, 403);

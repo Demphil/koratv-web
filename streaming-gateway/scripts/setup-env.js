@@ -14,7 +14,7 @@ const publicValues = {
   NEXT_PUBLIC_SUPABASE_URL: { value: 'https://vzgldruuinbwslrfwjkb.supabase.co', valid: validHttpsOrigin },
   NEXT_PUBLIC_SUPABASE_ANON_KEY: {
     value: 'sb_publishable_UWDsCT0XpmEVvoy7CaMFNg_kN64Phlo',
-    valid: (value) => value.startsWith('sb_publishable_') || value.startsWith('eyJ')
+    valid: (value) => value === 'sb_publishable_UWDsCT0XpmEVvoy7CaMFNg_kN64Phlo'
   }
 };
 async function configure(path, defaults, replacements) {
