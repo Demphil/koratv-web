@@ -57,6 +57,7 @@ jobs:
             node --check scripts/daily-refresh-cron.js
             node --check scripts/refresh-streaming-data.js
 
+            cd "$APP_DIR"
             install -d -m 0755 /var/www/koratv-player
             cp -a dist/. /var/www/koratv-player/
             find /var/www/koratv-player -type d -exec chmod 0755 {} +
