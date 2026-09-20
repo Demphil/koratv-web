@@ -24,7 +24,7 @@ async function isPlayableHlsSource(sourceUrl) {
       const response = await fetch(url, {
         headers: {
           Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
-          'User-Agent': process.env.IPTV_UPSTREAM_USER_AGENT || 'KoraLiveProviderProbe/1.0'
+          'User-Agent': process.env.IPTV_UPSTREAM_USER_AGENT || 'VLC/3.0.20 LibVLC/3.0.20'
         },
         redirect: 'follow',
         signal: AbortSignal.timeout(7000)

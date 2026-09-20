@@ -19,7 +19,7 @@ test('configuration accepts independent secrets and HTTPS origins', () => {
   const config = loadConfig(valid);
   assert.equal(config.api, valid.PUBLIC_API_ORIGIN);
   assert.equal(config.sessionTtl, 7200);
-  assert.equal(config.upstreamUserAgent, 'KoraLiveProviderProbe/1.0');
+  assert.equal(config.upstreamUserAgent, 'VLC/3.0.20 LibVLC/3.0.20');
   assert.ok(config.upstreamOrigins.has('https://media.example.com'));
 });
 

@@ -39,7 +39,7 @@ export async function fetchUpstream(url, request) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, {
     headers: {
-      "User-Agent": process.env.IPTV_UPSTREAM_USER_AGENT || "KoraLiveProviderProbe/1.0",
+      "User-Agent": process.env.IPTV_UPSTREAM_USER_AGENT || "VLC/3.0.20 LibVLC/3.0.20",
       "Accept": "*/*"
     },
     redirect: "follow",
