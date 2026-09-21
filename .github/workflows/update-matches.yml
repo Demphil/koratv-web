@@ -14,6 +14,12 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       GEMINI_ENRICH_AFTER_MATCH_SYNC: "false"
       SUPABASE_MATCHES_TABLE: matches
+      IPTV_PROVIDER_HOST: ${{ secrets.IPTV_PROVIDER_HOST }}
+      IPTV_PROVIDER_BACKUP_HOST: ${{ secrets.IPTV_PROVIDER_BACKUP_HOST }}
+      IPTV_PROVIDER_USERNAME: ${{ secrets.IPTV_PROVIDER_USERNAME }}
+      IPTV_PROVIDER_PASSWORD: ${{ secrets.IPTV_PROVIDER_PASSWORD }}
+      IPTV_PROVIDER_TYPE: ${{ secrets.IPTV_PROVIDER_TYPE }}
+      IPTV_PROVIDER_OUTPUT: ${{ secrets.IPTV_PROVIDER_OUTPUT }}
 
     steps:
       - name: Checkout Repository
@@ -33,3 +39,8 @@ jobs:
       - name: Sync matches and enrich broadcasters
         working-directory: secure-streaming
         run: npm run sync:matches
+
+      - name: Sync IPTV provider links
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: secure-streaming
+        run: npm run sync:iptv
