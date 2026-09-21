@@ -1,28 +1,37 @@
-name: Update Matches Data
+name: Sync IPTV Links
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: "0 */6 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: sync-iptv
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
-  update-matches:
+  sync-iptv:
+    name: Refresh Supabase IPTV links
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      GEMINI_ENRICH_AFTER_MATCH_SYNC: "false"
-      SUPABASE_MATCHES_TABLE: matches
       IPTV_PROVIDER_HOST: ${{ secrets.IPTV_PROVIDER_HOST }}
       IPTV_PROVIDER_BACKUP_HOST: ${{ secrets.IPTV_PROVIDER_BACKUP_HOST }}
       IPTV_PROVIDER_USERNAME: ${{ secrets.IPTV_PROVIDER_USERNAME }}
       IPTV_PROVIDER_PASSWORD: ${{ secrets.IPTV_PROVIDER_PASSWORD }}
       IPTV_PROVIDER_TYPE: ${{ secrets.IPTV_PROVIDER_TYPE }}
       IPTV_PROVIDER_OUTPUT: ${{ secrets.IPTV_PROVIDER_OUTPUT }}
+      IPTV_VALIDATE_STREAMS: "false"
+      IPTV_SYNC_DEACTIVATE_MISSING: "true"
+      IPTV_SYNC_ONLY_SPORTS: "true"
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -36,11 +45,7 @@ jobs:
         working-directory: secure-streaming
         run: npm ci
 
-      - name: Sync matches and enrich broadcasters
+      - name: Fetch provider playlist and replace stream links
         working-directory: secure-streaming
-        run: npm run sync:matches
+        run: npm run sync:iptv:links
 
-      - name: Sync IPTV provider links
-        if: github.event_name == 'workflow_dispatch'
-        working-directory: secure-streaming
-        run: npm run sync:iptv

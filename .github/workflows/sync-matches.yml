@@ -1,0 +1,87 @@
+name: Sync Matches
+
+on:
+  schedule:
+    - cron: "59 22 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-matches
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  sync-matches:
+    name: Refresh Supabase matches
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GEMINI_ENRICH_AFTER_MATCH_SYNC: "false"
+      SUPABASE_MATCHES_TABLE: matches
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: secure-streaming/package-lock.json
+
+      - name: Install secure streaming dependencies
+        working-directory: secure-streaming
+        run: npm ci
+
+      - name: Delete old matches and scrape new matches
+        working-directory: secure-streaming
+        run: npm run sync:matches:daily
+
+  deploy-pages:
+    name: Redeploy GitHub Pages frontend
+    needs: sync-matches
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare static frontend artifact
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          rsync -a ./ _site/ \
+            --exclude .git \
+            --exclude .github \
+            --exclude _site \
+            --exclude node_modules \
+            --exclude secure-streaming/node_modules \
+            --exclude streaming-gateway/node_modules \
+            --exclude secure-streaming/.next \
+            --exclude streaming-gateway/dist \
+            --exclude "**/.env*" \
+            --exclude "**/*.log"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
