@@ -89,6 +89,46 @@ function normalizeMatch(row, config) {
   };
 }
 
+function normalizeMatchName(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase('ar');
+}
+
+function matchCompletenessScore(match) {
+  let score = 0;
+  if (match.sourceReady) score += 20;
+  if (match.sourceAvailable) score += 10;
+  if (match.playbackState === 'live') score += 12;
+  if (match.playbackState === 'ended') score += 8;
+  if (match.league && !/^league$/i.test(String(match.league).trim())) score += 8;
+  if (match.homeLogo) score += 4;
+  if (match.awayLogo) score += 4;
+  if (match.score && match.score !== 'VS') score += 5;
+  if (Number.isFinite(Number(match.liveMinute))) score += 3;
+  if ((match.yellowCards?.home || match.yellowCards?.away || match.redCards?.home || match.redCards?.away)) score += 3;
+  if (Array.isArray(match.goals) && match.goals.length) score += 2;
+  return score;
+}
+
+function dedupeNormalizedMatches(matches) {
+  const byKey = new Map();
+  for (const match of matches) {
+    const teams = [normalizeMatchName(match.homeTeam), normalizeMatchName(match.awayTeam)].sort().join('|');
+    const key = `${teams}|${String(match.scheduledAt || '').slice(0, 10)}`;
+    const current = byKey.get(key);
+    if (!current || matchCompletenessScore(match) > matchCompletenessScore(current)) byKey.set(key, match);
+  }
+  return [...byKey.values()];
+}
+
 function allowedMatch(match) {
   return isAllowedMatch({
     league: match.league,
@@ -188,17 +228,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   });
   app.get('/api/matches', async (req, res) => {
     try {
-      const seen = new Set();
-      const matches = (await config.getMatches())
+      const matches = dedupeNormalizedMatches((await config.getMatches())
         .map((row) => normalizeMatch(row, config))
         .filter((match) => match.homeTeam && match.awayTeam && match.scheduledAt)
-        .filter((match) => String(match.homeTeam).trim() !== String(match.awayTeam).trim())
-        .filter((match) => {
-          const key = `${String(match.homeTeam).trim().normalize('NFKC').toLocaleLowerCase('ar')}|${String(match.awayTeam).trim().normalize('NFKC').toLocaleLowerCase('ar')}|${String(match.scheduledAt).slice(0, 10)}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
+        .filter((match) => normalizeMatchName(match.homeTeam) !== normalizeMatchName(match.awayTeam)));
       const day = req.query.day;
       const today = moroccoPart(Date.now(), { year: 'numeric', month: '2-digit', day: '2-digit' });
       const tomorrow = moroccoPart(Date.now() + 86400000, { year: 'numeric', month: '2-digit', day: '2-digit' });

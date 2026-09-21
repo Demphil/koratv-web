@@ -318,6 +318,55 @@ function renderMatch(match) {
   `;
 }
 
+function normalizeMatchName(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase('ar');
+}
+
+function matchCanonicalKey(match) {
+  const first = normalizeMatchName(match.homeTeam?.name || match.homeTeam);
+  const second = normalizeMatchName(match.awayTeam?.name || match.awayTeam);
+  const teams = [first, second].sort().join('|');
+  const date = String(match.scheduledAt || '').slice(0, 10) || String(match.time || '');
+  return `${teams}|${date}`;
+}
+
+function matchCompletenessScore(match) {
+  let score = 0;
+  if (match.sourceReady === true) score += 20;
+  if (match.sourceAvailable === true) score += 10;
+  if (match.playbackState === 'live') score += 14;
+  if (match.playbackState === 'ended') score += 8;
+  if (match.league && !/^league$/i.test(String(match.league).trim())) score += 8;
+  if (match.homeTeam?.logo) score += 4;
+  if (match.awayTeam?.logo) score += 4;
+  if (match.score && match.score !== 'VS') score += 5;
+  if (Number.isFinite(Number(match.liveMinute))) score += 3;
+  if (cardsTotal(match.yellowCards) || cardsTotal(match.redCards)) score += 3;
+  if (Array.isArray(match.goals) && match.goals.length) score += 2;
+  return score;
+}
+
+function dedupeMatches(matches) {
+  const byKey = new Map();
+  for (const match of matches) {
+    const key = matchCanonicalKey(match);
+    const current = byKey.get(key);
+    if (!current || matchCompletenessScore(match) > matchCompletenessScore(current)) {
+      byKey.set(key, match);
+    }
+  }
+  return [...byKey.values()];
+}
+
 function matchIdentity(match) {
   return match.matchId || match.match_id || `${match.homeTeam.name}-${match.awayTeam.name}-${match.scheduledAt?.slice(0, 10) || 'undated'}`;
 }
@@ -426,19 +475,14 @@ async function loadAndRenderMatches(options = {}) {
   ]);
 
   hideLoading();
-  const allMatches = [...rawTodayMatches, ...rawTomorrowMatches]
-    .filter(match => match?.homeTeam?.name && match?.awayTeam?.name && matchStartDate(match));
+  const allMatches = dedupeMatches([...rawTodayMatches, ...rawTomorrowMatches]
+    .filter(match => match?.homeTeam?.name && match?.awayTeam?.name && matchStartDate(match)));
   const now = new Date();
 
   const trueTodayMatches = [];
   const trueTomorrowMatches = [];
 
-  const seenMatches = new Set();
   allMatches.forEach(match => {
-      const matchKey = match.matchId || match.match_id || `${match.homeTeam.name}-${match.awayTeam.name}-${match.scheduledAt?.slice(0, 10) || 'undated'}`;
-      if (seenMatches.has(matchKey)) return;
-      seenMatches.add(matchKey);
-      
       const day = getMoroccoDay(match.scheduledAt, new Date());
       if (day === 'today' || (day === 'yesterday' && match.playbackState === 'ended')) trueTodayMatches.push(match);
       else if (day === 'tomorrow') trueTomorrowMatches.push(match);
