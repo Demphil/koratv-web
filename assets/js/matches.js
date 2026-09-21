@@ -561,6 +561,8 @@ function setupTabs() {
         if (!activeTab || !inactiveTab || !activeContainer || !inactiveContainer) return;
         activeTab.classList.add('active');
         inactiveTab.classList.remove('active');
+        activeContainer.classList.add('active');
+        inactiveContainer.classList.remove('active');
         activeContainer.style.display = 'grid';
         inactiveContainer.style.display = 'none';
     };
