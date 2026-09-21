@@ -242,7 +242,8 @@ export function matchChannels(streamNames, m3uEntries, options = {}) {
       if (candidatesPerChannel > 1) {
         item.candidates = candidates.slice(0, candidatesPerChannel).map((candidate) => ({
           original_url: candidate.url,
-          source_name: candidate.name
+          source_name: candidate.name,
+          group: candidate.group || ""
         }));
       }
       return item;

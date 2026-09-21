@@ -44,9 +44,10 @@ function clampLiveMinute(row) {
 }
 
 function normalizeCardCount(value) {
+  if (typeof value === 'number') return { home: Number.isFinite(value) ? value : 0, away: 0 };
   if (!value || typeof value !== 'object') return null;
-  const home = Number(value.home ?? value.homeTeam ?? value.local ?? 0);
-  const away = Number(value.away ?? value.awayTeam ?? value.visitor ?? 0);
+  const home = Number(value.home ?? value.homeTeam ?? value.local ?? value.teamA ?? value.first ?? value[0] ?? 0);
+  const away = Number(value.away ?? value.awayTeam ?? value.visitor ?? value.teamB ?? value.second ?? value[1] ?? 0);
   return {
     home: Number.isFinite(home) ? home : 0,
     away: Number.isFinite(away) ? away : 0
@@ -110,7 +111,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     });
     const allowed = ['/api/generate-token', '/api/config', '/api/matches'].includes(req.path) ? config.frontend : config.player;
     if (req.headers.origin === allowed) {
-      res.set({ 'Access-Control-Allow-Origin': allowed, Vary: 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Range' });
+      res.set({ 'Access-Control-Allow-Origin': allowed, Vary: 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range' });
     }
     if (req.method === 'OPTIONS') return res.sendStatus(req.headers.origin === allowed ? 204 : 403);
     next();
@@ -161,6 +162,22 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     const approved = config.upstreamOrigins.has(url.origin) || runtimeOrigins.has(url.origin);
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || blockedHost.test(url.hostname) || !approved) throw new Error('Unapproved upstream');
     return url;
+  };
+  const publicQualities = (playback = {}) => {
+    const seen = new Set();
+    return (Array.isArray(playback.qualities) ? playback.qualities : [])
+      .map((quality) => ({
+        label: String(quality?.label || '').trim(),
+        height: Number(quality?.height || 0)
+      }))
+      .filter((quality) => quality.label && !seen.has(quality.label) && seen.add(quality.label))
+      .sort((a, b) => b.height - a.height);
+  };
+  const selectStreamUrl = (playback = {}, requestedQuality = '') => {
+    const quality = String(requestedQuality || '').trim().toLowerCase();
+    const sources = Array.isArray(playback.quality_sources) ? playback.quality_sources : [];
+    const selected = sources.find((item) => String(item?.label || '').toLowerCase() === quality);
+    return selected?.url || playback.stream_url;
   };
   app.get('/api/config', async (req, res) => {
     try {
@@ -235,7 +252,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       await redis.set(`stream-source:${sourceId}`, playback.stream_url, { EX: config.sessionTtl });
       res.json({
         token: sign({ ip: claims.ip, channel: claims.channel, matchId: claims.matchId, sourceId }, 'hls-session', config.sessionTtl),
-        expiresIn: config.sessionTtl
+        expiresIn: config.sessionTtl,
+        qualities: publicQualities(playback)
       });
     } catch { res.sendStatus(403); }
   });
@@ -251,6 +269,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       if (req.path === '/api/stream.m3u8') {
         const playback = await config.getPlayback(claims.matchId);
         if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
+        await redis.set(`stream-source:${claims.sourceId}`, selectStreamUrl(playback, req.query.quality), { EX: config.sessionTtl });
       }
       const rootSource = await redis.get(`stream-source:${claims.sourceId}`);
       if (!rootSource) return res.sendStatus(403);

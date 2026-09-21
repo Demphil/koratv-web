@@ -105,22 +105,50 @@ function liveMinuteText(match, matchDate) {
 }
 
 function cardsTotal(cards) {
+  if (typeof cards === 'number') return Number.isFinite(cards) ? cards : 0;
   if (!cards || typeof cards !== 'object') return 0;
-  const home = Number(cards.home || 0);
-  const away = Number(cards.away || 0);
+  const home = Number(cards.home ?? cards.homeTeam ?? cards.local ?? 0);
+  const away = Number(cards.away ?? cards.awayTeam ?? cards.visitor ?? 0);
   return (Number.isFinite(home) ? home : 0) + (Number.isFinite(away) ? away : 0);
+}
+
+function cardsSide(cards, side) {
+  if (!cards || typeof cards !== 'object') return 0;
+  const value = side === 'home'
+    ? Number(cards.home ?? cards.homeTeam ?? cards.local ?? 0)
+    : Number(cards.away ?? cards.awayTeam ?? cards.visitor ?? 0);
+  return Number.isFinite(value) ? value : 0;
 }
 
 function renderLiveData(match, matchDate, isLive) {
   if (!isLive && match.playbackState !== 'ended') return '';
   const score = match.score && match.score !== 'VS' ? match.score : '0 - 0';
   const goals = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 4) : [];
+  const minute = match.playbackState === 'ended' ? 'نهاية المباراة' : liveMinuteText(match, matchDate);
+  const yellowHome = cardsSide(match.yellowCards, 'home');
+  const yellowAway = cardsSide(match.yellowCards, 'away');
+  const redHome = cardsSide(match.redCards, 'home');
+  const redAway = cardsSide(match.redCards, 'away');
   return `
     <div class="live-data-strip" aria-label="بيانات المباراة الحية">
-      <span class="live-stat"><i class="fas fa-stopwatch" aria-hidden="true"></i>${match.playbackState === 'ended' ? 'نهاية' : liveMinuteText(match, matchDate)}</span>
+      <span class="live-stat"><i class="fas fa-stopwatch" aria-hidden="true"></i>${minute}</span>
       <span class="live-stat live-stat-score">${score}</span>
       <span class="live-stat"><span class="card-dot yellow"></span>${cardsTotal(match.yellowCards)}</span>
       <span class="live-stat"><span class="card-dot red"></span>${cardsTotal(match.redCards)}</span>
+    </div>
+    <div class="live-detail-panel" aria-label="تفاصيل مباشرة">
+      <div>
+        <small>الدقيقة</small>
+        <strong>${minute}</strong>
+      </div>
+      <div>
+        <small>الصفراء</small>
+        <strong><span class="card-dot yellow"></span>${yellowHome} - ${yellowAway}</strong>
+      </div>
+      <div>
+        <small>الحمراء</small>
+        <strong><span class="card-dot red"></span>${redHome} - ${redAway}</strong>
+      </div>
     </div>
     ${goals.length ? `
       <div class="match-scorers" aria-label="مسجلو الأهداف">
@@ -362,6 +390,7 @@ function matchRenderSignature(match) {
     Number.isFinite(Number(match.liveMinute)) ? String(match.liveMinute) : '',
     JSON.stringify(match.yellowCards || null),
     JSON.stringify(match.redCards || null),
+    JSON.stringify(match.goals || null),
     match.homeTeam?.logo || '',
     match.awayTeam?.logo || ''
   ].join('|');

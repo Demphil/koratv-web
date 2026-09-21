@@ -115,6 +115,37 @@ async function findMatch(client, table, matchId) {
   return byId.data;
 }
 
+async function findChannel(client, channelName) {
+  const withQualities = await client.from('channels')
+    .select('id,name,original_url,quality_variants,active')
+    .eq('name', channelName)
+    .eq('active', true)
+    .maybeSingle();
+  if (!withQualities.error) return withQualities.data;
+  if (!/quality_variants|column .* does not exist|schema cache/i.test(withQualities.error.message || '')) {
+    throw new Error(`Channel lookup unavailable (${withQualities.error.code || 'network'})`);
+  }
+  const withoutQualities = await client.from('channels')
+    .select('id,name,original_url,active')
+    .eq('name', channelName)
+    .eq('active', true)
+    .maybeSingle();
+  if (withoutQualities.error) throw new Error(`Channel lookup unavailable (${withoutQualities.error.code || 'network'})`);
+  return withoutQualities.data ? { ...withoutQualities.data, quality_variants: [] } : null;
+}
+
+function normalizeQualityVariants(channel) {
+  const seen = new Set();
+  return (Array.isArray(channel?.quality_variants) ? channel.quality_variants : [])
+    .map((variant) => ({
+      label: String(variant?.label || '').trim(),
+      height: Number(variant?.height || 0),
+      url: String(variant?.url || '').trim()
+    }))
+    .filter((variant) => variant.label && variant.url && !seen.has(variant.label) && seen.add(variant.label))
+    .sort((a, b) => b.height - a.height);
+}
+
 export function createPlaybackResolver(env) {
   const client = createServerClient(env);
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
@@ -144,22 +175,20 @@ export function createPlaybackResolver(env) {
     const channelName = String(match.channel || payload.channel || '').trim();
     if (!channelName) return { is_streaming_active: false, reason: 'channel_unavailable' };
 
-    const { data: channel, error } = await client.from('channels')
-      .select('id,name,original_url,active')
-      .eq('name', channelName)
-      .eq('active', true)
-      .maybeSingle();
-    if (error) throw new Error(`Channel lookup unavailable (${error.code || 'network'})`);
+    const channel = await findChannel(client, channelName);
     if (!channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
     if (env.CHECK_PLAYBACK_SOURCE_HEALTH !== 'false' && !(await isPlayableHlsSource(channel.original_url))) {
       return { is_streaming_active: false, reason: 'source_unavailable' };
     }
+    const qualityVariants = normalizeQualityVariants(channel);
 
     return {
       is_streaming_active: true,
       match_id: match.match_id || match.id,
       channel_id: channel.name,
       stream_url: channel.original_url,
+      qualities: qualityVariants.map(({ label, height }) => ({ label, height })),
+      quality_sources: qualityVariants,
     };
   };
 }

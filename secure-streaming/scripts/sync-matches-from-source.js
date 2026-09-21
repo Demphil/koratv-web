@@ -164,32 +164,125 @@ function normalizeLookup(value) {
 }
 
 function eventTeamSide(event = {}) {
-  const raw = String(event.team || event.side || event.teamSide || event.contestant || event.teamType || "").toLowerCase();
-  if (/home|teama|local|1/.test(raw)) return "home";
-  if (/away|teamb|visitor|2/.test(raw)) return "away";
+  const raw = String(
+    event.team
+    || event.side
+    || event.teamSide
+    || event.contestant
+    || event.teamType
+    || event.participant
+    || event.competitor
+    || event.owner
+    || event.club
+    || ""
+  ).toLowerCase();
+  if (/home|teama|local|1|الفريق الاول|صاحب الارض/.test(raw)) return "home";
+  if (/away|teamb|visitor|2|الفريق الثاني|الضيف/.test(raw)) return "away";
+  const code = String(event.teamCode || event.teamId || event.contestantId || "").toLowerCase();
+  if (/^(?:a|home|1)$/.test(code)) return "home";
+  if (/^(?:b|away|2)$/.test(code)) return "away";
   return "";
 }
 
+function collectEventObjects(value, output = [], depth = 0) {
+  if (!value || depth > 6) return output;
+  if (Array.isArray(value)) {
+    for (const item of value) collectEventObjects(item, output, depth + 1);
+    return output;
+  }
+  if (typeof value !== "object") return output;
+
+  const keys = Object.keys(value);
+  const hasEventShape = keys.some((key) => /type|event|incident|minute|time|player|scorer|card|goal|team|side|period/i.test(key));
+  if (hasEventShape && keys.some((key) => /minute|time|type|event|incident|card|goal|player|scorer/i.test(key))) {
+    output.push(value);
+  }
+
+  for (const key of keys) {
+    if (/events?|incidents?|timeline|cards?|goals?|scorers?|statistics|stats|matchFacts|keyEvents|actions|summary/i.test(key)) {
+      collectEventObjects(value[key], output, depth + 1);
+    }
+  }
+  return output;
+}
+
+function collectStatObjects(value, output = [], depth = 0) {
+  if (!value || depth > 5) return output;
+  if (Array.isArray(value)) {
+    for (const item of value) collectStatObjects(item, output, depth + 1);
+    return output;
+  }
+  if (typeof value !== "object") return output;
+  const keys = Object.keys(value);
+  if (keys.some((key) => /yellow|red|card|انذار|طرد|بطاق/i.test(key))) output.push(value);
+  for (const key of keys) {
+    if (/stats|statistics|cards|discipline|teamStats|matchStats|summary/i.test(key)) {
+      collectStatObjects(value[key], output, depth + 1);
+    }
+  }
+  return output;
+}
+
+function readSideCount(value, side) {
+  if (value == null) return null;
+  if (typeof value === "number" || /^\d+$/.test(String(value))) return Number(value);
+  if (typeof value !== "object") return null;
+  const candidates = side === "home"
+    ? [value.home, value.homeTeam, value.local, value.teamA, value.first, value[0]]
+    : [value.away, value.awayTeam, value.visitor, value.teamB, value.second, value[1]];
+  for (const candidate of candidates) {
+    const count = readSideCount(candidate, side);
+    if (Number.isFinite(count)) return count;
+  }
+  return null;
+}
+
+function addStatCardCounts(match, yellowCards, redCards) {
+  const statObjects = collectStatObjects(match);
+  for (const stats of statObjects) {
+    const yellowValue = stats.yellowCards || stats.yellow || stats.yellow_cards || stats["بطاقات صفراء"] || stats["انذارات"] || stats["إنذارات"];
+    const redValue = stats.redCards || stats.red || stats.red_cards || stats["بطاقات حمراء"] || stats["حالات طرد"] || stats["طرد"];
+    const homeYellow = readSideCount(yellowValue, "home");
+    const awayYellow = readSideCount(yellowValue, "away");
+    const homeRed = readSideCount(redValue, "home");
+    const awayRed = readSideCount(redValue, "away");
+    if (Number.isFinite(homeYellow)) yellowCards.home = Math.max(yellowCards.home, homeYellow);
+    if (Number.isFinite(awayYellow)) yellowCards.away = Math.max(yellowCards.away, awayYellow);
+    if (Number.isFinite(homeRed)) redCards.home = Math.max(redCards.home, homeRed);
+    if (Number.isFinite(awayRed)) redCards.away = Math.max(redCards.away, awayRed);
+  }
+}
+
 function normalizeMatchEvents(match = {}) {
-  const rawEvents = [
-    ...(Array.isArray(match.events) ? match.events : []),
-    ...(Array.isArray(match.incidents) ? match.incidents : []),
-    ...(Array.isArray(match.timeline) ? match.timeline : [])
-  ];
+  const rawEvents = collectEventObjects(match);
 
   const goals = [];
   const yellowCards = { home: 0, away: 0 };
   const redCards = { home: 0, away: 0 };
 
   for (const event of rawEvents) {
-    const type = String(event.type || event.eventType || event.kind || event.name || "").toLowerCase();
+    const type = String(
+      event.type
+      || event.eventType
+      || event.incidentType
+      || event.kind
+      || event.name
+      || event.title
+      || event.label
+      || event.action
+      || event.cardType
+      || ""
+    ).toLowerCase();
     const side = eventTeamSide(event);
     const minute = event.minute ?? event.time ?? event.matchMinute ?? "";
-    const player = event.player?.name || event.playerName || event.scorer?.name || event.name || "";
-    if (/goal|هدف/.test(type)) goals.push({ player, minute, team: side });
-    if (/yellow|بطاقه صفراء|بطاقة صفراء/.test(type) && side) yellowCards[side] += 1;
-    if (/red|بطاقه حمراء|بطاقة حمراء/.test(type) && side) redCards[side] += 1;
+    const player = event.player?.name || event.playerName || event.scorer?.name || event.athlete?.name || event.participantName || "";
+    const eventText = `${type} ${event.description || ""} ${event.text || ""} ${event.comment || ""}`.toLowerCase();
+    if (/goal|هدف/.test(eventText) && player) goals.push({ player, minute, team: side });
+    if (/yellow|بطاقه صفراء|بطاقة صفراء|انذار|إنذار/.test(eventText) && side) yellowCards[side] += 1;
+    if (/red|بطاقه حمراء|بطاقة حمراء|طرد/.test(eventText) && side) redCards[side] += 1;
   }
+
+  addStatCardCounts(match, yellowCards, redCards);
 
   return {
     goals,

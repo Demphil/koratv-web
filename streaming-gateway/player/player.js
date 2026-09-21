@@ -8,6 +8,8 @@ let hls;
 let expiryTimer;
 let hlsSessionToken = "";
 let activeMatchId = "";
+let currentQuality = "";
+let availableQualities = [];
 const notifyParent = (state, message = '') => {
   if (window.parent !== window) window.parent.postMessage({ source: 'koratv-player', state, message }, '*');
 };
@@ -110,8 +112,10 @@ async function start() {
     body: JSON.stringify({ token: entry }), credentials: 'omit',
   });
   if (!response.ok) throw new Error('Playback ticket expired, was already used, or access was denied.');
-  const { token, expiresIn } = await response.json();
+  const { token, expiresIn, qualities = [] } = await response.json();
   hlsSessionToken = token;
+  availableQualities = Array.isArray(qualities) ? qualities : [];
+  setupQualityControl(availableQualities);
   hls = new Hls({
     enableWorker: true,
     xhrSetup(xhr) {
@@ -130,7 +134,7 @@ async function start() {
     status.classList.remove('error');
     notifyParent('ready');
   });
-  hls.loadSource(`${STREAM_API_ORIGIN}/api/stream.m3u8`);
+  hls.loadSource(streamUrlForQuality(currentQuality));
   hls.attachMedia(video);
   expiryTimer = setTimeout(() => {
     hls.destroy();
@@ -139,6 +143,35 @@ async function start() {
     showError('انتهت جلسة المشاهدة', 'أعد فتح المباراة للمتابعة.');
     notifyParent('error', 'انتهت جلسة المشاهدة. أعد فتح المباراة للمتابعة.');
   }, expiresIn * 1000);
+}
+
+function streamUrlForQuality(quality) {
+  const url = new URL(`${STREAM_API_ORIGIN}/api/stream.m3u8`);
+  if (quality) url.searchParams.set('quality', quality);
+  return url.href;
+}
+
+function setupQualityControl(qualities) {
+  const wrapper = document.getElementById('quality-control');
+  const select = document.getElementById('quality-select');
+  if (!wrapper || !select) return;
+  const clean = qualities
+    .filter((quality) => quality?.label)
+    .filter((quality, index, list) => list.findIndex((item) => item.label === quality.label) === index);
+  select.innerHTML = '<option value="">Auto</option>' + clean
+    .map((quality) => `<option value="${escapeHtml(quality.label)}">${escapeHtml(quality.label)}</option>`)
+    .join('');
+  wrapper.hidden = clean.length === 0;
+  select.onchange = () => {
+    currentQuality = select.value || "";
+    if (!hls || !hlsSessionToken) return;
+    const wasPaused = video.paused;
+    const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    hls.stopLoad();
+    hls.loadSource(streamUrlForQuality(currentQuality));
+    hls.startLoad(currentTime);
+    if (!wasPaused) video.play().catch(() => {});
+  };
 }
 function showError(title, message) {
   status.classList.add('error');

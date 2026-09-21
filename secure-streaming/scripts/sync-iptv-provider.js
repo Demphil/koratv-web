@@ -88,6 +88,45 @@ function isSportsChannel(channel) {
   return isSportsText(channel.name);
 }
 
+function qualityFromText(value) {
+  const text = String(value || "").toLowerCase();
+  const normalized = text
+    .replace(/[\u064b-\u065f\u0670\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه");
+  if (/\b(?:2160p|4k|uhd)\b/.test(normalized)) return { label: "2160p", height: 2160, rank: 2160 };
+  if (/\b(?:1080p|fhd|full\s*hd)\b/.test(normalized)) return { label: "1080p", height: 1080, rank: 1080 };
+  if (/\b(?:720p|hd)\b/.test(normalized)) return { label: "720p", height: 720, rank: 720 };
+  if (/\b(?:576p|sd)\b/.test(normalized)) return { label: "576p", height: 576, rank: 576 };
+  if (/\b480p\b/.test(normalized)) return { label: "480p", height: 480, rank: 480 };
+  if (/\b360p\b/.test(normalized)) return { label: "360p", height: 360, rank: 360 };
+  return null;
+}
+
+function buildQualityVariants(item) {
+  const candidates = item.candidates?.length ? item.candidates : [item];
+  const byLabel = new Map();
+  for (const candidate of candidates) {
+    const quality = qualityFromText(`${candidate.source_name || ""} ${candidate.group || ""}`);
+    if (!quality || !candidate.original_url) continue;
+    const current = byLabel.get(quality.label);
+    if (!current || quality.rank > current.rank) {
+      byLabel.set(quality.label, {
+        label: quality.label,
+        height: quality.height,
+        url: candidate.original_url,
+        sourceName: candidate.source_name || item.source_name || "",
+        rank: quality.rank
+      });
+    }
+  }
+
+  return [...byLabel.values()]
+    .sort((a, b) => b.rank - a.rank)
+    .map(({ label, height, url, sourceName }) => ({ label, height, url, sourceName }));
+}
+
 async function fetchWithTimeout(url, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error(`Timed out after ${timeoutMs}ms`)), timeoutMs);
@@ -218,7 +257,9 @@ function buildUpdatePayload(existingChannels, matched) {
       continue;
     }
 
-    if (match.original_url === channel.original_url) {
+    const qualityVariants = buildQualityVariants(match);
+
+    if (match.original_url === channel.original_url && !qualityVariants.length) {
       unchanged.push(channel.name);
       continue;
     }
@@ -227,6 +268,7 @@ function buildUpdatePayload(existingChannels, matched) {
       id: channel.id,
       name: channel.name,
       original_url: match.original_url,
+      quality_variants: qualityVariants,
       active: true
     });
   }
@@ -312,7 +354,19 @@ export async function syncIptvProvider(options = {}) {
       .from("channels")
       .upsert(updates, { onConflict: "id" });
 
-    if (error) throw error;
+    if (error) {
+      const missingQualityColumn = /quality_variants|column .* does not exist|schema cache/i.test(error.message || "");
+      if (!missingQualityColumn) throw error;
+      log("quality_variants_column_missing", {
+        message: error.message,
+        action: "retrying_channel_upsert_without_quality_variants"
+      });
+      const fallbackUpdates = updates.map(({ quality_variants, ...update }) => update);
+      const { error: fallbackError } = await supabase
+        .from("channels")
+        .upsert(fallbackUpdates, { onConflict: "id" });
+      if (fallbackError) throw fallbackError;
+    }
   }
 
   if (!dryRun && deactivateMissing && missing.length > 0) {

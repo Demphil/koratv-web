@@ -100,6 +100,39 @@ video {
   user-select: none;
 }
 
+.quality-control {
+  position: absolute;
+  left: clamp(10px, 3vw, 28px);
+  top: clamp(10px, 3vw, 28px);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: rgba(14, 14, 20, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+}
+
+.quality-control label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #ffd166;
+}
+
+.quality-control select {
+  min-width: 82px;
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #111;
+  font: 800 0.78rem Cairo, Tahoma, Arial, sans-serif;
+}
+
 .player-state {
   position: absolute;
   inset: 0;

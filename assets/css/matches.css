@@ -144,20 +144,42 @@ body {
 a.match-card-link {
   text-decoration: none;
   color: inherit;
+  perspective: 1100px;
+  display: block;
 }
 .match-card {
-  background: rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.055)),
+    radial-gradient(circle at 18% 0%, rgba(255, 209, 102, 0.16), transparent 30%),
+    rgba(20, 27, 49, 0.58);
   border-radius: 10px;
   padding: 15px;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   display: flex;
   flex-direction: column;
   position: relative;
+  min-height: 238px;
+  transform-style: preserve-3d;
+  box-shadow:
+    0 18px 34px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.match-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.18), transparent 34%, transparent 70%, rgba(255, 209, 102, 0.1));
+  opacity: 0.55;
 }
 .match-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+  transform: translateY(-6px) rotateX(2deg);
+  border-color: rgba(255, 209, 102, 0.38);
+  box-shadow:
+    0 24px 44px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(255, 209, 102, 0.08) inset;
 }
 .league-info {
   font-size: 0.85rem;
@@ -253,6 +275,39 @@ html.crawler-view .match-card-link {
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.live-detail-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(7, 10, 18, 0.46), rgba(78, 34, 91, 0.28));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 18px rgba(0, 0, 0, 0.14);
+}
+.live-detail-panel div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  text-align: center;
+}
+.live-detail-panel small {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.68rem;
+  line-height: 1;
+}
+.live-detail-panel strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: #fff;
+  font-size: 0.78rem;
+  line-height: 1.2;
 }
 .live-stat {
   min-width: 0;
@@ -443,6 +498,13 @@ html.crawler-view .match-card-link {
   .team-name {
     font-size: 0.9rem;
     min-height: 30px;
+  }
+  .match-card {
+    min-height: auto;
+    padding: 13px;
+  }
+  .live-detail-panel {
+    grid-template-columns: 1fr;
   }
   .score {
     font-size: 1.3rem;

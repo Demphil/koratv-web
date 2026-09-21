@@ -16,7 +16,12 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
       is_streaming_active: true,
       match_id: 'match-1',
       channel_id: 'demo',
-      stream_url: 'https://media.example.com/master.m3u8'
+      stream_url: 'https://media.example.com/master.m3u8',
+      qualities: [{ label: '1080p', height: 1080 }, { label: '720p', height: 720 }],
+      quality_sources: [
+        { label: '1080p', height: 1080, url: 'https://media.example.com/1080/master.m3u8' },
+        { label: '720p', height: 720, url: 'https://media.example.com/720/master.m3u8' }
+      ]
     }),
     getMatches: async () => [{
       id: 'match-1', match_id: 'match-1', home_team: 'Home', away_team: 'Away',
@@ -84,11 +89,14 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal((await request('/api/redeem-token', config.player, { token: entry.token }, '203.0.113.2')).status, 403);
   const session = await (await request('/api/redeem-token', config.player, { token: entry.token })).json();
   assert.equal(session.expiresIn, 7200);
+  assert.deepEqual(session.qualities.map((quality) => quality.label), ['1080p', '720p']);
+  assert.equal(JSON.stringify(session).includes('media.example.com'), false);
   assert.equal(jwt.decode(session.token).stream_url, undefined);
   assert.equal((await request('/api/redeem-token', config.player, { token: entry.token })).status, 403);
   assert.equal((await request(`/api/stream.m3u8?token=${entry.token}`, config.player)).status, 403);
   assert.equal((await request('/api/stream.m3u8?token=invalid', config.player)).status, 403);
   assert.equal((await request(`/api/stream.m3u8?token=${session.token}`, config.player, null, '203.0.113.2')).status, 403);
+  assert.equal((await request(`/api/stream.m3u8?quality=720p`, config.player, null, '203.0.113.1', { Authorization: `Bearer ${session.token}` })).status, 200);
   const claims = jwt.decode(session.token);
   delete claims.iat;
   claims.exp = Math.floor(Date.now() / 1000) - 1;
