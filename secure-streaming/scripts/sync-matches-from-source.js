@@ -356,7 +356,7 @@ async function mergeExistingChannels(supabase, rows) {
   });
 }
 
-export async function syncMatchesFromSource({ dryRunMode = dryRun } = {}) {
+export async function collectMatchRowsFromSource() {
   const pages = [{ url: BASE_SITE_URL, dayOffset: 0 }];
   const rows = [];
 
@@ -371,16 +371,12 @@ export async function syncMatchesFromSource({ dryRunMode = dryRun } = {}) {
 
   const uniqueRows = [...new Map(rows.map((row) => [row.match_id, row])).values()];
   console.log(`Parsed ${uniqueRows.length} matches from ${BASE_SITE_URL}.`);
+  return uniqueRows;
+}
 
-  if (dryRunMode || !uniqueRows.length) {
-    for (const row of uniqueRows.slice(0, 10)) {
-      console.log(`[dry-run] ${row.home_team} vs ${row.away_team} channel=${row.channel || "trusted_source_required"}`);
-    }
-    return { parsed: uniqueRows.length, upserted: 0, enriched: null };
-  }
-
+export async function upsertMatchRows(rows) {
   const supabase = getSupabaseAdmin();
-  const rowsForUpsert = await mergeExistingChannels(supabase, uniqueRows);
+  const rowsForUpsert = await mergeExistingChannels(supabase, rows);
   const fallbackResult = await applyKoooraChannelFallbacks(supabase, rowsForUpsert);
   const finalRowsForUpsert = fallbackResult.rows;
   if (fallbackResult.updated) {
@@ -405,7 +401,20 @@ export async function syncMatchesFromSource({ dryRunMode = dryRun } = {}) {
     }
   }
 
-  return { parsed: uniqueRows.length, upserted: finalRowsForUpsert.length, koooraFallbackChannels: fallbackResult.updated, enriched: enrichmentResult };
+  return { parsed: rows.length, upserted: finalRowsForUpsert.length, koooraFallbackChannels: fallbackResult.updated, enriched: enrichmentResult };
+}
+
+export async function syncMatchesFromSource({ dryRunMode = dryRun } = {}) {
+  const uniqueRows = await collectMatchRowsFromSource();
+
+  if (dryRunMode || !uniqueRows.length) {
+    for (const row of uniqueRows.slice(0, 10)) {
+      console.log(`[dry-run] ${row.home_team} vs ${row.away_team} channel=${row.channel || "trusted_source_required"}`);
+    }
+    return { parsed: uniqueRows.length, upserted: 0, enriched: null };
+  }
+
+  return upsertMatchRows(uniqueRows);
 }
 
 async function main() {

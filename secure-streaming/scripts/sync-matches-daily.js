@@ -1,7 +1,7 @@
 import "../src/lib/loadEnv.js";
 import { pathToFileURL } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
-import { syncMatchesFromSource } from "./sync-matches-from-source.js";
+import { collectMatchRowsFromSource, upsertMatchRows } from "./sync-matches-from-source.js";
 
 const dryRun = process.argv.includes("--dry-run");
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
@@ -40,6 +40,12 @@ async function deleteRows(supabase, { table, idColumn = "id", sentinel = "__kora
 
 export async function syncMatchesDaily() {
   log("daily_matches_sync_started");
+  const rows = await collectMatchRowsFromSource();
+  const minParsed = Number(process.env.MATCH_SYNC_MIN_PARSED || 1);
+  if (!dryRun && rows.length < minParsed) {
+    throw new Error(`Refusing to clean matches because only ${rows.length} rows were parsed. Set MATCH_SYNC_MIN_PARSED lower only if this is expected.`);
+  }
+
   const supabase = getSupabaseAdmin();
 
   const cleanup = [];
@@ -47,7 +53,15 @@ export async function syncMatchesDaily() {
   cleanup.push(await deleteRows(supabase, { table: "live_matches", idColumn: "id" }));
   cleanup.push(await deleteRows(supabase, { table: matchesTable, idColumn: "id" }));
 
-  const matches = await syncMatchesFromSource({ dryRunMode: dryRun });
+  let matches;
+  if (dryRun) {
+    for (const row of rows.slice(0, 10)) {
+      console.log(`[dry-run] ${row.home_team} vs ${row.away_team} channel=${row.channel || "trusted_source_required"}`);
+    }
+    matches = { parsed: rows.length, upserted: 0, enriched: null };
+  } else {
+    matches = await upsertMatchRows(rows);
+  }
   const result = { cleanup, matches };
   log("daily_matches_sync_finished", result);
   return result;
