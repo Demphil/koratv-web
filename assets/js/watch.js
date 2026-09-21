@@ -38,9 +38,8 @@ async function fetchMatchById(matchId) {
 function playbackOptions(match) {
   if (!match) return [];
   const matchId = normalizeMatchId(match.match_id || match.matchId);
-  const channel = String(match.channel || '').trim();
-  if (!matchId || !channel) return [];
-  return [{ matchId, channel, label: channel || 'البث الرئيسي' }];
+  if (!matchId) return [];
+  return [{ matchId, label: 'البث الرئيسي' }];
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -248,7 +247,7 @@ async function loadPlayer(stream, container, loader) {
 
   const iframe = document.createElement('iframe');
   iframe.src = `${PLAYER_ORIGIN}${PLAYER_PATH}?k=${encodeURIComponent(token)}`;
-  iframe.title = `مشغل ${stream.channel}`;
+  iframe.title = 'مشغل المباراة';
   iframe.frameBorder = '0';
   iframe.scrolling = 'no';
   iframe.allowFullscreen = true;

@@ -118,7 +118,6 @@ function normalizeStagingMatch(match) {
     rawMinutes: dateParts.hour * 60 + dateParts.minute,
     score: match.score || 'VS',
     league: match.league || '',
-    channel: '',
     streams: [],
     sourceReady: match.sourceReady === true,
     sourceAvailable: match.sourceAvailable === true,

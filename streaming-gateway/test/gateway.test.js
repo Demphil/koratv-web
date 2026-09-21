@@ -71,6 +71,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   ]);
   assert.deepEqual(matchesBody.matches[0].streams, []);
   assert.equal(matchesBody.matches[0].original_url, undefined);
+  assert.equal(matchesBody.matches[0].channel, undefined);
   assert.equal(matchesBody.matches[0].sourceReady, true);
   const infoResponse = await request('/api/match-info?matchId=match-botafogo', config.player);
   assert.equal(infoResponse.status, 200);

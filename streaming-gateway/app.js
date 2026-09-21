@@ -69,7 +69,6 @@ function normalizeMatch(row, config) {
     time: payload.time || moroccoPart(scheduledAt, { hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }),
     score: payload.score || 'VS',
     league: row.league || payload.league || '',
-    channel: '',
     commentator: payload.commentator || '',
     status: payload.status || payload.state || payload.matchStatus || '',
     streams: [],
