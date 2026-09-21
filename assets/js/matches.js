@@ -328,6 +328,7 @@ function normalizeMatchName(value) {
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+    .replace(/سان دي(?:ي)?[غج]و/gi, 'سان دييغو')
     .toLocaleLowerCase('ar');
 }
 

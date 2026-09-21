@@ -30,12 +30,16 @@ const ALLOWED_LEAGUE_PATTERNS = [
   /كاس العرب|arab cup|fifa arab cup/i,
   /كاس العالم تحت \d+|fifa u(?:17|20) world cup/i,
   /كره القدم الاولمبيه|olympic football|olympics football/i,
-  /الدوري المصري الممتاز|egyptian premier league/i,
-  /البطوله الوطنيه الاحترافيه المغربيه|البطوله الاحترافيه|الدوري المغربي الممتاز|botola pro/i,
-  /الرابطه (?:التونسيه )?المحترفه الاولي(?: التونسيه)?|tunisian ligue 1/i,
-  /الرابطه (?:الجزائريه )?المحترفه الاولي(?: الجزائريه)?|algerian ligue 1/i,
   /دوري روشن السعودي|saudi pro league|roshn saudi league/i,
 ];
+
+const WOMEN_COMPETITION_PATTERNS = [
+  /دوري ابطال اوروبا.*سيدات|سيدات.*دوري ابطال اوروبا|uefa women'?s champions league|women'?s champions league/i,
+  /بطوله امم اوروبا.*سيدات|سيدات.*بطوله امم اوروبا|uefa women'?s euro|women'?s euro/i,
+  /دوري الامم الاوروبيه.*سيدات|سيدات.*دوري الامم الاوروبيه|uefa women'?s nations league/i,
+];
+
+const WOMEN_MARKERS = /سيدات|نسائي|نساء|women|women'?s|feminine|femmes/i;
 
 export function normalizeLeagueName(value) {
   return String(value || '')
@@ -49,8 +53,26 @@ export function normalizeLeagueName(value) {
     .trim();
 }
 
+export function normalizeTeamName(value) {
+  return normalizeLeagueName(value)
+    .replace(/سان دي(?:ي)?[غج]و/gi, 'سان دييغو')
+    .replace(/\bsan diego\b/gi, 'san diego')
+    .trim();
+}
+
+function isWomenCompetition(value) {
+  const normalized = normalizeLeagueName(value);
+  return Boolean(normalized && WOMEN_COMPETITION_PATTERNS.some((pattern) => pattern.test(normalized)));
+}
+
+function isWomenLeague(value) {
+  const normalized = normalizeLeagueName(value);
+  return Boolean(normalized && WOMEN_MARKERS.test(normalized));
+}
+
 export function isAllowedLeague(value) {
   const normalized = normalizeLeagueName(value);
+  if (isWomenLeague(normalized)) return isWomenCompetition(normalized);
   return Boolean(normalized && ALLOWED_LEAGUE_PATTERNS.some((pattern) => pattern.test(normalized)));
 }
 
@@ -59,17 +81,27 @@ const ALLOWED_TEAM_PATTERNS = [
   /botafogo|botafogo\s*fr|بوتافوغو|بوتافوجو|بوتافوقو/i,
 ];
 
-export function normalizeTeamName(value) {
-  return normalizeLeagueName(value);
-}
+const NATIONAL_TEAM_EXCEPTIONS = [
+  /^(?:منتخب\s*)?المغرب(?:\s*للسيدات)?$|^morocco(?:\s*women)?$|^maroc(?:\s*femmes)?$/i,
+  /^(?:منتخب\s*)?الجزا[ئي]ر(?:\s*للسيدات)?$|^algeria(?:\s*women)?$|^algerie(?:\s*femmes)?$|^algérie(?:\s*femmes)?$/i,
+];
 
 export function isAllowedTeam(value) {
   const normalized = normalizeTeamName(value);
   return Boolean(normalized && ALLOWED_TEAM_PATTERNS.some((pattern) => pattern.test(normalized)));
 }
 
+export function isAllowedNationalTeamException(value) {
+  const normalized = normalizeTeamName(value);
+  return Boolean(normalized && NATIONAL_TEAM_EXCEPTIONS.some((pattern) => pattern.test(normalized)));
+}
+
 export function isAllowedMatch({ league = '', homeTeam = '', awayTeam = '' } = {}) {
-  return isAllowedLeague(league) || isAllowedTeam(homeTeam) || isAllowedTeam(awayTeam);
+  return isAllowedLeague(league)
+    || isAllowedTeam(homeTeam)
+    || isAllowedTeam(awayTeam)
+    || isAllowedNationalTeamException(homeTeam)
+    || isAllowedNationalTeamException(awayTeam);
 }
 
 export const ALLOWED_LEAGUE_LABELS = Object.freeze([
@@ -78,8 +110,6 @@ export const ALLOWED_LEAGUE_LABELS = Object.freeze([
   'دوري المؤتمر الأوروبي', 'كأس السوبر الأوروبي', 'بطولة أمم أوروبا',
   'دوري الأمم الأوروبية', 'دوري أبطال أفريقيا', 'كأس الكونفيدرالية الأفريقية',
   'كأس السوبر الأفريقي', 'كأس أمم أفريقيا', 'بطولة أمم أفريقيا للمحليين',
-  'الدوري المصري الممتاز', 'البطولة الوطنية الاحترافية المغربية',
-  'الرابطة المحترفة الأولى التونسية', 'الرابطة المحترفة الأولى الجزائرية',
   'دوري روشن السعودي',
   'كأس آسيا', 'دوري أبطال آسيا للنخبة', 'دوري أبطال آسيا 2',
   'كأس الاتحاد الآسيوي', 'بطولات آسيا للفئات السنية',
@@ -87,9 +117,12 @@ export const ALLOWED_LEAGUE_LABELS = Object.freeze([
   'كأس العالم وتصفياته', 'كوبا أمريكا', 'الكأس الذهبية للكونكاكاف',
   'دوري أمم الكونكاكاف', 'كأس أمم أوقيانوسيا', 'كأس العرب',
   'كأس العالم تحت 17/20 سنة', 'كرة القدم الأولمبية',
+  'بطولات السيدات الأوروبية القارية',
 ]);
 
 export const ALLOWED_TEAM_LABELS = Object.freeze([
   'Inter Miami CF',
   'Botafogo',
+  'منتخب المغرب',
+  'منتخب الجزائر',
 ]);

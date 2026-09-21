@@ -2,9 +2,10 @@ import "../src/lib/loadEnv.js";
 import * as cheerio from "cheerio";
 import { fileURLToPath } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
-import { isAllowedMatch } from "../../shared/league-whitelist.mjs";
+import { isAllowedMatch, normalizeTeamName } from "../../shared/league-whitelist.mjs";
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
+const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
 const dryRun = process.argv.includes("--dry-run");
 const enrichAfterSync = process.env.GEMINI_ENRICH_AFTER_MATCH_SYNC === "true";
@@ -79,6 +80,14 @@ function slugify(value) {
     .toLowerCase();
 }
 
+function matchSlug(homeTeam, awayTeam) {
+  return `${slugify(normalizeTeamName(homeTeam))}_vs_${slugify(normalizeTeamName(awayTeam))}`;
+}
+
+function fixturesUrlForDate(date) {
+  return process.env.MATCH_SOURCE_TOMORROW_URL || `${FIXTURES_SITE_URL}/${date}`;
+}
+
 async function fetchHtml(url) {
   const response = await fetch(url, {
     headers: {
@@ -112,7 +121,7 @@ function parseMatches(html, dayOffset) {
     const league = infoItems[infoItems.length - 1] || "League";
     if (!isAllowedMatch({ league, homeTeam, awayTeam })) return;
     const commentator = infoItems[1] || "";
-    const matchId = `${slugify(homeTeam)}_vs_${slugify(awayTeam)}`;
+    const matchId = matchSlug(homeTeam, awayTeam);
 
     rows.push({
       id: `${date}_${matchId}`,
@@ -377,7 +386,7 @@ function parseKoooraMatches(html) {
       const preferredChannel = normalizeKoooraChannel(
         channelNames.find((name) => /beIN Sports Mena/i.test(name)) || channelNames[0]
       );
-      const matchId = `${slugify(homeTeam)}_vs_${slugify(awayTeam)}`;
+      const matchId = matchSlug(homeTeam, awayTeam);
       const date = String(kickoff).slice(0, 10);
       const events = normalizeMatchEvents(match);
 
@@ -450,7 +459,11 @@ async function mergeExistingChannels(supabase, rows) {
 }
 
 export async function collectMatchRowsFromSource() {
-  const pages = [{ url: BASE_SITE_URL, dayOffset: 0 }];
+  const tomorrowDate = moroccoDateParts(1);
+  const pages = [
+    { url: BASE_SITE_URL, dayOffset: 0 },
+    { url: fixturesUrlForDate(tomorrowDate), dayOffset: 1 },
+  ];
   const rows = [];
 
   for (const page of pages) {
@@ -462,8 +475,8 @@ export async function collectMatchRowsFromSource() {
     }
   }
 
-  const uniqueRows = [...new Map(rows.map((row) => [row.match_id, row])).values()];
-  console.log(`Parsed ${uniqueRows.length} matches from ${BASE_SITE_URL}.`);
+  const uniqueRows = [...new Map(rows.map((row) => [`${String(row.kickoff_time || '').slice(0, 10)}:${row.match_id}`, row])).values()];
+  console.log(`Parsed ${uniqueRows.length} matches from ${pages.map((page) => page.url).join(', ')}.`);
   return uniqueRows;
 }
 

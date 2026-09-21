@@ -4,7 +4,7 @@ import { createHash, createHmac, randomUUID, randomBytes, createCipheriv, create
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createClientIpResolver } from './client-ip.js';
-import { isAllowedMatch } from '../shared/league-whitelist.mjs';
+import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
@@ -90,7 +90,7 @@ function normalizeMatch(row, config) {
 }
 
 function normalizeMatchName(value) {
-  return String(value || '')
+  return normalizeTeamName(String(value || '')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
     .replace(/[أإآ]/g, 'ا')
@@ -98,7 +98,7 @@ function normalizeMatchName(value) {
     .replace(/ة/g, 'ه')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
+    .trim())
     .toLocaleLowerCase('ar');
 }
 
