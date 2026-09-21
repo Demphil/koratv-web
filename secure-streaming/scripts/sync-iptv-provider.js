@@ -32,6 +32,49 @@ function providerHost(url) {
   }
 }
 
+function normalizeProviderHost(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return /^https?:\/\//i.test(raw) ? raw.replace(/\/+$/, "") : `http://${raw.replace(/^\/+|\/+$/g, "")}`;
+}
+
+function xtreamM3uUrl(host, { username, password, type, output }) {
+  const base = normalizeProviderHost(host);
+  if (!base || !username || !password) return "";
+  const url = new URL("/get.php", base);
+  url.searchParams.set("username", username);
+  url.searchParams.set("password", password);
+  url.searchParams.set("type", type || "m3u_plus");
+  url.searchParams.set("output", output || "m3u8");
+  return url.href;
+}
+
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function resolveProviderUrls(options = {}) {
+  const explicit = options.providerUrl || env("IPTV_PROVIDER_URL");
+  const username = options.username || env("IPTV_PROVIDER_USERNAME") || env("IPTV_USERNAME") || env("XTREAM_USERNAME");
+  const password = options.password || env("IPTV_PROVIDER_PASSWORD") || env("IPTV_PASSWORD") || env("XTREAM_PASSWORD");
+  const type = options.type || env("IPTV_PROVIDER_TYPE", "m3u_plus");
+  const output = options.output || env("IPTV_PROVIDER_OUTPUT", "m3u8");
+  const hosts = [
+    options.host,
+    env("IPTV_PROVIDER_HOST"),
+    env("IPTV_PROVIDER_DNS"),
+    env("IPTV_DNS"),
+    env("XTREAM_HOST"),
+    env("XTREAM_DNS"),
+    env("IPTV_PROVIDER_BACKUP_HOST"),
+    env("IPTV_SAMSUNG_LG_DNS")
+  ];
+  return unique([
+    explicit,
+    ...hosts.map((host) => xtreamM3uUrl(host, { username, password, type, output }))
+  ]);
+}
+
 function isSportsText(value) {
   const text = String(value || "").toLowerCase();
   return SPORTS_INCLUDE_RE.test(text) && !NON_SPORTS_RE.test(text);
@@ -71,6 +114,19 @@ function withTimeout(promise, timeoutMs, label) {
     timeout = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
   });
   return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeout));
+}
+
+async function fetchProviderPlaylist(urls, timeoutMs) {
+  const errors = [];
+  for (const url of urls) {
+    try {
+      const text = await fetchWithTimeout(url, timeoutMs);
+      return { url, text };
+    } catch (error) {
+      errors.push(`${providerHost(url)}: ${error?.message || String(error)}`);
+    }
+  }
+  throw new Error(`All IPTV provider sources failed. ${errors.join(" | ")}`);
 }
 
 async function mapWithConcurrency(items, limit, worker) {
@@ -179,7 +235,7 @@ function buildUpdatePayload(existingChannels, matched) {
 }
 
 export async function syncIptvProvider(options = {}) {
-  const providerUrl = options.providerUrl || env("IPTV_PROVIDER_URL");
+  const providerUrls = resolveProviderUrls(options);
   const dryRun = Boolean(options.dryRun ?? process.argv.includes("--dry-run"));
   const timeoutMs = Number(options.timeoutMs || env("IPTV_PROVIDER_TIMEOUT_MS", DEFAULT_TIMEOUT_MS));
   const probeTimeoutMs = Number(options.probeTimeoutMs || env("IPTV_PROVIDER_PROBE_TIMEOUT_MS", 10000));
@@ -189,8 +245,8 @@ export async function syncIptvProvider(options = {}) {
   const deactivateMissing = String(options.deactivateMissing ?? env("IPTV_SYNC_DEACTIVATE_MISSING", "false")) === "true";
   const sportsOnly = String(options.sportsOnly ?? env("IPTV_SYNC_ONLY_SPORTS", "true")) !== "false";
 
-  if (!providerUrl) {
-    log("sync_skipped", { reason: "IPTV_PROVIDER_URL is not set" });
+  if (!providerUrls.length) {
+    log("sync_skipped", { reason: "IPTV provider credentials are not set" });
     return { ok: false, skipped: true, reason: "missing_provider_url" };
   }
 
@@ -206,15 +262,22 @@ export async function syncIptvProvider(options = {}) {
   });
 
   log("sync_started", {
-    providerHost: providerHost(providerUrl),
-    providerHash: hashUrl(providerUrl),
+    providerHost: providerHost(providerUrls[0]),
+    providerHash: hashUrl(providerUrls[0]),
+    providerSources: providerUrls.length,
     dryRun
   });
 
-  const [existingChannels, m3uText] = await Promise.all([
+  const [existingChannels, provider] = await Promise.all([
     withTimeout(readExistingChannels(supabase), timeoutMs, "Supabase channel read"),
-    withTimeout(fetchWithTimeout(providerUrl, timeoutMs), timeoutMs, "Provider M3U fetch")
+    withTimeout(fetchProviderPlaylist(providerUrls, timeoutMs), timeoutMs, "Provider M3U fetch")
   ]);
+  const m3uText = provider.text;
+  log("provider_playlist_loaded", {
+    providerHost: providerHost(provider.url),
+    providerHash: hashUrl(provider.url),
+    bytes: m3uText.length
+  });
 
   const providerEntries = parseM3uText(m3uText);
   const entries = sportsOnly ? providerEntries.filter(isSportsProviderEntry) : providerEntries;

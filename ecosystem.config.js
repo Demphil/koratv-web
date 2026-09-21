@@ -24,6 +24,7 @@ module.exports = {
       cwd: "/opt/koratv/koratv-web/secure-streaming",
       script: "scripts/daily-refresh-cron.js",
       interpreter: "node",
+      node_args: "--env-file=.env",
       exec_mode: "fork",
       instances: 1,
       autorestart: true,

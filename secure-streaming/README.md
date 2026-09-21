@@ -31,9 +31,20 @@ npm run import:m3u:dry
 npm run import:m3u
 ```
 
-5. Optional provider URL auto-sync:
+5. Provider URL auto-sync:
 
-Set `IPTV_PROVIDER_URL` in `.env.local` to the provider's dynamic M3U URL. The sync command refreshes URLs for existing Supabase channels only, so provider token changes do not require a manual import.
+Set either `IPTV_PROVIDER_URL` to the provider's full dynamic M3U URL, or set the Xtream-style pieces separately:
+
+```bash
+IPTV_PROVIDER_HOST=http://your-provider-host
+IPTV_PROVIDER_BACKUP_HOST=http://optional-backup-host
+IPTV_PROVIDER_USERNAME=your_username
+IPTV_PROVIDER_PASSWORD=your_password
+IPTV_PROVIDER_TYPE=m3u_plus
+IPTV_PROVIDER_OUTPUT=m3u8
+```
+
+The sync command builds the provider M3U URL, refreshes URLs for existing Supabase channels only, and never logs the raw provider URL or password.
 
 ```bash
 npm run sync:iptv:dry

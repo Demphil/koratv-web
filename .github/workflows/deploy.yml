@@ -38,6 +38,29 @@ jobs:
 
             test -d "$PROJECT_DIR/.git"
             test -f "$APP_DIR/.env"
+            touch "$SECURE_APP_DIR/.env"
+            chmod 600 "$SECURE_APP_DIR/.env"
+
+            set_env_value() {
+              file="$1"
+              key="$2"
+              value="$3"
+              if [ -z "$value" ]; then
+                return 0
+              fi
+              tmp="$(mktemp)"
+              grep -v "^${key}=" "$file" > "$tmp" || true
+              printf '%s=%s\n' "$key" "$value" >> "$tmp"
+              cat "$tmp" > "$file"
+              rm -f "$tmp"
+            }
+
+            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_HOST '${{ secrets.IPTV_PROVIDER_HOST }}'
+            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_BACKUP_HOST '${{ secrets.IPTV_PROVIDER_BACKUP_HOST }}'
+            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_USERNAME '${{ secrets.IPTV_PROVIDER_USERNAME }}'
+            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_PASSWORD '${{ secrets.IPTV_PROVIDER_PASSWORD }}'
+            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_TYPE '${{ secrets.IPTV_PROVIDER_TYPE }}'
+            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_OUTPUT '${{ secrets.IPTV_PROVIDER_OUTPUT }}'
 
             cd "$PROJECT_DIR"
             git fetch --prune origin main
