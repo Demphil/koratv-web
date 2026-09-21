@@ -2,7 +2,7 @@ import "../src/lib/loadEnv.js";
 import * as cheerio from "cheerio";
 import { fileURLToPath } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
-import { isAllowedLeague } from "../../shared/league-whitelist.mjs";
+import { isAllowedMatch } from "../../shared/league-whitelist.mjs";
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
@@ -110,7 +110,7 @@ function parseMatches(html, dayOffset) {
     const time = convertSourceToMoroccoTime(matchEl.find(".MT_Time").first().text().trim());
     const infoItems = matchEl.find(".MT_Info ul li").map((__, item) => $(item).text().trim()).get();
     const league = infoItems[infoItems.length - 1] || "League";
-    if (!isAllowedLeague(league)) return;
+    if (!isAllowedMatch({ league, homeTeam, awayTeam })) return;
     const commentator = infoItems[1] || "";
     const matchId = `${slugify(homeTeam)}_vs_${slugify(awayTeam)}`;
 
@@ -161,6 +161,46 @@ function normalizeLookup(value) {
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function eventTeamSide(event = {}) {
+  const raw = String(event.team || event.side || event.teamSide || event.contestant || event.teamType || "").toLowerCase();
+  if (/home|teama|local|1/.test(raw)) return "home";
+  if (/away|teamb|visitor|2/.test(raw)) return "away";
+  return "";
+}
+
+function normalizeMatchEvents(match = {}) {
+  const rawEvents = [
+    ...(Array.isArray(match.events) ? match.events : []),
+    ...(Array.isArray(match.incidents) ? match.incidents : []),
+    ...(Array.isArray(match.timeline) ? match.timeline : [])
+  ];
+
+  const goals = [];
+  const yellowCards = { home: 0, away: 0 };
+  const redCards = { home: 0, away: 0 };
+
+  for (const event of rawEvents) {
+    const type = String(event.type || event.eventType || event.kind || event.name || "").toLowerCase();
+    const side = eventTeamSide(event);
+    const minute = event.minute ?? event.time ?? event.matchMinute ?? "";
+    const player = event.player?.name || event.playerName || event.scorer?.name || event.name || "";
+    if (/goal|هدف/.test(type)) goals.push({ player, minute, team: side });
+    if (/yellow|بطاقه صفراء|بطاقة صفراء/.test(type) && side) yellowCards[side] += 1;
+    if (/red|بطاقه حمراء|بطاقة حمراء/.test(type) && side) redCards[side] += 1;
+  }
+
+  return {
+    goals,
+    yellowCards: yellowCards.home || yellowCards.away ? yellowCards : null,
+    redCards: redCards.home || redCards.away ? redCards : null
+  };
+}
+
+function matchMinute(match = {}) {
+  const value = Number(match.minute ?? match.matchMinute ?? match.currentMinute ?? match.time?.minute);
+  return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function pickExistingChannel(channelNames, candidates) {
@@ -226,13 +266,13 @@ function parseKoooraMatches(html) {
 
   for (const group of groups) {
     const league = group?.competition?.name || '';
-    if (!isAllowedLeague(league)) continue;
 
     for (const match of group.matches || []) {
       const homeTeam = match?.teamA?.name?.trim();
       const awayTeam = match?.teamB?.name?.trim();
       const kickoff = match?.startDate;
       if (!homeTeam || !awayTeam || !kickoff) continue;
+      if (!isAllowedMatch({ league, homeTeam, awayTeam })) continue;
 
       const status = String(match.status || 'FIXTURE').toUpperCase();
       const homeScore = scorePart(match.score, 'teamA');
@@ -246,6 +286,7 @@ function parseKoooraMatches(html) {
       );
       const matchId = `${slugify(homeTeam)}_vs_${slugify(awayTeam)}`;
       const date = String(kickoff).slice(0, 10);
+      const events = normalizeMatchEvents(match);
 
       rows.push({
         id: `${date}_${matchId}`,
@@ -261,6 +302,10 @@ function parseKoooraMatches(html) {
           score,
           status,
           isLive: status === 'LIVE',
+          liveMinute: matchMinute(match),
+          goals: events.goals,
+          yellowCards: events.yellowCards,
+          redCards: events.redCards,
           time: new Intl.DateTimeFormat('en-GB', {
             timeZone: 'Africa/Casablanca', hourCycle: 'h23', hour: '2-digit', minute: '2-digit'
           }).format(new Date(kickoff)),

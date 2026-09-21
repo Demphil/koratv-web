@@ -7,6 +7,7 @@ history.replaceState(null, '', location.pathname);
 let hls;
 let expiryTimer;
 let hlsSessionToken = "";
+let activeMatchId = "";
 const notifyParent = (state, message = '') => {
   if (window.parent !== window) window.parent.postMessage({ source: 'koratv-player', state, message }, '*');
 };
@@ -36,11 +37,74 @@ function enforceEmbedIntegrity() {
   return false;
 }
 
+function decodeJwtPayload(token) {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return {};
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return {};
+  }
+}
+
+function cardTotal(cards) {
+  if (!cards || typeof cards !== 'object') return 0;
+  return Number(cards.home || 0) + Number(cards.away || 0);
+}
+
+function setText(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value || '';
+}
+
+function setImage(id, src) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  if (src) {
+    element.src = src;
+    element.hidden = false;
+  } else {
+    element.hidden = true;
+  }
+}
+
+async function loadMatchPanel(matchId) {
+  if (!matchId) return;
+  try {
+    const response = await fetch(`${STREAM_API_ORIGIN}/api/match-info?matchId=${encodeURIComponent(matchId)}`, {
+      cache: 'no-store',
+      credentials: 'omit'
+    });
+    if (!response.ok) return;
+    const { match } = await response.json();
+    if (!match) return;
+    const panel = document.getElementById('match-panel');
+    panel.hidden = false;
+    setText('match-league', match.league || 'Koratv.click');
+    setText('match-state-pill', match.playbackState === 'ended' ? 'انتهت' : match.playbackState === 'live' ? 'مباشر الآن' : 'قريباً');
+    setText('match-home-name', match.homeTeam || '');
+    setText('match-away-name', match.awayTeam || '');
+    setText('match-score', match.score || 'VS');
+    setText('match-minute', match.playbackState === 'ended' ? 'النتيجة النهائية' : Number.isFinite(Number(match.liveMinute)) ? `الدقيقة ${match.liveMinute}` : match.time || '');
+    setText('match-yellow-cards', String(cardTotal(match.yellowCards)));
+    setText('match-red-cards', String(cardTotal(match.redCards)));
+    setImage('match-home-logo', match.homeLogo);
+    setImage('match-away-logo', match.awayLogo);
+    const goals = document.getElementById('match-goals');
+    const scorers = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 8) : [];
+    goals.innerHTML = scorers.map((goal) => `<span>${escapeHtml(goal.minute ? `${goal.minute}' ` : '')}${escapeHtml(goal.player)}</span>`).join('');
+  } catch {
+    // Match context is decorative; playback should not fail if it is unavailable.
+  }
+}
+
 async function start() {
   if (!enforceEmbedIntegrity()) return;
   notifyParent('connecting');
   if (!entry) throw new Error('Missing playback ticket. Open the match again.');
   if (!Hls.isSupported()) throw new Error('This browser does not support the required MediaSource playback.');
+  activeMatchId = decodeJwtPayload(entry).matchId || "";
+  loadMatchPanel(activeMatchId);
   const response = await fetch(`${STREAM_API_ORIGIN}/api/redeem-token`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token: entry }), credentials: 'omit',

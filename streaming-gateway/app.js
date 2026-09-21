@@ -4,7 +4,7 @@ import { createHash, createHmac, randomUUID, randomBytes, createCipheriv, create
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createClientIpResolver } from './client-ip.js';
-import { isAllowedLeague } from '../shared/league-whitelist.mjs';
+import { isAllowedMatch } from '../shared/league-whitelist.mjs';
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
@@ -80,8 +80,21 @@ function normalizeMatch(row, config) {
     liveMinute: playbackState === 'live' ? clampLiveMinute(row) : null,
     yellowCards: normalizeCardCount(payload.yellowCards || cards.yellow || payload.stats?.yellowCards),
     redCards: normalizeCardCount(payload.redCards || cards.red || payload.stats?.redCards),
+    goals: Array.isArray(payload.goals) ? payload.goals.slice(0, 12).map((goal) => ({
+      player: String(goal.player || goal.name || '').slice(0, 80),
+      minute: String(goal.minute || '').slice(0, 12),
+      team: String(goal.team || '').slice(0, 16)
+    })) : [],
     updatedAt: row.updated_at
   };
+}
+
+function allowedMatch(match) {
+  return isAllowedMatch({
+    league: match.league,
+    homeTeam: match.homeTeam,
+    awayTeam: match.awayTeam
+  });
 }
 
 export function createApp({ config, redis, fetchImpl = fetch }) {
@@ -178,9 +191,22 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         : day === 'tomorrow'
           ? matches.filter((match) => moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === tomorrow)
           : matches;
-      res.json({ matches: filtered.filter((match) => isAllowedLeague(match.league)) });
+      res.json({ matches: filtered.filter(allowedMatch) });
     } catch {
       res.status(503).json({ error: 'Match service is unavailable' });
+    }
+  });
+  app.get('/api/match-info', async (req, res) => {
+    try {
+      const matchId = String(req.query.matchId || '').trim();
+      if (!matchId || matchId.length > 160) return res.sendStatus(400);
+      const match = (await config.getMatches())
+        .map((row) => normalizeMatch(row, config))
+        .find((item) => (item.matchId === matchId || item.match_id === matchId) && allowedMatch(item));
+      if (!match) return res.sendStatus(404);
+      res.json({ match });
+    } catch {
+      res.status(503).json({ error: 'Match info is unavailable' });
     }
   });
   app.post('/api/generate-token', async (req, res) => {

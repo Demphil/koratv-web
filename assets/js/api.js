@@ -127,7 +127,8 @@ function normalizeStagingMatch(match) {
     commentator: match.commentator || '',
     liveMinute: Number.isFinite(Number(match.liveMinute)) ? Number(match.liveMinute) : null,
     yellowCards: match.yellowCards || null,
-    redCards: match.redCards || null
+    redCards: match.redCards || null,
+    goals: Array.isArray(match.goals) ? match.goals : []
   };
 }
 
@@ -159,7 +160,10 @@ async function getStagingMatches({ force = false } = {}) {
 export async function getTodayMatches(options = {}) {
   try {
     const matches = await getStagingMatches(options);
-    return matches.filter((match) => getMoroccoDay(match.scheduledAt) === 'today');
+    return matches.filter((match) => {
+      const day = getMoroccoDay(match.scheduledAt);
+      return day === 'today' || (day === 'yesterday' && match.playbackState === 'ended');
+    });
   } catch (error) {
     console.error(`Today matches fetch failed: ${error.message}`);
     return [];

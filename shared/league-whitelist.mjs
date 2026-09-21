@@ -39,6 +39,24 @@ export function isAllowedLeague(value) {
   return Boolean(normalized && ALLOWED_LEAGUE_PATTERNS.some((pattern) => pattern.test(normalized)));
 }
 
+const ALLOWED_TEAM_PATTERNS = [
+  /inter\s*miami|inter\s*miami\s*cf|انتر\s*ميامي|إنتر\s*ميامي/i,
+  /botafogo|botafogo\s*fr|بوتافوغو|بوتافوجو|بوتافوقو/i,
+];
+
+export function normalizeTeamName(value) {
+  return normalizeLeagueName(value);
+}
+
+export function isAllowedTeam(value) {
+  const normalized = normalizeTeamName(value);
+  return Boolean(normalized && ALLOWED_TEAM_PATTERNS.some((pattern) => pattern.test(normalized)));
+}
+
+export function isAllowedMatch({ league = '', homeTeam = '', awayTeam = '' } = {}) {
+  return isAllowedLeague(league) || isAllowedTeam(homeTeam) || isAllowedTeam(awayTeam);
+}
+
 export const ALLOWED_LEAGUE_LABELS = Object.freeze([
   'دوري أبطال أوروبا', 'الدوري الإنجليزي الممتاز', 'الدوري الإسباني',
   'الدوري الإيطالي', 'الدوري الألماني', 'الدوري الفرنسي', 'الدوري الأوروبي',
@@ -48,4 +66,9 @@ export const ALLOWED_LEAGUE_LABELS = Object.freeze([
   'الدوري المصري الممتاز', 'البطولة الوطنية الاحترافية المغربية',
   'الرابطة المحترفة الأولى التونسية', 'الرابطة المحترفة الأولى الجزائرية',
   'دوري روشن السعودي',
+]);
+
+export const ALLOWED_TEAM_LABELS = Object.freeze([
+  'Inter Miami CF',
+  'Botafogo',
 ]);

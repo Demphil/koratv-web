@@ -112,15 +112,21 @@ function cardsTotal(cards) {
 }
 
 function renderLiveData(match, matchDate, isLive) {
-  if (!isLive) return '';
+  if (!isLive && match.playbackState !== 'ended') return '';
   const score = match.score && match.score !== 'VS' ? match.score : '0 - 0';
+  const goals = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 4) : [];
   return `
     <div class="live-data-strip" aria-label="بيانات المباراة الحية">
-      <span class="live-stat"><i class="fas fa-stopwatch" aria-hidden="true"></i>${liveMinuteText(match, matchDate)}</span>
+      <span class="live-stat"><i class="fas fa-stopwatch" aria-hidden="true"></i>${match.playbackState === 'ended' ? 'نهاية' : liveMinuteText(match, matchDate)}</span>
       <span class="live-stat live-stat-score">${score}</span>
       <span class="live-stat"><span class="card-dot yellow"></span>${cardsTotal(match.yellowCards)}</span>
       <span class="live-stat"><span class="card-dot red"></span>${cardsTotal(match.redCards)}</span>
     </div>
+    ${goals.length ? `
+      <div class="match-scorers" aria-label="مسجلو الأهداف">
+        ${goals.map((goal) => `<span><i class="fas fa-futbol" aria-hidden="true"></i>${goal.minute ? `${goal.minute}' ` : ''}${goal.player}</span>`).join('')}
+      </div>
+    ` : ''}
   `;
 }
 
@@ -405,7 +411,7 @@ async function loadAndRenderMatches(options = {}) {
       seenMatches.add(matchKey);
       
       const day = getMoroccoDay(match.scheduledAt, new Date());
-      if (day === 'today') trueTodayMatches.push(match);
+      if (day === 'today' || (day === 'yesterday' && match.playbackState === 'ended')) trueTodayMatches.push(match);
       else if (day === 'tomorrow') trueTomorrowMatches.push(match);
   });
 

@@ -28,6 +28,32 @@
         <div id="status" class="player-state" role="status">جاري تحميل البث...</div>
       </section>
 
+      <section id="match-panel" class="match-panel" hidden>
+        <div class="match-panel-header">
+          <span id="match-state-pill" class="match-state-pill">مباشر</span>
+          <strong id="match-league">Koratv.click</strong>
+        </div>
+        <div class="match-panel-teams">
+          <div class="match-panel-team">
+            <img id="match-home-logo" alt="" loading="lazy">
+            <span id="match-home-name"></span>
+          </div>
+          <div class="match-panel-score">
+            <strong id="match-score">VS</strong>
+            <span id="match-minute"></span>
+          </div>
+          <div class="match-panel-team">
+            <img id="match-away-logo" alt="" loading="lazy">
+            <span id="match-away-name"></span>
+          </div>
+        </div>
+        <div class="match-panel-stats">
+          <span><i class="card-dot yellow"></i><b id="match-yellow-cards">0</b> صفراء</span>
+          <span><i class="card-dot red"></i><b id="match-red-cards">0</b> حمراء</span>
+        </div>
+        <div id="match-goals" class="match-goals"></div>
+      </section>
+
       <section class="watch-news-section">
         <h3 class="watch-news-title">أحدث الأخبار الرياضية</h3>
         <div id="watch-news-container" class="watch-news-grid"></div>

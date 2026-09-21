@@ -32,6 +32,11 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
       id: 'match-lower', match_id: 'match-lower', home_team: 'Lower Home', away_team: 'Lower Away',
       league: 'الدوري الإيطالي الدرجة الثالثة', kickoff_time: '2026-09-20T13:00:00Z', channel: 'demo',
       payload: {}, active: true, updated_at: '2026-09-20T10:00:00Z'
+    }, {
+      id: 'match-botafogo', match_id: 'match-botafogo', home_team: 'Botafogo', away_team: 'MLS Away',
+      league: 'Campeonato Brasileiro Série A', kickoff_time: liveKickoff, channel: 'demo',
+      payload: { score: '2 - 1', goals: [{ player: 'Test Scorer', minute: 55, team: 'home' }] },
+      source_ready: true, active: true, updated_at: '2026-09-20T10:00:00Z'
     }],
   };
   const redis = {
@@ -61,11 +66,16 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal(matchesResponse.headers.get('access-control-allow-origin'), config.frontend);
   const matchesBody = await matchesResponse.json();
   assert.deepEqual(matchesBody.matches.map(({ matchId, homeTeam, awayTeam }) => ({ matchId, homeTeam, awayTeam })), [
-    { matchId: 'match-1', homeTeam: 'Home', awayTeam: 'Away' }
+    { matchId: 'match-1', homeTeam: 'Home', awayTeam: 'Away' },
+    { matchId: 'match-botafogo', homeTeam: 'Botafogo', awayTeam: 'MLS Away' }
   ]);
   assert.deepEqual(matchesBody.matches[0].streams, []);
   assert.equal(matchesBody.matches[0].original_url, undefined);
   assert.equal(matchesBody.matches[0].sourceReady, true);
+  const infoResponse = await request('/api/match-info?matchId=match-botafogo', config.player);
+  assert.equal(infoResponse.status, 200);
+  const infoBody = await infoResponse.json();
+  assert.equal(infoBody.match.goals[0].player, 'Test Scorer');
   assert.equal((await request('/api/generate-token', 'https://bad.example', { channel: 'demo' })).status, 403);
   const entry = await (await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).json();
   assert.equal(entry.expiresIn, 300);
