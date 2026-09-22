@@ -112,6 +112,7 @@ jobs:
             curl --fail --silent --show-error https://stream-api.koratv.click/healthz >/dev/null
             curl --fail --silent --show-error https://medic.cymru/739184.html >/dev/null
             curl --fail --silent --show-error -D /tmp/koratv-api-headers -o /dev/null \
+              -A 'Koratv-Deployment-Check/1.0' \
               -H 'Origin: https://koratv.click' https://stream-api.koratv.click/api/matches
             grep -qi '^access-control-allow-origin: https://koratv.click' /tmp/koratv-api-headers
             curl --fail --silent --show-error -D /tmp/koratv-player-headers -o /dev/null \
