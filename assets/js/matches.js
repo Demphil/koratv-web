@@ -384,6 +384,15 @@ function opaqueWatchId(value) {
 
 async function openSecurePlayer(matchId) {
   if (!matchId) return;
+  const playerTab = window.open('about:blank', '_blank');
+  if (!playerTab) {
+    window.openWaitModal?.('يرجى السماح بفتح تبويب جديد للمشاهدة.');
+    return;
+  }
+  playerTab.opener = null;
+  playerTab.document.title = 'جاري تجهيز المشغل';
+  playerTab.document.body.textContent = 'جاري تجهيز المشغل...';
+  playerTab.document.documentElement.dir = 'rtl';
   window.openWaitModal?.('جاري تجهيز المشغل الآمن...');
   let response;
   try {
@@ -395,11 +404,13 @@ async function openSecurePlayer(matchId) {
       body: JSON.stringify({ matchId })
     });
   } catch {
+    playerTab.close();
     window.openWaitModal?.('تعذر الاتصال بخادم البث. حاول مرة أخرى.');
     return;
   }
 
   if (!response.ok) {
+    playerTab.close();
     const payload = await response.json().catch(() => ({}));
     const messages = {
       upcoming: 'سيُفتح البث قبل بداية المباراة بعشرين دقيقة.',
@@ -413,10 +424,14 @@ async function openSecurePlayer(matchId) {
 
   const { token } = await response.json().catch(() => ({}));
   if (!token) {
+    playerTab.close();
     window.openWaitModal?.('لم يتمكن الخادم من إنشاء جلسة مشاهدة آمنة.');
     return;
   }
-  window.location.href = `${PLAYER_ORIGIN}${PLAYER_PATH}?k=${encodeURIComponent(token)}`;
+  window.closeWaitModal?.();
+  if (!playerTab.closed) {
+    playerTab.location.replace(`${PLAYER_ORIGIN}${PLAYER_PATH}?k=${encodeURIComponent(token)}`);
+  }
 }
 
 function setupSecurePlayerLinks() {

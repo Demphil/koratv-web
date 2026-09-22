@@ -15,6 +15,7 @@ const notifyParent = (state, message = '') => {
 };
 
 function embedIntegrityOk() {
+  if (window.self === window.top) return true;
   const viewportOk = window.innerWidth >= 320 && window.innerHeight >= 420;
   const ads = [...document.querySelectorAll('.ad-sidebar')];
   const adsOk = ads.length >= 2 && ads.every((ad) => {
