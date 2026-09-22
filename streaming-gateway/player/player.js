@@ -52,7 +52,8 @@ function decodeJwtPayload(token) {
   try {
     const payload = token.split('.')[1];
     if (!payload) return {};
-    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    const bytes = Uint8Array.from(atob(payload.replace(/-/g, '+').replace(/_/g, '/')), (char) => char.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return {};
   }

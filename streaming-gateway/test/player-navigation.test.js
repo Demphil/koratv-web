@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
+test('playback ticket preserves Arabic match identifiers', () => {
+  const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
+  const start = source.indexOf('function decodeJwtPayload(');
+  const end = source.indexOf('function cardTotal(', start);
+  const matchId = 'إنتر_vs_هاكين_للسيدات';
+  const token = `header.${Buffer.from(JSON.stringify({ matchId })).toString('base64url')}.signature`;
+  const result = vm.runInNewContext(`${source.slice(start, end)}; decodeJwtPayload(token)`, { token, atob, TextDecoder, Uint8Array });
+  assert.equal(result.matchId, matchId);
+});
+
 test('standalone player does not depend on sidebar visibility or viewport size', () => {
   const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
   const start = source.indexOf('function embedIntegrityOk()');
