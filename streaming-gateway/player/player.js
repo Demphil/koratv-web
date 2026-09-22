@@ -13,14 +13,43 @@ let availableQualities = [];
 let player;
 let loadTimer;
 let retryTimer;
+let qualityStallTimer;
 let matchTimer;
 let networkRetries = 0;
 let mediaRetries = 0;
 let sessionExpiresAt = 0;
+let selectedManualHeight = 0;
+let reconnectAttempt = 0;
+let lastReadyAt = 0;
 const sessionKey = 'koratv-playback-session';
+const MAX_RECONNECT_ATTEMPTS = 3;
+const MAX_MEDIA_RECOVERIES = 2;
+const INITIAL_LOAD_TIMEOUT_MS = 18000;
+const QUALITY_STALL_TIMEOUT_MS = 7000;
+const RETRY_BASE_DELAY_MS = 900;
+
 const notifyParent = (state, message = '') => {
   if (window.parent !== window) window.parent.postMessage({ source: 'koratv-player', state, message }, '*');
 };
+
+function retryDelay(attempt) {
+  return Math.min(7000, RETRY_BASE_DELAY_MS * (2 ** Math.max(0, attempt - 1)));
+}
+
+async function withRetry(operation, label, retries = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    try {
+      if (attempt > 1) showLoading('البث غير متوفر حالياً - جاري المحاولة...', `${label} (${attempt}/${retries})`);
+      return await operation(attempt);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= retries) break;
+      await new Promise((resolve) => setTimeout(resolve, retryDelay(attempt)));
+    }
+  }
+  throw lastError;
+}
 
 function embedIntegrityOk() {
   if (window.self === window.top) return true;
@@ -113,17 +142,23 @@ async function loadMatchPanel(matchId) {
 async function start() {
   if (!enforceEmbedIntegrity()) return;
   notifyParent('connecting');
+  showLoading('جاري تجهيز البث...', 'يتم إنشاء جلسة مشاهدة آمنة');
   if (!Hls.isSupported()) throw new Error('المتصفح لا يدعم تشغيل هذا البث. يرجى تحديثه أو استخدام متصفح حديث.');
   let session;
   if (entry) {
     try { sessionStorage.removeItem(sessionKey); } catch {}
     activeMatchId = decodeJwtPayload(entry).matchId || '';
     loadMatchPanel(activeMatchId);
-    const response = await fetch(`${STREAM_API_ORIGIN}/api/redeem-token`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: entry }), credentials: 'omit',
-      signal: AbortSignal.timeout(15000),
-    });
+    const response = await withRetry(() => fetch(`${STREAM_API_ORIGIN}/api/redeem-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: entry }),
+      credentials: 'omit',
+      signal: AbortSignal.timeout(12000),
+    }).then((result) => {
+      if (!result.ok && ![401, 403, 429].includes(result.status)) throw new Error('redeem_retryable');
+      return result;
+    }), 'جاري فتح رابط المشاهدة');
     if (!response.ok) throw new Error(response.status === 403
       ? 'انتهت صلاحية رابط المشاهدة. افتح المباراة مجدداً من الموقع.'
       : 'تعذر الاتصال بخادم المشاهدة. حاول فتح المباراة مرة أخرى.');
@@ -141,50 +176,89 @@ async function start() {
   availableQualities = Array.isArray(session.qualities) ? session.qualities : [];
   loadMatchPanel(activeMatchId);
   matchTimer = setInterval(() => { if (!document.hidden) loadMatchPanel(activeMatchId); }, 15000);
-  connectStream();
+  connectStream(0);
   expiryTimer = setTimeout(() => {
     try { sessionStorage.removeItem(sessionKey); } catch {}
     failPlayback('انتهت جلسة المشاهدة. افتح المباراة من الموقع للمتابعة.', false);
   }, sessionExpiresAt - Date.now());
 }
 
-function connectStream() {
-  clearTimeout(retryTimer);
-  hls?.destroy();
-  status.classList.remove('error');
-  status.textContent = 'جاري الاتصال بالبث...';
-  armLoadTimeout();
-  hls = new Hls({
+function hlsOptions() {
+  return {
     enableWorker: true,
-    maxBufferLength: 30,
-    backBufferLength: 30,
+    lowLatencyMode: true,
+    startLevel: -1,
     capLevelToPlayerSize: true,
+    autoStartLoad: true,
+    startFragPrefetch: true,
+    maxBufferLength: 10,
+    maxMaxBufferLength: 24,
+    maxBufferSize: 24 * 1000 * 1000,
+    backBufferLength: 18,
+    liveSyncDuration: 2,
+    liveMaxLatencyDuration: 8,
+    liveDurationInfinity: true,
+    maxLiveSyncPlaybackRate: 1.15,
+    maxBufferHole: 0.35,
+    highBufferWatchdogPeriod: 1,
+    nudgeOffset: 0.12,
+    nudgeMaxRetry: 4,
+    manifestLoadingTimeOut: 8000,
+    manifestLoadingMaxRetry: 1,
+    manifestLoadingRetryDelay: 500,
+    manifestLoadingMaxRetryTimeout: 2500,
+    levelLoadingTimeOut: 8000,
+    levelLoadingMaxRetry: 1,
+    levelLoadingRetryDelay: 500,
+    levelLoadingMaxRetryTimeout: 2500,
+    fragLoadingTimeOut: 10000,
+    fragLoadingMaxRetry: 2,
+    fragLoadingRetryDelay: 500,
+    fragLoadingMaxRetryTimeout: 3000,
     xhrSetup(xhr, url) {
       if (new URL(url).origin !== new URL(STREAM_API_ORIGIN).origin) throw new Error('Unexpected media origin');
       xhr.setRequestHeader('Authorization', `Bearer ${hlsSessionToken}`);
     }
-  });
+  };
+}
+
+function connectStream(attempt = 0) {
+  clearTimeout(retryTimer);
+  clearTimeout(qualityStallTimer);
+  hls?.destroy();
+  reconnectAttempt = attempt;
+  networkRetries = 0;
+  mediaRetries = 0;
+  showLoading(attempt ? 'البث غير متوفر حالياً - جاري المحاولة...' : 'جاري الاتصال بالبث...', attempt ? `إعادة المحاولة ${attempt}/${MAX_RECONNECT_ATTEMPTS}` : 'نختار أفضل جودة متاحة');
+  armLoadTimeout();
+  hls = new Hls(hlsOptions());
   hls.on(Hls.Events.ERROR, (_, data) => {
     if (!data.fatal) return;
     if ([401, 403].includes(data.response?.code)) {
       failPlayback('انتهت جلسة المشاهدة أو رُفض الوصول. افتح المباراة مجدداً من الموقع.', false);
+    } else if (selectedManualHeight && (data.type === Hls.ErrorTypes.NETWORK_ERROR || data.type === Hls.ErrorTypes.MEDIA_ERROR)) {
+      fallbackToAuto('الجودة المختارة غير مستقرة. تم الرجوع للوضع التلقائي.');
     } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries < 2) {
       networkRetries += 1;
-      status.textContent = 'جاري إعادة الاتصال...';
+      showLoading('البث غير متوفر حالياً - جاري المحاولة...', `إعادة تحميل المقطع ${networkRetries}/2`);
       retryTimer = setTimeout(() => hls?.startLoad(), networkRetries * 1500);
-    } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < 1) {
+    } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < MAX_MEDIA_RECOVERIES) {
       mediaRetries += 1;
+      showLoading('جاري إصلاح البث...', `محاولة إصلاح الفيديو ${mediaRetries}/${MAX_MEDIA_RECOVERIES}`);
       hls.recoverMediaError();
     } else {
-      failPlayback('البث غير متوفر حالياً. يمكنك إعادة المحاولة بعد قليل.');
+      scheduleReconnect('تعذر تحميل البث من المصدر.');
     }
   });
   hls.on(Hls.Events.MANIFEST_PARSED, () => {
     setupQualityControl();
-    status.textContent = '';
-    status.classList.remove('error');
+    lastReadyAt = Date.now();
+    hideStatus();
     notifyParent('ready');
     if (video.readyState >= 3) clearTimeout(loadTimer);
+  });
+  hls.on(Hls.Events.LEVEL_SWITCHED, () => {
+    if (!selectedManualHeight) currentQuality = '';
   });
   hls.loadSource(streamUrlForQuality(currentQuality));
   hls.attachMedia(video);
@@ -192,12 +266,26 @@ function connectStream() {
 
 function armLoadTimeout() {
   clearTimeout(loadTimer);
-  loadTimer = setTimeout(() => failPlayback('تأخر وصول البث. تحقق من الاتصال أو أعد المحاولة.'), 30000);
+  loadTimer = setTimeout(() => scheduleReconnect('تأخر وصول البث من المصدر.'), INITIAL_LOAD_TIMEOUT_MS);
+}
+
+function scheduleReconnect(reason) {
+  clearTimeout(loadTimer);
+  clearTimeout(retryTimer);
+  if (reconnectAttempt < MAX_RECONNECT_ATTEMPTS && sessionExpiresAt > Date.now()) {
+    const nextAttempt = reconnectAttempt + 1;
+    const delay = retryDelay(nextAttempt);
+    showLoading('البث غير متوفر حالياً - جاري المحاولة...', `${reason} سنعيد الاتصال خلال ${Math.ceil(delay / 1000)} ثواني`);
+    retryTimer = setTimeout(() => connectStream(nextAttempt), delay);
+    return;
+  }
+  failPlayback('البث غير متوفر حالياً - حاول لاحقاً.', true);
 }
 
 function failPlayback(message, retry = true) {
   clearTimeout(loadTimer);
   clearTimeout(retryTimer);
+  clearTimeout(qualityStallTimer);
   hls?.destroy();
   hls = null;
   showError('البث غير متوفر حالياً', message, retry && sessionExpiresAt > Date.now());
@@ -223,16 +311,7 @@ function setupQualityControl() {
     settings: ['quality'], hideControls: true, resetOnEnd: false,
     iconUrl: './plyr.svg', storage: { enabled: false },
     fullscreen: { enabled: true, container: '#player-container', iosNative: false },
-    quality: { default: 0, options, forced: true, onChange: (height) => {
-      if (!hls) return;
-      const levelIndex = hls.levels.findIndex((level) => level.height === height);
-      if (!height && !currentQuality) { hls.currentLevel = -1; return; }
-      if (height && levelIndex >= 0) { hls.currentLevel = levelIndex; return; }
-      const source = availableQualities.find((quality) => Number(quality.height) === height);
-      currentQuality = source?.label || '';
-      armLoadTimeout();
-      hls.loadSource(streamUrlForQuality(currentQuality));
-    } },
+    quality: { default: 0, options, forced: true, onChange: changeQuality },
     i18n: { play: 'تشغيل', pause: 'إيقاف مؤقت', mute: 'كتم الصوت', unmute: 'تفعيل الصوت', volume: 'الصوت', settings: 'الإعدادات', quality: 'الجودة', enterFullscreen: 'ملء الشاشة', exitFullscreen: 'تصغير الشاشة', qualityLabel: { 0: 'تلقائي' } },
   });
 }
@@ -275,6 +354,75 @@ function updateQualityMenu(options) {
   settings.menu.hidden = options.length < 2;
   player.elements.buttons.settings.hidden = options.length < 2;
 }
+
+function changeQuality(height) {
+  if (!hls) return;
+  selectedManualHeight = Number(height) || 0;
+  clearTimeout(qualityStallTimer);
+  if (!selectedManualHeight) {
+    const wasProviderSpecific = Boolean(currentQuality);
+    currentQuality = '';
+    if (wasProviderSpecific) connectStream(0);
+    else hls.currentLevel = -1;
+    return;
+  }
+  const levelIndex = hls.levels.findIndex((level) => Number(level.height) === selectedManualHeight);
+  if (levelIndex >= 0) {
+    currentQuality = '';
+    hls.currentLevel = levelIndex;
+    hls.nextLevel = levelIndex;
+    return;
+  }
+  const source = availableQualities.find((quality) => Number(quality.height) === selectedManualHeight);
+  currentQuality = source?.label || '';
+  if (!currentQuality) {
+    fallbackToAuto('هذه الجودة غير متاحة حالياً. تم الرجوع للوضع التلقائي.');
+    return;
+  }
+  armLoadTimeout();
+  showLoading('جاري تغيير الجودة...', `${selectedManualHeight}p`);
+  hls.loadSource(streamUrlForQuality(currentQuality));
+}
+
+function fallbackToAuto(message = 'تم الرجوع تلقائياً لأفضل جودة مستقرة.') {
+  selectedManualHeight = 0;
+  const wasProviderSpecific = Boolean(currentQuality);
+  currentQuality = '';
+  clearTimeout(qualityStallTimer);
+  if (player) {
+    try { player.quality = 0; } catch {}
+  }
+  showLoading(message, 'Auto');
+  if (!hls) return connectStream(0);
+  if (wasProviderSpecific) connectStream(0);
+  else {
+    hls.currentLevel = -1;
+    hls.nextLevel = -1;
+    hls.startLoad();
+  }
+}
+
+function monitorQualityStall() {
+  clearTimeout(qualityStallTimer);
+  if (!selectedManualHeight || !hls || status.classList.contains('error')) return;
+  qualityStallTimer = setTimeout(() => {
+    if (!selectedManualHeight) return;
+    if (video.readyState < 3 || Date.now() - lastReadyAt > QUALITY_STALL_TIMEOUT_MS) {
+      fallbackToAuto('الجودة المختارة تتأخر في التحميل. تم الرجوع للوضع التلقائي.');
+    }
+  }, QUALITY_STALL_TIMEOUT_MS);
+}
+
+function showLoading(message, detail = '') {
+  status.classList.remove('error');
+  status.innerHTML = `<div class="player-loading-box"><span class="stream-spinner" aria-hidden="true"></span><strong>${escapeHtml(message)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ''}</div>`;
+}
+
+function hideStatus() {
+  status.textContent = '';
+  status.classList.remove('error');
+}
+
 function showError(title, message, retry = false) {
   status.classList.add('error');
   status.innerHTML = `<div class="player-error-box"><span class="error-symbol" aria-hidden="true">!</span><strong>${escapeHtml(title)}</strong><span>${escapeHtml(message)}</span>${retry ? '<button type="button" id="retry-stream">إعادة المحاولة</button>' : '<a href="https://koratv.click/" target="_blank" rel="noopener">العودة للمباريات</a>'}</div>`;
@@ -321,10 +469,12 @@ async function loadWatchNews() {
 
 video.addEventListener('playing', () => {
   clearTimeout(loadTimer);
+  clearTimeout(qualityStallTimer);
   networkRetries = 0;
   mediaRetries = 0;
-  status.textContent = '';
-  status.classList.remove('error');
+  reconnectAttempt = 0;
+  lastReadyAt = Date.now();
+  hideStatus();
   notifyParent('playing');
 });
 // Convenience restrictions only. Browser menus and network inspection remain accessible.
@@ -332,9 +482,9 @@ document.addEventListener('contextmenu', (event) => event.preventDefault());
 document.addEventListener('keydown', (event) => {
   if (event.key === 'F12' || ((event.ctrlKey || event.metaKey) && event.shiftKey && /^[ijc]$/i.test(event.key))) event.preventDefault();
 });
-video.addEventListener('canplay', () => clearTimeout(loadTimer));
-video.addEventListener('waiting', armLoadTimeout);
-video.addEventListener('stalled', armLoadTimeout);
+video.addEventListener('canplay', () => { clearTimeout(loadTimer); lastReadyAt = Date.now(); });
+video.addEventListener('waiting', () => { monitorQualityStall(); armLoadTimeout(); });
+video.addEventListener('stalled', () => { monitorQualityStall(); armLoadTimeout(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) loadMatchPanel(activeMatchId); });
 window.addEventListener('pagehide', () => {
   clearTimeout(expiryTimer); clearTimeout(loadTimer); clearTimeout(retryTimer);

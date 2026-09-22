@@ -149,11 +149,13 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff'
     });
-    const allowed = ['/api/generate-token', '/api/config', '/api/matches'].includes(req.path) ? config.frontend : config.player;
-    if (req.headers.origin === allowed) {
-      res.set({ 'Access-Control-Allow-Origin': allowed, Vary: 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range' });
+    const frontendOrigins = config.frontendOrigins || new Set([config.frontend]);
+    const allowedOrigins = ['/api/generate-token', '/api/config', '/api/matches'].includes(req.path) ? frontendOrigins : new Set([config.player]);
+    const requestOrigin = req.headers.origin;
+    if (allowedOrigins.has(requestOrigin)) {
+      res.set({ 'Access-Control-Allow-Origin': requestOrigin, Vary: 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range' });
     }
-    if (req.method === 'OPTIONS') return res.sendStatus(req.headers.origin === allowed ? 204 : 403);
+    if (req.method === 'OPTIONS') return res.sendStatus(allowedOrigins.has(requestOrigin) ? 204 : 403);
     next();
   });
   app.use(antiBotMiddleware({ enabled: config.enableAntiBot !== false }));
@@ -170,9 +172,41 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     return req.query.token || bearer || '';
   };
   const requireOrigin = (req, expected) => {
-    if (req.headers.origin !== expected) throw new Error('Forbidden');
+    const allowedOrigins = expected instanceof Set ? expected : new Set([expected]);
+    if (!allowedOrigins.has(req.headers.origin)) throw new Error('Forbidden');
   };
   const key = createHash('sha256').update(config.secret).update('resource-urls').digest();
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const upstreamDelay = (attempt) => Math.min(5000, 600 * (2 ** Math.max(0, attempt - 1)));
+  const retryableStatus = (status) => status === 408 || status === 429 || status >= 500;
+  const fetchUpstream = async (source, options, attempts = 3) => {
+    let lastError;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const upstream = await fetchImpl(source, {
+          ...options,
+          signal: AbortSignal.timeout(attempt === 1 ? 10000 : 16000)
+        });
+        if (upstream.ok || !retryableStatus(upstream.status) || attempt === attempts) return upstream;
+        await upstream.body?.cancel();
+        console.warn('[stream-proxy] retrying upstream request', {
+          attempt,
+          status: upstream.status,
+          source: `${source.origin}${source.pathname}`
+        });
+      } catch (error) {
+        lastError = error;
+        if (attempt === attempts) throw error;
+        console.warn('[stream-proxy] upstream request failed, retrying', {
+          attempt,
+          message: error?.message || String(error),
+          source: `${source.origin}${source.pathname}`
+        });
+      }
+      await wait(upstreamDelay(attempt));
+    }
+    throw lastError || new Error('upstream_fetch_failed');
+  };
 
   app.get('/healthz', async (req, res) => {
     try {
@@ -261,7 +295,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   });
   app.post('/api/generate-token', async (req, res) => {
     try {
-      requireOrigin(req, config.frontend);
+      requireOrigin(req, config.frontendOrigins || config.frontend);
       const playback = await config.getPlayback(String(req.body.matchId || ''));
       if (!playback.is_streaming_active) return res.status(409).json({ error: playback.reason || 'stream_unavailable' });
       const rateKey = `stream-rate:${ipHash(req)}:${Math.floor(Date.now() / 60000)}`;
@@ -314,7 +348,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         Accept: '*/*'
       };
       if (req.headers.range) headers.Range = req.headers.range;
-      const upstream = await fetchImpl(source, { headers, redirect: 'follow', signal: AbortSignal.timeout(20000) });
+      const upstream = await fetchUpstream(source, { headers, redirect: 'follow' });
       if (!upstream.ok) {
         console.error('[stream-proxy] upstream rejected request', {
           status: upstream.status,

@@ -15,6 +15,11 @@ export function loadConfig(env = process.env) {
     if (url.protocol !== 'https:') throw new Error(`${name} must use HTTPS`);
     return url.origin;
   };
+  const publicOrigins = (name, value) => new Set(String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => publicOrigin(name, item)));
   const upstreamOrigin = (value) => {
     let url;
     try {
@@ -32,6 +37,7 @@ export function loadConfig(env = process.env) {
     hmacSecret,
     enableAntiBot: String(env.ENABLE_ANTI_BOT || 'true').trim().toLowerCase() !== 'false',
     frontend: publicOrigin('FRONTEND_ORIGIN', env.FRONTEND_ORIGIN || 'https://koratv.click'),
+    frontendOrigins: publicOrigins('FRONTEND_ORIGINS', env.FRONTEND_ORIGINS || env.FRONTEND_ORIGIN || 'https://koratv.click'),
     player: publicOrigin('PLAYER_ORIGIN', env.PLAYER_ORIGIN || 'https://medic.cymru'),
     api: publicOrigin('PUBLIC_API_ORIGIN', env.PUBLIC_API_ORIGIN),
     trustedProxies: (env.TRUSTED_PROXIES || '').split(',').filter(Boolean),

@@ -149,7 +149,9 @@ video {
   padding: 24px;
   text-align: center;
   color: #fff;
-  background: rgba(0, 0, 0, 0.28);
+  background:
+    radial-gradient(circle at 50% 42%, rgba(218, 60, 96, 0.15), transparent 34%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0.62));
   font-weight: 700;
   line-height: 1.8;
   z-index: 6;
@@ -163,6 +165,43 @@ video {
 .player-state.error {
   pointer-events: auto;
   background: radial-gradient(circle at center, rgba(31, 31, 42, 0.94), rgba(0, 0, 0, 0.72));
+}
+
+.player-loading-box {
+  width: min(430px, 92%);
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 22px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(14, 16, 23, 0.76);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.player-loading-box strong {
+  font-size: 1.02rem;
+}
+
+.player-loading-box span:not(.stream-spinner) {
+  color: #cfd5df;
+  font-size: 0.9rem;
+}
+
+.stream-spinner {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.16);
+  border-top-color: #ffd166;
+  border-right-color: #da3c60;
+  animation: stream-spin 0.82s linear infinite;
+}
+
+@keyframes stream-spin {
+  to { transform: rotate(360deg); }
 }
 
 .player-error-box {
@@ -232,6 +271,10 @@ video {
 
 @media (max-width: 620px) {
   .player-state { padding: 8px; line-height: 1.45; }
+  .player-loading-box { padding: 14px 12px; gap: 7px; width: min(360px, 96%); }
+  .player-loading-box strong { font-size: 14px; }
+  .player-loading-box span:not(.stream-spinner) { font-size: 12px; }
+  .stream-spinner { width: 32px; height: 32px; }
   .player-error-box { padding: 10px !important; width: min(400px, 96%); }
   .player-error-box strong { font-size: 15px; margin-bottom: 4px; }
   .player-error-box span { font-size: 12px; }

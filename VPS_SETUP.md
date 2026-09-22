@@ -1,5 +1,7 @@
 # Njalla VPS first-time setup
 
+Current production uses the Njalla VPS at 80.78.30.212 for stream-api.koratv.click and medic.cymru. Oracle Cloud/OCI is not part of the active production path.
+
 Run these commands once as `root` on Ubuntu 24.04:
 
 ```bash
