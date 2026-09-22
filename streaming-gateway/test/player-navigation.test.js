@@ -15,7 +15,7 @@ test('playback ticket preserves Arabic match identifiers', () => {
 
 test('standalone player does not depend on sidebar visibility or viewport size', () => {
   const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
-  const start = source.indexOf('function embedIntegrityOk()');
+  const start = source.indexOf('function isFramed()');
   const end = source.indexOf('function enforceEmbedIntegrity()', start);
   const window = { innerWidth: 280, innerHeight: 300 };
   window.self = window.top = window;

@@ -1,6 +1,11 @@
 /* global Hls, Plyr, STREAM_API_ORIGIN */
 const video = document.getElementById('video');
 const status = document.getElementById('status');
+const playerContainer = document.getElementById('player-container');
+const embedButton = document.getElementById('embed-button');
+const embedModal = document.getElementById('embed-modal');
+const embedCode = document.getElementById('embed-code');
+const copyEmbedCode = document.getElementById('copy-embed-code');
 const params = new URL(location.href).searchParams;
 const entry = params.get('k') || params.get('token');
 history.replaceState(null, '', location.pathname);
@@ -27,6 +32,11 @@ const MAX_MEDIA_RECOVERIES = 2;
 const INITIAL_LOAD_TIMEOUT_MS = 18000;
 const QUALITY_STALL_TIMEOUT_MS = 7000;
 const RETRY_BASE_DELAY_MS = 900;
+const EMBED_HASH_LENGTH = 12;
+const PROTECTED_SELECTOR = '[data-integrity-protected="true"], .site-watermark, .broadcast-decoy, .player-brand-overlay, .welcome-bar, .ad-sidebar';
+const OVERLAY_SELECTOR = 'a[href], button, iframe, [onclick], [role="link"]';
+let tamperObserver;
+let tamperInterval;
 
 const notifyParent = (state, message = '') => {
   if (window.parent !== window) window.parent.postMessage({ source: 'koratv-player', state, message }, '*');
@@ -34,6 +44,40 @@ const notifyParent = (state, message = '') => {
 
 function retryDelay(attempt) {
   return Math.min(7000, RETRY_BASE_DELAY_MS * (2 ** Math.max(0, attempt - 1)));
+}
+
+function isFramed() {
+  return window.self !== window.top;
+}
+
+function randomEmbedHash(length = EMBED_HASH_LENGTH) {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => alphabet[byte % alphabet.length]).join('');
+}
+
+function embedSrc() {
+  const url = new URL(`/${randomEmbedHash()}`, window.location.origin);
+  if (entry) url.searchParams.set('k', entry);
+  return url.href;
+}
+
+function iframeCode() {
+  const src = embedSrc();
+  return `<iframe src="${src}" width="100%" height="520" style="border:0;overflow:hidden;background:#000" allow="autoplay; fullscreen; encrypted-media" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>`;
+}
+
+function openEmbedModal() {
+  if (!embedModal || !embedCode) return;
+  embedCode.value = iframeCode();
+  embedModal.hidden = false;
+  embedCode.focus();
+  embedCode.select();
+}
+
+function closeEmbedModal() {
+  if (embedModal) embedModal.hidden = true;
 }
 
 async function withRetry(operation, label, retries = 3) {
@@ -52,7 +96,7 @@ async function withRetry(operation, label, retries = 3) {
 }
 
 function embedIntegrityOk() {
-  if (window.self === window.top) return true;
+  if (!isFramed()) return true;
   const viewportOk = window.innerWidth >= 320 && window.innerHeight >= 420;
   const ads = [...document.querySelectorAll('.ad-sidebar')];
   const adsOk = ads.length >= 2 && ads.every((ad) => {
@@ -67,14 +111,95 @@ function embedIntegrityOk() {
   return viewportOk && adsOk;
 }
 
-function enforceEmbedIntegrity() {
-  if (embedIntegrityOk()) return true;
+function elementIsVisible(element) {
+  if (!element || !element.isConnected) return false;
+  const style = getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  return style.display !== 'none'
+    && style.visibility !== 'hidden'
+    && Number(style.opacity) > 0.05
+    && rect.width > 4
+    && rect.height > 4;
+}
+
+function protectedElementsOk() {
+  return [...document.querySelectorAll(PROTECTED_SELECTOR)].every((element) => {
+    if (element.matches('.ad-sidebar')) return elementIsVisible(element);
+    const style = getComputedStyle(element);
+    const inlineOpacity = Number(element.style.opacity);
+    if (element.hidden || element.getAttribute('aria-hidden') === 'true' && element.hasAttribute('hidden')) return false;
+    if (element.style.display === 'none' || element.style.visibility === 'hidden') return false;
+    if (Number.isFinite(inlineOpacity) && inlineOpacity <= 0.05) return false;
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return false;
+    }
+    return true;
+  });
+}
+
+function elementCoversPlayer(element) {
+  if (!element || !playerContainer || playerContainer.contains(element) || element.closest('.embed-modal')) return false;
+  const style = getComputedStyle(element);
+  if (!['fixed', 'absolute', 'sticky'].includes(style.position) || style.pointerEvents === 'none') return false;
+  if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) <= 0.05) return false;
+  const playerRect = playerContainer.getBoundingClientRect();
+  const rect = element.getBoundingClientRect();
+  const overlapX = Math.max(0, Math.min(playerRect.right, rect.right) - Math.max(playerRect.left, rect.left));
+  const overlapY = Math.max(0, Math.min(playerRect.bottom, rect.bottom) - Math.max(playerRect.top, rect.top));
+  return overlapX * overlapY > Math.min(playerRect.width * playerRect.height * 0.18, 26000);
+}
+
+function overlayTamperingDetected() {
+  if (!isFramed()) return false;
+  return [...document.querySelectorAll(OVERLAY_SELECTOR)].some(elementCoversPlayer);
+}
+
+function failTamper(reason) {
+  clearTimeout(loadTimer);
+  clearTimeout(retryTimer);
+  clearTimeout(qualityStallTimer);
+  clearInterval(tamperInterval);
+  tamperObserver?.disconnect();
   hls?.destroy();
+  hls = null;
+  try { player?.destroy(); } catch {}
   video.removeAttribute('src');
   video.load();
-  showError('تعذر تشغيل البث', 'يجب تضمين المشغل كاملاً بدون قص أو إخفاء عناصر الصفحة.');
-  notifyParent('error', 'player_integrity_failed');
+  document.body.classList.add('tamper-lock');
+  showError('تم إيقاف البث', reason || 'تم اكتشاف تعديل غير مسموح به على المشغل.');
+  notifyParent('error', 'player_tampering_detected');
+}
+
+function enforceEmbedIntegrity() {
+  if (embedIntegrityOk()) return true;
+  failTamper('يجب تضمين المشغل كاملاً بدون قص أو إخفاء عناصر الصفحة.');
   return false;
+}
+
+function enforceTamperState() {
+  if (!isFramed()) return true;
+  if (!embedIntegrityOk()) return enforceEmbedIntegrity();
+  if (!protectedElementsOk()) {
+    failTamper('محاولة إخفاء العلامة أو الإعلانات أوقفت البث فوراً.');
+    return false;
+  }
+  if (overlayTamperingDetected()) {
+    failTamper('تم اكتشاف طبقة أو رابط فوق المشغل. توقف البث فوراً.');
+    return false;
+  }
+  return true;
+}
+
+function startTamperObserver() {
+  if (!isFramed() || tamperObserver) return;
+  tamperObserver = new MutationObserver(() => enforceTamperState());
+  tamperObserver.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['style', 'class', 'hidden', 'aria-hidden']
+  });
+  tamperInterval = setInterval(enforceTamperState, 2500);
 }
 
 function decodeJwtPayload(token) {
@@ -481,6 +606,22 @@ video.addEventListener('playing', () => {
 document.addEventListener('contextmenu', (event) => event.preventDefault());
 document.addEventListener('keydown', (event) => {
   if (event.key === 'F12' || ((event.ctrlKey || event.metaKey) && event.shiftKey && /^[ijc]$/i.test(event.key))) event.preventDefault();
+  if (event.key === 'Escape') closeEmbedModal();
+});
+embedButton?.addEventListener('click', openEmbedModal);
+embedModal?.addEventListener('click', (event) => {
+  if (event.target.closest('[data-close-embed]')) closeEmbedModal();
+});
+copyEmbedCode?.addEventListener('click', async () => {
+  if (!embedCode) return;
+  embedCode.select();
+  try {
+    await navigator.clipboard.writeText(embedCode.value);
+    copyEmbedCode.textContent = 'تم النسخ';
+    setTimeout(() => { copyEmbedCode.textContent = 'نسخ الكود'; }, 1800);
+  } catch {
+    document.execCommand('copy');
+  }
 });
 video.addEventListener('canplay', () => { clearTimeout(loadTimer); lastReadyAt = Date.now(); });
 video.addEventListener('waiting', () => { monitorQualityStall(); armLoadTimeout(); });
@@ -491,11 +632,12 @@ window.addEventListener('pagehide', () => {
   clearInterval(matchTimer); hls?.destroy();
 });
 window.addEventListener('resize', () => {
-  if (hls) enforceEmbedIntegrity();
+  if (hls) enforceTamperState();
 });
 setInterval(() => {
-  if (hls) enforceEmbedIntegrity();
+  if (hls) enforceTamperState();
 }, 15000);
+startTamperObserver();
 loadWatchNews();
 setupQualityControl();
 start().catch((error) => {

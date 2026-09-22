@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { createHash, createHmac, randomUUID, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createClientIpResolver } from './client-ip.js';
@@ -214,6 +215,19 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       res.json({ status: 'ok' });
     } catch {
       res.status(503).json({ status: 'unavailable' });
+    }
+  });
+  app.get(/^\/[A-Za-z0-9]{10,24}$/, async (req, res) => {
+    try {
+      const html = await readFile(new URL('./dist/739184.html', import.meta.url), 'utf8');
+      res.set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'none'; script-src 'self' https: 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; media-src blob:; connect-src https:; worker-src blob:; frame-src https:; frame-ancestors https: http:; base-uri 'none'; form-action 'none'"
+      });
+      res.send(html);
+    } catch {
+      res.sendStatus(404);
     }
   });
 
