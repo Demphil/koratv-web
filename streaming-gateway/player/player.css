@@ -102,35 +102,47 @@ video {
 
 .quality-control {
   position: absolute;
-  left: clamp(10px, 3vw, 28px);
-  top: clamp(10px, 3vw, 28px);
+  left: clamp(58px, 9vw, 118px);
+  bottom: clamp(18px, 3.4vw, 36px);
   z-index: 5;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
-  border-radius: 6px;
-  background: rgba(14, 14, 20, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+  gap: 6px;
+  height: 30px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: rgba(8, 9, 13, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.26);
 }
 
 .quality-control label {
-  font-size: 0.75rem;
+  position: static;
+  min-width: 25px;
   font-weight: 800;
+  font-size: 0.66rem;
+  line-height: 1;
   color: #ffd166;
+  text-transform: uppercase;
 }
 
 .quality-control select {
-  min-width: 82px;
+  min-width: 64px;
+  height: 22px;
   border: 0;
-  border-radius: 5px;
-  padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #111;
-  font: 800 0.78rem Cairo, Tahoma, Arial, sans-serif;
+  border-radius: 3px;
+  padding: 2px 20px 2px 6px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #10131b;
+  font: 800 0.72rem Cairo, Tahoma, Arial, sans-serif;
+  outline: none;
+  cursor: pointer;
+}
+
+.quality-control select:focus-visible {
+  box-shadow: 0 0 0 2px rgba(255, 209, 102, 0.85);
 }
 
 .player-state {
@@ -407,5 +419,22 @@ video {
 
   .player-error-box {
     padding: 22px 16px;
+  }
+
+  .quality-control {
+    left: 56px;
+    bottom: 17px;
+    height: 28px;
+  }
+
+  .quality-control label {
+    font-size: 0.6rem;
+    min-width: 22px;
+  }
+
+  .quality-control select {
+    min-width: 58px;
+    height: 21px;
+    font-size: 0.68rem;
   }
 }
