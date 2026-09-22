@@ -210,10 +210,13 @@ function streamUrlForQuality(quality) {
 }
 
 function setupQualityControl() {
-  if (player) return;
   const heights = [...new Set((hls?.levels || []).map((level) => level.height).filter((height) => height > 0))].sort((a, b) => b - a);
   const providerHeights = availableQualities.map((quality) => Number(quality.height)).filter((height) => height > 0);
   const options = [0, ...new Set(heights.length > 1 ? heights : [...heights, ...providerHeights])];
+  if (player) {
+    updateQualityMenu(options);
+    return;
+  }
   player = new Plyr(video, {
     controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
     settings: ['quality'], hideControls: true, resetOnEnd: false,
@@ -231,6 +234,45 @@ function setupQualityControl() {
     } },
     i18n: { play: 'تشغيل', pause: 'إيقاف مؤقت', mute: 'كتم الصوت', unmute: 'تفعيل الصوت', volume: 'الصوت', settings: 'الإعدادات', quality: 'الجودة', enterFullscreen: 'ملء الشاشة', exitFullscreen: 'تصغير الشاشة', qualityLabel: { 0: 'تلقائي' } },
   });
+}
+
+function updateQualityMenu(options) {
+  player.config.quality.options = options;
+  player.options.quality = options;
+  const settings = player.elements.settings;
+  const list = settings.panels.quality.querySelector('[role="menu"]');
+  list.replaceChildren();
+  for (const height of options) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'plyr__control';
+    button.setAttribute('role', 'menuitemradio');
+    button.setAttribute('data-plyr', 'quality');
+    button.setAttribute('value', String(height));
+    button.setAttribute('aria-checked', String(height === (player.quality || 0)));
+    button.textContent = height ? `${height}p` : 'تلقائي';
+    Object.defineProperty(button, 'checked', {
+      get: () => button.getAttribute('aria-checked') === 'true',
+      set: (checked) => button.setAttribute('aria-checked', String(checked)),
+    });
+    button.addEventListener('click', () => {
+      for (const item of list.children) item.setAttribute('aria-checked', String(item === button));
+      player.quality = height;
+    });
+    button.addEventListener('keydown', (event) => {
+      const items = [...list.children];
+      let index = items.indexOf(button);
+      if (event.key === 'ArrowDown') index = (index + 1) % items.length;
+      else if (event.key === 'ArrowUp') index = (index + items.length - 1) % items.length;
+      else return;
+      event.preventDefault();
+      items[index].focus();
+    });
+    list.append(button);
+  }
+  settings.buttons.quality.hidden = options.length < 2;
+  settings.menu.hidden = options.length < 2;
+  player.elements.buttons.settings.hidden = options.length < 2;
 }
 function showError(title, message, retry = false) {
   status.classList.add('error');
@@ -304,6 +346,7 @@ setInterval(() => {
   if (hls) enforceEmbedIntegrity();
 }, 15000);
 loadWatchNews();
+setupQualityControl();
 start().catch((error) => {
   showError('البث غير متوفر حالياً', error.name === 'TimeoutError' ? 'تعذر الاتصال بالخادم في الوقت المحدد. افتح المباراة مجدداً.' : error.message);
   notifyParent('error', 'تعذر إنشاء اتصال آمن مع البث.');

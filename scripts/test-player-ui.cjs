@@ -13,7 +13,7 @@ const fakeHls = `class Hls {
   constructor() { this.handlers = {}; this.levels = [480,720,1080].map(height => ({height})); window.testHls = this; }
   on(event, fn) { this.handlers[event] = fn; }
   loadSource() {}
-  attachMedia(video) { setTimeout(() => { this.handlers.manifest(); video.dispatchEvent(new Event('canplay')); }, 30); }
+  attachMedia(video) { if (!window.fixtureStall) setTimeout(() => { this.handlers.manifest(); video.dispatchEvent(new Event('canplay')); }, 30); }
   destroy() {} startLoad() {} recoverMediaError() {}
 }`;
 
@@ -55,6 +55,7 @@ const fakeHls = `class Hls {
         console.log(await page.$eval('#status', el => el.textContent), errors);
         throw error;
       });
+      await page.waitForSelector('[data-plyr="quality"][value="1080"]');
       await page.click('[data-plyr="settings"]');
       await page.click('.plyr__control--forward');
       const menu = await page.$eval('.plyr__menu__container', el => el.textContent);
@@ -75,6 +76,10 @@ const fakeHls = `class Hls {
       await page.evaluate(() => { testHls.handlers.error(null, {fatal:true, type:'other'}); });
       await page.waitForSelector('#retry-stream');
       assert.match(await page.$eval('#status', el => el.textContent), /البث غير متوفر/);
+      await page.evaluateOnNewDocument(() => { window.fixtureStall = true; });
+      await page.reload();
+      await page.waitForSelector('.plyr__controls');
+      assert.equal(await page.$('[data-plyr="quality"][value="1080"]'), null);
       assert.deepEqual(errors, []);
       await page.close();
       console.log(`Player controls, live panel, session reload and error state passed at ${width}px`);
