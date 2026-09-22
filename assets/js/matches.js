@@ -19,15 +19,6 @@ const supabaseClient = window.supabase?.createClient && publicSupabaseConfig.url
 
 if (!supabaseClient) console.info('[MATCHES] Public Supabase client is not configured; using the server match feed.');
 
-const automatedClient = (() => {
-  const ua = navigator.userAgent || '';
-  return navigator.webdriver === true
-    || /HeadlessChrome|PhantomJS|SlimerJS|Puppeteer|Playwright|Selenium/i.test(ua)
-    || /bot|crawler|spider|slurp|bingpreview|facebookexternalhit|whatsapp|telegrambot|google-inspectiontool|lighthouse/i.test(ua);
-})();
-
-if (automatedClient) document.documentElement.classList.add('crawler-view');
-
 const DOM = {
   featuredContainer: document.getElementById('featured-matches'),
   broadcastContainer: document.getElementById('broadcast-matches'),
@@ -235,15 +226,9 @@ function renderMatch(match) {
   // ==========================================
   if (hasData) {
       if (isTimeAllowed) {
-          if (automatedClient) {
-              hrefAttribute = '';
-              clickAction = '';
-              isClickableClass = 'crawler-disabled';
-          } else {
-              hrefAttribute = `href="${watchUrl}" data-secure-match-id="${encodeURIComponent(stableId)}"`;
-              clickAction = '';
-              isClickableClass = 'clickable';
-          }
+          hrefAttribute = `href="${watchUrl}" data-secure-match-id="${encodeURIComponent(stableId)}"`;
+          clickAction = '';
+          isClickableClass = 'clickable';
        } else if (isEnded) {
            // 🛑 المباراة انتهت بالفعل
            clickAction = '';

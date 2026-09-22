@@ -40,6 +40,7 @@ const validSecret = (value) => value.length >= 32 && !value.startsWith('replace-
 const randomSecret = () => randomBytes(48).toString('hex');
 const gatewayText = await configure(gateway, await readFile(new URL('../.env.example', import.meta.url), 'utf8'), {
   ...publicValues,
+  ENABLE_ANTI_BOT: { value: 'true', valid: (value) => /^(true|false)$/i.test(value) },
   JWT_SECRET: { value: randomSecret(), valid: validSecret },
   HMAC_SECRET: { value: randomSecret(), valid: validSecret },
   PUBLIC_API_ORIGIN: {

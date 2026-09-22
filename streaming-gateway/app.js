@@ -4,11 +4,11 @@ import { createHash, createHmac, randomUUID, randomBytes, createCipheriv, create
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createClientIpResolver } from './client-ip.js';
+import { antiBotMiddleware } from './anti-bot.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
-const bot = /bot|crawler|spider|slurp|headless/i;
 
 function moroccoPart(value, options) {
   const date = new Date(value);
@@ -156,6 +156,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     if (req.method === 'OPTIONS') return res.sendStatus(req.headers.origin === allowed ? 204 : 403);
     next();
   });
+  app.use(antiBotMiddleware({ enabled: config.enableAntiBot !== false }));
   const clientIp = createClientIpResolver(config.cloudflareProxies);
   const ipHash = (req) => createHmac('sha256', config.hmacSecret).update(clientIp(req)).digest('hex');
   const sign = (claims, audience, expiresIn = entryTtl) => jwt.sign(claims, config.secret, { algorithm: 'HS256', issuer, audience, expiresIn, jwtid: randomUUID() });
@@ -261,7 +262,6 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   app.post('/api/generate-token', async (req, res) => {
     try {
       requireOrigin(req, config.frontend);
-      if (bot.test(req.headers['user-agent'] || '')) return res.sendStatus(403);
       const playback = await config.getPlayback(String(req.body.matchId || ''));
       if (!playback.is_streaming_active) return res.status(409).json({ error: playback.reason || 'stream_unavailable' });
       const rateKey = `stream-rate:${ipHash(req)}:${Math.floor(Date.now() / 60000)}`;

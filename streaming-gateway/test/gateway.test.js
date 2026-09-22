@@ -72,6 +72,8 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   assert.equal((await request('/healthz', config.player)).status, 200);
+  assert.equal((await request('/api/matches', config.frontend, null, '203.0.113.1', { 'User-Agent': 'Googlebot/2.1' })).status, 200);
+  assert.equal((await request('/api/matches', config.frontend, null, '203.0.113.1', { 'User-Agent': 'UnknownBot/1.0' })).status, 403);
   const matchesResponse = await request('/api/matches', config.frontend);
   assert.equal(matchesResponse.status, 200);
   assert.equal(matchesResponse.headers.get('access-control-allow-origin'), config.frontend);
