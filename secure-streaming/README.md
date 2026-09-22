@@ -74,6 +74,14 @@ pm2 save
 
 The default schedule is every 6 hours (`IPTV_PROVIDER_SYNC_CRON=0 */6 * * *`) using `Africa/Casablanca`. Missing provider entries are not deactivated unless `IPTV_SYNC_DEACTIVATE_MISSING=true`. Provider sync is sports-only by default (`IPTV_SYNC_ONLY_SPORTS=true`) so movie, VOD, and series links are ignored.
 
+The sync updates existing Supabase channels by channel name. It also detects native HLS qualities from provider master playlists when `IPTV_SYNC_MASTER_QUALITIES=true` (default). Those variants are stored in `channels.quality_variants` for the isolated player quality selector; no FFmpeg transcoding is used.
+
+```bash
+IPTV_SYNC_MASTER_QUALITIES=true
+IPTV_MASTER_PROBE_CONCURRENCY=4
+IPTV_MASTER_PROBE_TIMEOUT_MS=8000
+```
+
 6. Run locally:
 
 ```bash

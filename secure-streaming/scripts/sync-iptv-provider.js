@@ -104,6 +104,59 @@ function qualityFromText(value) {
   return null;
 }
 
+function parseStreamInf(line) {
+  const attrs = {};
+  String(line || "").replace(/([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi, (_, key, value) => {
+    attrs[key.toLowerCase()] = String(value || "").replace(/^"|"$/g, "");
+    return "";
+  });
+  return attrs;
+}
+
+function qualityFromHeight(height) {
+  const value = Number(height);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (value >= 2000) return { label: "2160p", height: 2160, rank: 2160 };
+  if (value >= 1000) return { label: "1080p", height: 1080, rank: 1080 };
+  if (value >= 700) return { label: "720p", height: 720, rank: 720 };
+  if (value >= 560) return { label: "576p", height: 576, rank: 576 };
+  if (value >= 450) return { label: "480p", height: 480, rank: 480 };
+  if (value >= 320) return { label: "360p", height: 360, rank: 360 };
+  return { label: `${Math.round(value)}p`, height: Math.round(value), rank: Math.round(value) };
+}
+
+function qualityFromStreamInf(attrs) {
+  const height = String(attrs.resolution || "").match(/x(\d+)/i)?.[1];
+  return qualityFromHeight(height)
+    || qualityFromText(attrs.name)
+    || qualityFromText(attrs.video)
+    || null;
+}
+
+export function parseMasterPlaylistVariants(text, sourceUrl) {
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const variants = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line.startsWith("#EXT-X-STREAM-INF")) continue;
+
+    const attrs = parseStreamInf(line);
+    const uri = lines[index + 1] && !lines[index + 1].startsWith("#") ? lines[index + 1] : "";
+    const quality = qualityFromStreamInf(attrs);
+    if (!uri || !quality) continue;
+
+    variants.push({
+      label: quality.label,
+      height: quality.height,
+      rank: Number(attrs.bandwidth || 0) || quality.rank,
+      bandwidth: Number(attrs.bandwidth || 0) || null,
+      url: new URL(uri, sourceUrl).href,
+      sourceName: attrs.name || ""
+    });
+  }
+  return variants.sort((a, b) => b.rank - a.rank);
+}
+
 function buildQualityVariants(item) {
   const candidates = item.candidates?.length ? item.candidates : [item];
   const byLabel = new Map();
@@ -118,6 +171,19 @@ function buildQualityVariants(item) {
         url: candidate.original_url,
         sourceName: candidate.source_name || item.source_name || "",
         rank: quality.rank
+      });
+    }
+  }
+  for (const variant of item.masterQualityVariants || []) {
+    if (!variant.label || !variant.url) continue;
+    const current = byLabel.get(variant.label);
+    if (!current || Number(variant.rank || variant.height || 0) > current.rank) {
+      byLabel.set(variant.label, {
+        label: variant.label,
+        height: variant.height,
+        url: variant.url,
+        sourceName: variant.sourceName || item.source_name || "",
+        rank: Number(variant.rank || variant.height || 0)
       });
     }
   }
@@ -226,6 +292,37 @@ async function chooseWorkingProviderLinks(matched, { timeoutMs, concurrency, ena
   return checked.filter(Boolean);
 }
 
+async function enrichMasterQualityVariants(matched, { timeoutMs, concurrency, enabled }) {
+  if (!enabled) return matched;
+  return mapWithConcurrency(matched, concurrency, async (item) => {
+    const candidates = item.candidates?.length ? item.candidates : [item];
+    const byLabel = new Map();
+
+    for (const candidate of candidates) {
+      try {
+        const text = await fetchWithTimeout(candidate.original_url, timeoutMs);
+        const variants = parseMasterPlaylistVariants(text, candidate.original_url);
+        for (const variant of variants) {
+          const current = byLabel.get(variant.label);
+          if (!current || Number(variant.rank || 0) > Number(current.rank || 0)) {
+            byLabel.set(variant.label, {
+              ...variant,
+              sourceName: variant.sourceName || candidate.source_name || item.source_name || ""
+            });
+          }
+        }
+      } catch {
+        // Many provider entries are already media playlists. Treat that as non-fatal.
+      }
+    }
+
+    return {
+      ...item,
+      masterQualityVariants: [...byLabel.values()].sort((a, b) => Number(b.rank || 0) - Number(a.rank || 0))
+    };
+  });
+}
+
 async function readExistingChannels(supabase) {
   const pageSize = 1000;
   const channels = [];
@@ -282,8 +379,11 @@ export async function syncIptvProvider(options = {}) {
   const timeoutMs = Number(options.timeoutMs || env("IPTV_PROVIDER_TIMEOUT_MS", DEFAULT_TIMEOUT_MS));
   const probeTimeoutMs = Number(options.probeTimeoutMs || env("IPTV_PROVIDER_PROBE_TIMEOUT_MS", 10000));
   const probeConcurrency = Number(options.probeConcurrency || env("IPTV_PROVIDER_PROBE_CONCURRENCY", 6));
+  const masterProbeTimeoutMs = Number(options.masterProbeTimeoutMs || env("IPTV_MASTER_PROBE_TIMEOUT_MS", 8000));
+  const masterProbeConcurrency = Number(options.masterProbeConcurrency || env("IPTV_MASTER_PROBE_CONCURRENCY", 4));
   const candidatesPerChannel = Number(options.candidatesPerChannel || env("IPTV_SYNC_CANDIDATES_PER_CHANNEL", 8));
   const validateStreams = String(options.validateStreams ?? env("IPTV_VALIDATE_STREAMS", "true")) !== "false";
+  const detectMasterQualities = String(options.detectMasterQualities ?? env("IPTV_SYNC_MASTER_QUALITIES", "true")) !== "false";
   const deactivateMissing = String(options.deactivateMissing ?? env("IPTV_SYNC_DEACTIVATE_MISSING", "false")) === "true";
   const sportsOnly = String(options.sportsOnly ?? env("IPTV_SYNC_ONLY_SPORTS", "true")) !== "false";
 
@@ -326,10 +426,15 @@ export async function syncIptvProvider(options = {}) {
   const targetChannels = sportsOnly ? existingChannels.filter(isSportsChannel) : existingChannels;
   const streamNames = targetChannels.map((channel) => channel.name);
   const rawMatched = matchChannels(streamNames, entries, { candidatesPerChannel });
-  const matched = await chooseWorkingProviderLinks(rawMatched, {
+  const workingMatched = await chooseWorkingProviderLinks(rawMatched, {
     timeoutMs: probeTimeoutMs,
     concurrency: probeConcurrency,
     enabled: validateStreams
+  });
+  const matched = await enrichMasterQualityVariants(workingMatched, {
+    timeoutMs: masterProbeTimeoutMs,
+    concurrency: masterProbeConcurrency,
+    enabled: detectMasterQualities
   });
   const { updates, unchanged, missing } = buildUpdatePayload(targetChannels, matched);
 
@@ -346,6 +451,7 @@ export async function syncIptvProvider(options = {}) {
     sportsOnly,
     deactivateMissing,
     validateStreams,
+    detectMasterQualities,
     candidatesPerChannel
   });
 
