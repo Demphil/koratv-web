@@ -1,6 +1,12 @@
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
+
+if (existsSync('.env')) {
+  process.loadEnvFile('.env');
+}
+
 const require = createRequire(import.meta.url);
 const api = new URL(process.env.PUBLIC_API_ORIGIN || 'https://stream-api.koratv.click');
 if (api.protocol !== 'https:') throw new Error('HTTPS required');
