@@ -3,6 +3,7 @@ const video = document.getElementById('video');
 const status = document.getElementById('status');
 const playerContainer = document.getElementById('player-container');
 const embedButton = document.getElementById('embed-button');
+const refreshStreamButton = document.getElementById('refresh-stream');
 const embedModal = document.getElementById('embed-modal');
 const embedCode = document.getElementById('embed-code');
 const copyEmbedCode = document.getElementById('copy-embed-code');
@@ -33,7 +34,7 @@ const INITIAL_LOAD_TIMEOUT_MS = 18000;
 const QUALITY_STALL_TIMEOUT_MS = 7000;
 const RETRY_BASE_DELAY_MS = 900;
 const EMBED_HASH_LENGTH = 12;
-const PROTECTED_SELECTOR = '[data-integrity-protected="true"], .site-watermark, .broadcast-decoy, .player-brand-overlay, .welcome-bar, .ad-sidebar';
+const PROTECTED_SELECTOR = '[data-integrity-protected="true"], .broadcast-decoy, .player-brand-overlay, .ad-sidebar';
 const OVERLAY_SELECTOR = 'a[href], button, iframe, [onclick], [role="link"]';
 let tamperObserver;
 let tamperInterval;
@@ -609,6 +610,15 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeEmbedModal();
 });
 embedButton?.addEventListener('click', openEmbedModal);
+refreshStreamButton?.addEventListener('click', () => {
+  if (sessionExpiresAt > Date.now() && hlsSessionToken) {
+    networkRetries = 0;
+    mediaRetries = 0;
+    connectStream(0);
+  } else {
+    location.reload();
+  }
+});
 embedModal?.addEventListener('click', (event) => {
   if (event.target.closest('[data-close-embed]')) closeEmbedModal();
 });

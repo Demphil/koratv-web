@@ -22,21 +22,14 @@
     <main class="main-content">
       <section id="player-container" class="player-container" aria-live="polite">
         <video id="video" controls playsinline controlslist="nodownload noplaybackrate"></video>
-        <button id="embed-button" class="embed-button" type="button" aria-label="كود التضمين">&lt;/&gt;</button>
-        <div class="site-watermark" aria-hidden="true">
-          <span class="site-watermark-mark"></span>
-          <strong>Koratv.click</strong>
-        </div>
+        <button id="embed-button" class="embed-button player-tool-button" type="button" aria-label="كود التضمين">&lt;/&gt;</button>
+        <button id="refresh-stream" class="refresh-stream player-tool-button" type="button" aria-label="تحديث البث">⟳</button>
         <div class="broadcast-decoy" data-integrity-protected="true" aria-hidden="true">
           <span>الرياضية</span>
         </div>
         <div class="player-brand-overlay" data-integrity-protected="true" aria-hidden="true">
           <span class="site-watermark-mark"></span>
           <strong>koratv.click</strong>
-        </div>
-        <div class="welcome-bar" data-integrity-protected="true" aria-hidden="true">
-          <span>مرحبا بكم في البث المباشر - زوروا koratv.click لمتابعة كل مباريات اليوم</span>
-          <img src="https://koratv.click/assets/images/favicon.svg" alt="">
         </div>
         <div id="status" class="player-state" role="status">جاري تحميل البث...</div>
       </section>
