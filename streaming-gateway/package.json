@@ -16,6 +16,7 @@
     "express": "^5.2.1",
     "hls.js": "^1.7.3",
     "jsonwebtoken": "^9.0.3",
+    "plyr": "^3.8.4",
     "proxy-addr": "^2.0.8",
     "redis": "^6.2.1"
   },

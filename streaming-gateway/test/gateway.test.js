@@ -54,8 +54,14 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     },
     get: async (key) => store.get(key) || null,
   };
+  const fetchedPaths = [];
   const server = createApp({ config, redis, fetchImpl: async (url) => {
-    if (url.pathname.endsWith('.m3u8')) return new Response('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:6,\nsegment.ts\n', { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } });
+    fetchedPaths.push(url.pathname);
+    if (url.pathname.endsWith('.m3u8')) {
+      const response = new Response('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:6,\nsegment.ts\n', { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } });
+      Object.defineProperty(response, 'url', { value: 'https://media.example.com/redirected/live/index.m3u8' });
+      return response;
+    }
     return new Response(new Uint8Array([71, 0, 1]), { headers: { 'Content-Type': 'video/mp2t' } });
   } }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -111,6 +117,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   const segment = new URL(content.trim().split('\n').at(-1));
   assert.equal((await request(segment.pathname + segment.search, config.player)).status, 403);
   assert.equal((await request(segment.pathname + segment.search, config.player, null, '203.0.113.1', { Authorization: `Bearer ${session.token}` })).status, 200);
+  assert.ok(fetchedPaths.includes('/redirected/live/segment.ts'));
   config.getPlayback = async () => ({ is_streaming_active: false, reason: 'ended' });
   assert.equal((await request(`/api/stream.m3u8?token=${session.token}`, config.player)).status, 403);
   assert.equal((await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).status, 409);

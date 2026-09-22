@@ -326,6 +326,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       }
       const type = upstream.headers.get('content-type') || '';
       if (/mpegurl/i.test(type) || source.pathname.endsWith('.m3u8')) {
+        // Relative segments belong to the final playlist URL after redirects.
+        const manifestUrl = allowedUrl(upstream.url || source.href, runtimeOrigins);
         const text = await upstream.text();
         if (!text.trimStart().startsWith('#EXTM3U')) {
           console.error('[stream-proxy] upstream response is not an HLS manifest', {
@@ -335,7 +337,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           return res.sendStatus(502);
         }
         const rewrite = (uri) => {
-          const target = allowedUrl(new URL(uri, source).href, runtimeOrigins);
+          const target = allowedUrl(new URL(uri, manifestUrl).href, runtimeOrigins);
           return `${config.api}/api/resource?resource=${seal(target.href, claims.jti)}`;
         };
         const manifest = text.split(/\r?\n/).map((line) => {

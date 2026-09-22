@@ -6,6 +6,7 @@
   <meta name="referrer" content="no-referrer">
   <title>مشاهدة المباراة بث مباشر | KoraTV</title>
   <meta name="robots" content="noindex, follow">
+  <link rel="stylesheet" href="./plyr.css">
   <link rel="stylesheet" href="./player.css">
 </head>
 <body>
@@ -24,13 +25,6 @@
           <span class="site-watermark-mark"></span>
           <strong>Koratv.click</strong>
         </div>
-        <div id="quality-control" class="quality-control" hidden>
-          <label for="quality-select">الجودة</label>
-          <select id="quality-select" aria-label="اختيار جودة البث">
-            <option value="">Auto</option>
-          </select>
-        </div>
-        <div class="control-brand" aria-hidden="true">Koratv.click</div>
         <div id="status" class="player-state" role="status">جاري تحميل البث...</div>
       </section>
 
@@ -76,6 +70,7 @@
 
   <script src="./config.js"></script>
   <script src="./hls.min.js"></script>
+  <script src="./plyr.js"></script>
   <script src="./player.js"></script>
   <script>
     (function(s) {

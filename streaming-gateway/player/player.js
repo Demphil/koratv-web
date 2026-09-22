@@ -1,4 +1,4 @@
-/* global Hls, STREAM_API_ORIGIN */
+/* global Hls, Plyr, STREAM_API_ORIGIN */
 const video = document.getElementById('video');
 const status = document.getElementById('status');
 const params = new URL(location.href).searchParams;
@@ -10,6 +10,14 @@ let hlsSessionToken = "";
 let activeMatchId = "";
 let currentQuality = "";
 let availableQualities = [];
+let player;
+let loadTimer;
+let retryTimer;
+let matchTimer;
+let networkRetries = 0;
+let mediaRetries = 0;
+let sessionExpiresAt = 0;
+const sessionKey = 'koratv-playback-session';
 const notifyParent = (state, message = '') => {
   if (window.parent !== window) window.parent.postMessage({ source: 'koratv-player', state, message }, '*');
 };
@@ -88,7 +96,7 @@ async function loadMatchPanel(matchId) {
     setText('match-home-name', match.homeTeam || '');
     setText('match-away-name', match.awayTeam || '');
     setText('match-score', match.score || 'VS');
-    setText('match-minute', match.playbackState === 'ended' ? 'النتيجة النهائية' : Number.isFinite(Number(match.liveMinute)) ? `الدقيقة ${match.liveMinute}` : match.time || '');
+    setText('match-minute', match.playbackState === 'ended' ? 'النتيجة النهائية' : match.liveMinute != null && Number.isFinite(Number(match.liveMinute)) ? `الدقيقة ${match.liveMinute}` : match.time || '');
     setText('match-yellow-cards', String(cardTotal(match.yellowCards)));
     setText('match-red-cards', String(cardTotal(match.redCards)));
     setImage('match-home-logo', match.homeLogo);
@@ -104,46 +112,95 @@ async function loadMatchPanel(matchId) {
 async function start() {
   if (!enforceEmbedIntegrity()) return;
   notifyParent('connecting');
-  if (!entry) throw new Error('Missing playback ticket. Open the match again.');
-  if (!Hls.isSupported()) throw new Error('This browser does not support the required MediaSource playback.');
-  activeMatchId = decodeJwtPayload(entry).matchId || "";
+  if (!Hls.isSupported()) throw new Error('المتصفح لا يدعم تشغيل هذا البث. يرجى تحديثه أو استخدام متصفح حديث.');
+  let session;
+  if (entry) {
+    try { sessionStorage.removeItem(sessionKey); } catch {}
+    activeMatchId = decodeJwtPayload(entry).matchId || '';
+    loadMatchPanel(activeMatchId);
+    const response = await fetch(`${STREAM_API_ORIGIN}/api/redeem-token`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: entry }), credentials: 'omit',
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw new Error(response.status === 403
+      ? 'انتهت صلاحية رابط المشاهدة. افتح المباراة مجدداً من الموقع.'
+      : 'تعذر الاتصال بخادم المشاهدة. حاول فتح المباراة مرة أخرى.');
+    const data = await response.json();
+    if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
+    session = { token: data.token, qualities: data.qualities || [], matchId: activeMatchId, expiresAt: Date.now() + data.expiresIn * 1000 };
+    try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
+  } else {
+    try { session = JSON.parse(sessionStorage.getItem(sessionKey)); } catch {}
+  }
+  if (!session?.token || session.expiresAt <= Date.now()) throw new Error('انتهت جلسة المشاهدة. افتح المباراة من الموقع للمتابعة.');
+  hlsSessionToken = session.token;
+  activeMatchId = session.matchId;
+  sessionExpiresAt = session.expiresAt;
+  availableQualities = Array.isArray(session.qualities) ? session.qualities : [];
   loadMatchPanel(activeMatchId);
-  const response = await fetch(`${STREAM_API_ORIGIN}/api/redeem-token`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: entry }), credentials: 'omit',
-  });
-  if (!response.ok) throw new Error('Playback ticket expired, was already used, or access was denied.');
-  const { token, expiresIn, qualities = [] } = await response.json();
-  hlsSessionToken = token;
-  availableQualities = Array.isArray(qualities) ? qualities : [];
-  setupQualityControl(availableQualities);
+  matchTimer = setInterval(() => { if (!document.hidden) loadMatchPanel(activeMatchId); }, 15000);
+  connectStream();
+  expiryTimer = setTimeout(() => {
+    try { sessionStorage.removeItem(sessionKey); } catch {}
+    failPlayback('انتهت جلسة المشاهدة. افتح المباراة من الموقع للمتابعة.', false);
+  }, sessionExpiresAt - Date.now());
+}
+
+function connectStream() {
+  clearTimeout(retryTimer);
+  hls?.destroy();
+  status.classList.remove('error');
+  status.textContent = 'جاري الاتصال بالبث...';
+  armLoadTimeout();
   hls = new Hls({
     enableWorker: true,
-    xhrSetup(xhr) {
-      if (hlsSessionToken) xhr.setRequestHeader('Authorization', `Bearer ${hlsSessionToken}`);
+    maxBufferLength: 30,
+    backBufferLength: 30,
+    capLevelToPlayerSize: true,
+    xhrSetup(xhr, url) {
+      if (new URL(url).origin !== new URL(STREAM_API_ORIGIN).origin) throw new Error('Unexpected media origin');
+      xhr.setRequestHeader('Authorization', `Bearer ${hlsSessionToken}`);
     }
   });
   hls.on(Hls.Events.ERROR, (_, data) => {
-    if (data.fatal) {
-      hls.destroy();
-      showError('تعذر تشغيل البث الآن', 'مصدر القناة غير متوفر حالياً.');
-      notifyParent('error', 'تعذر تحميل البث من مصدر القناة.');
+    if (!data.fatal) return;
+    if ([401, 403].includes(data.response?.code)) {
+      failPlayback('انتهت جلسة المشاهدة أو رُفض الوصول. افتح المباراة مجدداً من الموقع.', false);
+    } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries < 2) {
+      networkRetries += 1;
+      status.textContent = 'جاري إعادة الاتصال...';
+      retryTimer = setTimeout(() => hls?.startLoad(), networkRetries * 1500);
+    } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < 1) {
+      mediaRetries += 1;
+      hls.recoverMediaError();
+    } else {
+      failPlayback('البث غير متوفر حالياً. يمكنك إعادة المحاولة بعد قليل.');
     }
   });
   hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    setupQualityControl();
     status.textContent = '';
     status.classList.remove('error');
     notifyParent('ready');
+    if (video.readyState >= 3) clearTimeout(loadTimer);
   });
   hls.loadSource(streamUrlForQuality(currentQuality));
   hls.attachMedia(video);
-  expiryTimer = setTimeout(() => {
-    hls.destroy();
-    video.removeAttribute('src');
-    video.load();
-    showError('انتهت جلسة المشاهدة', 'أعد فتح المباراة للمتابعة.');
-    notifyParent('error', 'انتهت جلسة المشاهدة. أعد فتح المباراة للمتابعة.');
-  }, expiresIn * 1000);
+}
+
+function armLoadTimeout() {
+  clearTimeout(loadTimer);
+  loadTimer = setTimeout(() => failPlayback('تأخر وصول البث. تحقق من الاتصال أو أعد المحاولة.'), 30000);
+}
+
+function failPlayback(message, retry = true) {
+  clearTimeout(loadTimer);
+  clearTimeout(retryTimer);
+  hls?.destroy();
+  hls = null;
+  showError('البث غير متوفر حالياً', message, retry && sessionExpiresAt > Date.now());
+  notifyParent('error', message);
 }
 
 function streamUrlForQuality(quality) {
@@ -152,31 +209,37 @@ function streamUrlForQuality(quality) {
   return url.href;
 }
 
-function setupQualityControl(qualities) {
-  const wrapper = document.getElementById('quality-control');
-  const select = document.getElementById('quality-select');
-  if (!wrapper || !select) return;
-  const clean = qualities
-    .filter((quality) => quality?.label)
-    .filter((quality, index, list) => list.findIndex((item) => item.label === quality.label) === index);
-  select.innerHTML = '<option value="">Auto</option>' + clean
-    .map((quality) => `<option value="${escapeHtml(quality.label)}">${escapeHtml(quality.label)}</option>`)
-    .join('');
-  wrapper.hidden = clean.length === 0;
-  select.onchange = () => {
-    currentQuality = select.value || "";
-    if (!hls || !hlsSessionToken) return;
-    const wasPaused = video.paused;
-    const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-    hls.stopLoad();
-    hls.loadSource(streamUrlForQuality(currentQuality));
-    hls.startLoad(currentTime);
-    if (!wasPaused) video.play().catch(() => {});
-  };
+function setupQualityControl() {
+  if (player) return;
+  const heights = [...new Set((hls?.levels || []).map((level) => level.height).filter((height) => height > 0))].sort((a, b) => b - a);
+  const providerHeights = availableQualities.map((quality) => Number(quality.height)).filter((height) => height > 0);
+  const options = [0, ...new Set(heights.length > 1 ? heights : [...heights, ...providerHeights])];
+  player = new Plyr(video, {
+    controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
+    settings: ['quality'], hideControls: true, resetOnEnd: false,
+    iconUrl: './plyr.svg', storage: { enabled: false },
+    fullscreen: { enabled: true, container: '#player-container', iosNative: false },
+    quality: { default: 0, options, forced: true, onChange: (height) => {
+      if (!hls) return;
+      const levelIndex = hls.levels.findIndex((level) => level.height === height);
+      if (!height && !currentQuality) { hls.currentLevel = -1; return; }
+      if (height && levelIndex >= 0) { hls.currentLevel = levelIndex; return; }
+      const source = availableQualities.find((quality) => Number(quality.height) === height);
+      currentQuality = source?.label || '';
+      armLoadTimeout();
+      hls.loadSource(streamUrlForQuality(currentQuality));
+    } },
+    i18n: { play: 'تشغيل', pause: 'إيقاف مؤقت', mute: 'كتم الصوت', unmute: 'تفعيل الصوت', volume: 'الصوت', settings: 'الإعدادات', quality: 'الجودة', enterFullscreen: 'ملء الشاشة', exitFullscreen: 'تصغير الشاشة', qualityLabel: { 0: 'تلقائي' } },
+  });
 }
-function showError(title, message) {
+function showError(title, message, retry = false) {
   status.classList.add('error');
-  status.innerHTML = `<div class="player-error-box"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(message)}</span><a href="https://koratv.click/">حسناً، فهمت</a></div>`;
+  status.innerHTML = `<div class="player-error-box"><span class="error-symbol" aria-hidden="true">!</span><strong>${escapeHtml(title)}</strong><span>${escapeHtml(message)}</span>${retry ? '<button type="button" id="retry-stream">إعادة المحاولة</button>' : '<a href="https://koratv.click/" target="_blank" rel="noopener">العودة للمباريات</a>'}</div>`;
+  document.getElementById('retry-stream')?.addEventListener('click', () => {
+    networkRetries = 0;
+    mediaRetries = 0;
+    connectStream();
+  }, { once: true });
 }
 
 function escapeHtml(value) {
@@ -214,6 +277,9 @@ async function loadWatchNews() {
 }
 
 video.addEventListener('playing', () => {
+  clearTimeout(loadTimer);
+  networkRetries = 0;
+  mediaRetries = 0;
   status.textContent = '';
   status.classList.remove('error');
   notifyParent('playing');
@@ -223,7 +289,14 @@ document.addEventListener('contextmenu', (event) => event.preventDefault());
 document.addEventListener('keydown', (event) => {
   if (event.key === 'F12' || ((event.ctrlKey || event.metaKey) && event.shiftKey && /^[ijc]$/i.test(event.key))) event.preventDefault();
 });
-window.addEventListener('pagehide', () => { clearTimeout(expiryTimer); hls?.destroy(); });
+video.addEventListener('canplay', () => clearTimeout(loadTimer));
+video.addEventListener('waiting', armLoadTimeout);
+video.addEventListener('stalled', armLoadTimeout);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) loadMatchPanel(activeMatchId); });
+window.addEventListener('pagehide', () => {
+  clearTimeout(expiryTimer); clearTimeout(loadTimer); clearTimeout(retryTimer);
+  clearInterval(matchTimer); hls?.destroy();
+});
 window.addEventListener('resize', () => {
   if (hls) enforceEmbedIntegrity();
 });
@@ -231,7 +304,7 @@ setInterval(() => {
   if (hls) enforceEmbedIntegrity();
 }, 15000);
 loadWatchNews();
-start().catch(() => {
-  showError('عذراً، البث غير متاح الآن', 'مصدر القناة غير متوفر حالياً.');
+start().catch((error) => {
+  showError('البث غير متوفر حالياً', error.name === 'TimeoutError' ? 'تعذر الاتصال بالخادم في الوقت المحدد. افتح المباراة مجدداً.' : error.message);
   notifyParent('error', 'تعذر إنشاء اتصال آمن مع البث.');
 });
