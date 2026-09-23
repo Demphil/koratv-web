@@ -98,7 +98,7 @@ async function fetchSourceText(url) {
 
   const response = await fetch(url, {
     headers: {
-      "user-agent": "Mozilla/5.0 KoraLive broadcast metadata resolver/1.0",
+      "user-agent": "Mozilla/5.0 koratv broadcast metadata resolver/1.0",
       "accept": "text/html,application/xhtml+xml,application/json"
     }
   });

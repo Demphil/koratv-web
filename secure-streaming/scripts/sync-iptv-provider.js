@@ -201,7 +201,7 @@ async function fetchWithTimeout(url, timeoutMs) {
       signal: controller.signal,
       headers: {
         "accept": "application/vnd.apple.mpegurl, application/x-mpegURL, text/plain, */*",
-        "user-agent": "KoraLiveProviderSync/1.0"
+        "user-agent": "koratvProviderSync/1.0"
       }
     });
     if (!response.ok) {

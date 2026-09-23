@@ -1,4 +1,4 @@
-# KoraLive Secure Streaming
+# koratv Secure Streaming
 
 This is a Node/Next.js streaming control plane for purchased IPTV links. The original URLs stay server-side in Supabase and are never returned to browser APIs.
 

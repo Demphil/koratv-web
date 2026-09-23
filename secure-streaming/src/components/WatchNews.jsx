@@ -9,7 +9,7 @@ const fallbackArticles = [
   {
     title: "تابع آخر أخبار كرة القدم قبل وأثناء المباريات",
     description: "ملخصات سريعة وأخبار محدثة حول القنوات، الفرق، وأهم المواجهات.",
-    source_name: "KoraLive",
+    source_name: "koratv",
     link: "https://koratv.click/news.html",
     image_url: "https://koratv.click/assets/images/default-news.jpg"
   }

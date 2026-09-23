@@ -18,7 +18,7 @@ export default async function EmbedPage({ params, searchParams }) {
       <main className="embed-page">
         <section className="player-card">
           <div className="player-block-overlay static-lock">
-            هذا النطاق غير مصرح له بتضمين مشغل KoraLive.
+            هذا النطاق غير مصرح له بتضمين مشغل koratv.
           </div>
         </section>
       </main>

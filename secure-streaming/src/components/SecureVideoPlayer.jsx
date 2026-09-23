@@ -47,6 +47,50 @@ function opaqueWatchId(value) {
   return String(hash).padStart(10, "0");
 }
 
+function generateFingerprint() {
+  try {
+    return btoa(`${navigator.userAgent}|${window.screen.width}x${window.screen.height}|${navigator.language}`);
+  } catch {
+    return "fallback-fingerprint";
+  }
+}
+
+async function decryptPayload(payloadStr) {
+  const secret = process.env.NEXT_PUBLIC_AES_ENCRYPTION_KEY || 'fallback-key';
+  const keyBuffer = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));
+  
+  const [ivHex, encryptedHex] = payloadStr.split(':');
+  const iv = new Uint8Array(ivHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  const encryptedBytes = new Uint8Array(encryptedHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  
+  const cryptoKey = await window.crypto.subtle.importKey('raw', keyBuffer, { name: 'AES-CBC' }, false, ['decrypt']);
+  const decryptedBuffer = await window.crypto.subtle.decrypt({ name: 'AES-CBC', iv: iv }, cryptoKey, encryptedBytes);
+  
+  return JSON.parse(new TextDecoder().decode(decryptedBuffer));
+}
+
+async function fetchSecureToken(targetChannelName, embed) {
+  const fp = generateFingerprint();
+  const response = await fetch("/api/stream-token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ 
+      channelName: targetChannelName, 
+      embed, 
+      parentOrigin: embed ? parentOrigin() : undefined,
+      humanFingerprint: fp 
+    })
+  });
+
+  if (!response.ok) throw new Error("token error");
+  
+  const { payload } = await response.json();
+  if (!payload) throw new Error("Invalid payload");
+  
+  return await decryptPayload(payload);
+}
+
 export default function SecureVideoPlayer({ channelName, matchId = "", publicStreamId = "", embed = false }) {
   const videoRef = useRef(null);
   const playerRef = useRef(null);
@@ -163,14 +207,7 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
     let disposed = false;
 
     async function issueToken(targetChannelName = channelName) {
-      const response = await fetch("/api/stream-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ channelName: targetChannelName, embed, parentOrigin: embed ? parentOrigin() : undefined })
-      });
-      if (!response.ok) throw new Error("token");
-      const data = await response.json();
+      const data = await fetchSecureToken(targetChannelName, embed);
       tokenRef.current = data.token;
       activeChannelRef.current = targetChannelName;
       return data;
@@ -215,7 +252,7 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
         playerRef.current = null;
       }
     };
-  }, [channelName]);
+  }, [channelName, embed]);
 
   useEffect(() => {
     if (!playerRef.current) return;
@@ -226,16 +263,10 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
 
     async function switchServer() {
       try {
-        const response = await fetch("/api/stream-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ channelName: targetChannelName, embed, parentOrigin: embed ? parentOrigin() : undefined })
-        });
-        if (!response.ok) throw new Error("token");
-        const data = await response.json();
+        const data = await fetchSecureToken(targetChannelName, embed);
         tokenRef.current = data.token;
         activeChannelRef.current = targetChannelName;
+        
         const wasPaused = playerRef.current.paused();
         playerRef.current.src({ src: data.streamUrl || buildStreamSrc(targetChannelName), type: "application/x-mpegURL" });
         if (!wasPaused) playerRef.current.play().catch(() => {});
@@ -285,14 +316,9 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
 
   async function refreshStream() {
     try {
-      const response = await fetch("/api/stream-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ channelName: activeChannelRef.current, embed, parentOrigin: embed ? parentOrigin() : undefined })
-      });
-      const data = await response.json();
+      const data = await fetchSecureToken(activeChannelRef.current, embed);
       tokenRef.current = data.token;
+      
       if (playerRef.current) {
         const allServers = [...QUALITY_OPTIONS, ...languageServers];
         const selected = allServers.find((item) => item.id === selectedServerId) || QUALITY_OPTIONS[0];
@@ -334,8 +360,8 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
   return (
     <div className="secure-player-shell">
       <div className="player-topbar">
-        <a className="header-logo" href={brandUrl} target="_blank" rel="noreferrer" aria-label="KoraLive football">
-          <strong>KORALIVE</strong><span>.football</span>
+        <a className="header-logo" href={brandUrl} target="_blank" rel="noreferrer" aria-label="موقع البث">
+          <strong>koratv</strong><span>.tv</span>
         </a>
         <div className="quality-tabs" aria-label="اختيار سيرفر المشاهدة">
           {[...QUALITY_OPTIONS, ...languageServers].map((item) => (
@@ -372,8 +398,8 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
         <button type="button" className="player-refresh" onClick={refreshStream} aria-label="تحديث البث">↻</button>
 
         <div className="korlive-corner-logo" aria-hidden="true">
-          <strong>KORALIVE</strong>
-          <small>.football</small>
+          <strong>koratv</strong>
+          <small>.tv</small>
         </div>
 
         <div className="brand-watermark bottom-line">
@@ -384,7 +410,7 @@ export default function SecureVideoPlayer({ channelName, matchId = "", publicStr
           <aside className="promo-pop" aria-label="إعلان">
             <button type="button" className="promo-close" onClick={() => setPromoOpen(false)} aria-label="إغلاق الإعلان">×</button>
             <div className="promo-badge">🏆 بث مباشر بجودة عالية</div>
-            <h3>تابع المباريات على KoraLive</h3>
+            <h3>تابع المباريات على موقعنا</h3>
             <p>إذا واجهت تقطيعاً، بدّل السيرفر من الأعلى أو اضغط تحديث البث.</p>
             <a href={brandUrl} target="_blank" rel="noreferrer">زيارة الموقع</a>
           </aside>

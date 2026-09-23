@@ -11,7 +11,7 @@ export function getClientIp(request) {
 
 export function getSessionId(request) {
   const cookie = request.headers.get("cookie") || "";
-  const match = cookie.match(/(?:^|;\s*)koralive_session=([^;]+)/);
+  const match = cookie.match(/(?:^|;\s*)koratv_session=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : "anonymous";
 }
 
@@ -28,13 +28,13 @@ export function signStreamToken({ channelName, ip, sessionId }) {
       sessionHash: hashIp(sessionId)
     },
     process.env.STREAM_JWT_SECRET,
-    { expiresIn: TOKEN_TTL_SECONDS, issuer: "koralive-secure-streaming" }
+    { expiresIn: TOKEN_TTL_SECONDS, issuer: "koratv-secure-streaming" }
   );
 }
 
 export function verifyStreamToken({ token, channelName, ip, sessionId }) {
   const payload = jwt.verify(token, process.env.STREAM_JWT_SECRET, {
-    issuer: "koralive-secure-streaming"
+    issuer: "koratv-secure-streaming"
   });
   if (payload.sub !== "stream") throw new Error("Invalid token subject.");
   if (payload.channelName !== channelName) throw new Error("Token channel mismatch.");

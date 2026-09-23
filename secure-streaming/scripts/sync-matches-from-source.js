@@ -91,7 +91,7 @@ function fixturesUrlForDate(date) {
 async function fetchHtml(url) {
   const response = await fetch(url, {
     headers: {
-      "user-agent": "Mozilla/5.0 KoraLive metascrape/1.0",
+      "user-agent": "Mozilla/5.0 koratv metascrape/1.0",
       "accept": "text/html,application/xhtml+xml"
     }
   });

@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "./supabaseAdmin";
 
-export const SITE_NAME = "KoraLive Football";
+export const SITE_NAME = "koratv Football";
 export const CANONICAL_ORIGIN = (process.env.NEXT_PUBLIC_CANONICAL_ORIGIN || "https://koratv.click").replace(/\/$/, "");
 
 const UNKNOWN_CHANNELS = new Set(["", "غير محدد", "غير معروف", "unknown", "تحدد لاحقا", "تحدد لاحقاً"]);
@@ -54,8 +54,8 @@ export function describeMatch(match, channelName) {
     : `مشاهدة ${channelName} بث مباشر | ${SITE_NAME}`;
 
   const description = hasTeams
-    ? `شاهد مباراة ${homeTeam} ضد ${awayTeam} بث مباشر${league ? ` ضمن ${league}` : ""}${isKnownChannel(channel) ? ` على ${channel}` : ""} عبر KoraLive Football مع سيرفرات متعددة وجودات 1080 و720 و360.`
-    : `شاهد ${channelName} بث مباشر عبر KoraLive Football مع مشغل آمن وسيرفرات متعددة وجودات مناسبة لكل سرعة إنترنت.`;
+    ? `شاهد مباراة ${homeTeam} ضد ${awayTeam} بث مباشر${league ? ` ضمن ${league}` : ""}${isKnownChannel(channel) ? ` على ${channel}` : ""} عبر koratv Football مع سيرفرات متعددة وجودات 1080 و720 و360.`
+    : `شاهد ${channelName} بث مباشر عبر koratv Football مع مشغل آمن وسيرفرات متعددة وجودات مناسبة لكل سرعة إنترنت.`;
 
   return {
     title,
@@ -141,7 +141,7 @@ async function findChannelByOpaqueId(supabase, publicId) {
 }
 
 export async function resolveWatchTarget({ routeToken, matchId = "" }) {
-  const decodedToken = safeText(decodeURIComponent(routeToken || ""), "KoraLive");
+  const decodedToken = safeText(decodeURIComponent(routeToken || ""), "koratv");
 
   try {
     const supabase = getSupabaseAdmin();

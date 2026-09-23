@@ -22,7 +22,7 @@ async function checkStream(item) {
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        "User-Agent": "KoraLiveStreamCheck/1.0",
+        "User-Agent": "koratvStreamCheck/1.0",
         "Accept": "*/*",
         "Range": "bytes=0-4095"
       }

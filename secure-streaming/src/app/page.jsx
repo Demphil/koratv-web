@@ -1,14 +1,14 @@
 import { absoluteUrl, SITE_NAME } from "../lib/seo";
 
 export const metadata = {
-  title: "KoraLive - Watch Live Football Matches Today",
-  description: "Watch today's football matches live on KoraLive Football with updated match schedules, broadcast channels, and secure multi-quality streaming pages.",
+  title: "koratv - Watch Live Football Matches Today",
+  description: "Watch today's football matches live on koratv Football with updated match schedules, broadcast channels, and secure multi-quality streaming pages.",
   alternates: {
     canonical: absoluteUrl("/")
   },
   openGraph: {
-    title: "KoraLive - Watch Live Football Matches Today",
-    description: "Live football schedules, broadcast channels, and secure KoraLive match viewing pages.",
+    title: "koratv - Watch Live Football Matches Today",
+    description: "Live football schedules, broadcast channels, and secure koratv match viewing pages.",
     url: absoluteUrl("/"),
     type: "website"
   }
@@ -36,10 +36,10 @@ export default function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <section className="seo-home-card">
-        <a className="header-logo seo-home-logo" href={absoluteUrl("/")} aria-label="KoraLive Football">
-          <strong>KORALIVE</strong><span>.football</span>
+        <a className="header-logo seo-home-logo" href={absoluteUrl("/")} aria-label="koratv Football">
+          <strong>koratv</strong><span>.football</span>
         </a>
-        <h1>KoraLive Football - بث مباشر مباريات اليوم</h1>
+        <h1>koratv Football - بث مباشر مباريات اليوم</h1>
         <p>
           تابع مباريات كرة القدم اليوم عبر صفحات مشاهدة آمنة، قنوات محدثة،
           وسيرفرات جودة متعددة تناسب سرعة اتصالك.
