@@ -124,7 +124,7 @@ function createNewsCard(article, type) {
     const title = article.title || 'تحديث رياضي';
     const description = stripHTML(article.description || article.content || '');
     const articleUrl = sanitizeUrl(article.link);
-    const imgUrl = sanitizeUrl(article.thumbnail || (article.enclosure && article.enclosure.link), 'assets/images/default-news.jpg');
+    const imgUrl = '/assets/images/logo.png';
     
     let badge = "عالمي";
     if (title.includes("سعودي") || title.includes("النصر") || title.includes("الهلال")) badge = "السعودية";
@@ -139,7 +139,7 @@ function createNewsCard(article, type) {
     card.innerHTML = `
         <div class="news-image-wrapper">
             <span class="news-category-badge">${escapeHTML(badge)}</span>
-            <img src="${escapeAttribute(imgUrl)}" alt="${escapeAttribute(title)}" loading="lazy" onerror="this.src='assets/images/default-news.jpg'">
+            <img src="${escapeAttribute(imgUrl)}" alt="شعار منصة المعلومات الرياضية" loading="lazy" onerror="this.src='/assets/images/logo.png'">
         </div>
         <div class="news-content">
             <h3 class="news-title">
@@ -155,15 +155,23 @@ function createNewsCard(article, type) {
     return card;
 }
 
+const categoryTerms = {
+    results: ['نتائج', 'نتيجة', 'فاز', 'score', 'result'],
+    statistics: ['إحصائيات', 'احصائيات', 'أرقام', 'رقم', 'statistics'],
+    fixtures: ['مواجهة', 'مواجهات', 'مباراة', 'مباريات', 'لقاء', 'match'],
+    analysis: ['تحليل', 'تحليلات', 'قراءة فنية', 'analysis']
+};
+
 function applyFilter(keyword) {
     if (!keyword || keyword === 'كرة القدم' || keyword === 'all') {
         state.filteredArticles = [...state.allArticles];
     } else {
         const lowerKeyword = keyword.toLowerCase();
-        state.filteredArticles = state.allArticles.filter(a => 
-            (a.title && a.title.toLowerCase().includes(lowerKeyword)) || 
-            (a.description && a.description.toLowerCase().includes(lowerKeyword))
-        );
+        const terms = categoryTerms[keyword] || [lowerKeyword];
+        state.filteredArticles = state.allArticles.filter(article => {
+            const searchable = `${article.title || ''} ${article.description || ''}`.toLowerCase();
+            return terms.some(term => searchable.includes(term.toLowerCase()));
+        });
     }
     displayNews(false); 
 }

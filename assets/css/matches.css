@@ -181,7 +181,7 @@ body::before {
 }
 
 /* 5. بطاقة المباراة الموحدة */
-a.match-card-link {
+.match-card-link {
   text-decoration: none;
   color: inherit;
   perspective: 1100px;
