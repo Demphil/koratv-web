@@ -120,7 +120,7 @@ function renderServers(streams, playerContainer, playerLoader, serversContainer)
   logoLink.style.alignItems = 'center';
   const logoImg = document.createElement('img');
   logoImg.src = 'assets/images/logo.png';
-  logoImg.alt = 'KoraLive Football';
+  logoImg.alt = 'koratv Football';
   logoImg.style.height = '35px';
   logoImg.style.width = 'auto';
   logoImg.onerror = function() { this.style.display = 'none'; };
@@ -283,7 +283,7 @@ async function loadWatchNews() {
   const newsContainer = document.getElementById('watch-news-container');
   if (!newsContainer) return;
 
-  const CACHE_KEY = 'koralive_watch_news_v4';
+  const CACHE_KEY = 'koratv_watch_news_v4';
   const CACHE_TIME = 2 * 60 * 60 * 1000;
 
   try {

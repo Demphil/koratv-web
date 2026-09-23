@@ -14,14 +14,14 @@ const socials = [
 ];
 
 const sharedKeywords =
-  "كورة لايف, koora live, koralive, مباريات اليوم, بث مباشر, أخبار كرة القدم, القنوات الناقلة";
+  "كورة لايف, koora live, koratv, مباريات اليوم, بث مباشر, أخبار كرة القدم, القنوات الناقلة";
 
 const streamPages = [
   {
     file: "index.html",
     slug: "",
     title: "كورة لايف | مباريات اليوم بث مباشر وجدول القنوات",
-    h1: "كورة لايف | مباريات اليوم بث مباشر KoraLive Football",
+    h1: "كورة لايف | مباريات اليوم بث مباشر koratv Football",
     description:
       "تابع مباريات اليوم بث مباشر على كورة لايف مع جدول المواعيد، نتائج لحظية، أخبار كرة القدم، وتفاصيل القنوات الناقلة للبطولات العربية والعالمية.",
     intro:
@@ -49,7 +49,7 @@ const streamPages = [
     title: "كورة سيتي | متابعة مباريات اليوم بث مباشر",
     h1: "كورة سيتي | مباريات اليوم بث مباشر",
     description:
-      "تابع عبر كورة سيتي على KoraLive جدول مباريات اليوم، روابط البث المباشر، وأبرز أخبار كرة القدم العربية والعالمية في مكان واحد.",
+      "تابع عبر كورة سيتي على koratv جدول مباريات اليوم، روابط البث المباشر، وأبرز أخبار كرة القدم العربية والعالمية في مكان واحد.",
     intro:
       "تساعدك صفحة كورة سيتي على الوصول السريع إلى مباريات اليوم وأخبار الكرة دون التنقل بين أكثر من مصدر.",
     priority: "0.72",
@@ -88,7 +88,7 @@ const streamPages = [
     title: "كورة اكسترا | أخبار ومباريات اليوم بث مباشر",
     h1: "كورة اكسترا | مباريات وأخبار كرة القدم",
     description:
-      "كورة اكسترا على KoraLive تجمع مباريات اليوم بث مباشر مع أخبار الكرة، الانتقالات، ونتائج أبرز الدوريات العربية والأوروبية.",
+      "كورة اكسترا على koratv تجمع مباريات اليوم بث مباشر مع أخبار الكرة، الانتقالات، ونتائج أبرز الدوريات العربية والأوروبية.",
     intro:
       "تقدم صفحة كورة اكسترا تجربة أوسع تجمع جدول البث مع الأخبار الرياضية الحديثة لتسهيل متابعة اليوم الكروي.",
     priority: "0.72",
@@ -101,7 +101,7 @@ const streamPages = [
     title: "يلا اكسترا | مباريات اليوم بث مباشر على كورة لايف",
     h1: "يلا اكسترا | بث مباشر مباريات اليوم",
     description:
-      "يلا اكسترا على KoraLive تعرض مباريات اليوم بث مباشر مع مواعيد اللقاءات، القنوات الناقلة، وروابط المشاهدة قبل الانطلاق.",
+      "يلا اكسترا على koratv تعرض مباريات اليوم بث مباشر مع مواعيد اللقاءات، القنوات الناقلة، وروابط المشاهدة قبل الانطلاق.",
     intro:
       "صفحة يلا اكسترا تمنح الزائر نافذة إضافية لمتابعة مباريات اليوم وروابط البث المباشر داخل شبكة كورة لايف.",
     priority: "0.7",
@@ -129,7 +129,7 @@ const streamPages = [
     description:
       "صفحة سير تيفي توفر متابعة مباريات اليوم بث مباشر، مواعيد اللقاءات، وتفاصيل القنوات الناقلة عبر كورة لايف.",
     intro:
-      "سير تيفي صفحة بديلة داخل KoraLive لمتابعة جدول المباريات وروابط المشاهدة المحدثة للمواجهات المهمة.",
+      "سير تيفي صفحة بديلة داخل koratv لمتابعة جدول المباريات وروابط المشاهدة المحدثة للمواجهات المهمة.",
     priority: "0.7",
     changefreq: "daily",
     featured: "سير تيفي مباريات اليوم",
@@ -155,7 +155,7 @@ const streamPages = [
     description:
       "تابع عبر ياسين تيفي على كورة لايف جدول مباريات اليوم والقنوات الناقلة وروابط البث المباشر للبطولات العربية والعالمية.",
     intro:
-      "صفحة ياسين تيفي تساعدك على معرفة موعد المباراة والقناة الناقلة مع روابط البث عند توفرها داخل KoraLive.",
+      "صفحة ياسين تيفي تساعدك على معرفة موعد المباراة والقناة الناقلة مع روابط البث عند توفرها داخل koratv.",
     priority: "0.7",
     changefreq: "daily",
     featured: "ياسين تيفي مباريات اليوم",
@@ -179,7 +179,7 @@ const streamPages = [
     title: "بوز كورة | مباريات اليوم بث مباشر وأخبار الكرة",
     h1: "بوز كورة | مباريات اليوم وأخبار كرة القدم",
     description:
-      "بوز كورة من KoraLive يجمع مباريات اليوم بث مباشر مع آخر أخبار كرة القدم ونتائج البطولات المحلية والعالمية.",
+      "بوز كورة من koratv يجمع مباريات اليوم بث مباشر مع آخر أخبار كرة القدم ونتائج البطولات المحلية والعالمية.",
     intro:
       "صفحة بوز كورة مناسبة لمن يريد متابعة الأخبار والمباريات في نفس المكان مع روابط داخلية واضحة لبقية صفحات كورة لايف.",
     priority: "0.7",
@@ -291,8 +291,8 @@ function buildSchema(page, type = "WebPage") {
       {
         "@type": "Organization",
         "@id": `${siteUrl}/#organization`,
-        name: "KoraLive Football",
-        alternateName: ["كورة لايف", "koora live", "koralive"],
+        name: "koratv Football",
+        alternateName: ["كورة لايف", "koora live", "koratv"],
         url: siteUrl,
         logo: {
           "@type": "ImageObject",
@@ -305,7 +305,7 @@ function buildSchema(page, type = "WebPage") {
         "@id": `${siteUrl}/#website`,
         url: siteUrl,
         name: "كورة لايف",
-        alternateName: "KoraLive Football",
+        alternateName: "koratv Football",
         inLanguage: "ar",
         publisher: { "@id": `${siteUrl}/#organization` },
         potentialAction: {
@@ -391,7 +391,7 @@ function buildHead(page, options = {}) {
     <title>${esc(page.title)}</title>
     <meta name="description" content="${esc(page.description)}">
     <meta name="keywords" content="${esc(`${sharedKeywords}, ${page.h1 || page.title}`)}">
-    <meta name="author" content="KoraLive Team">
+    <meta name="author" content="koratv Team">
     <meta name="robots" content="${robots}">
     <meta name="theme-color" content="#1d3557">
 ${extraVerification}    <link rel="canonical" href="${url}">
@@ -404,13 +404,13 @@ ${extraVerification}    <link rel="canonical" href="${url}">
     <link rel="dns-prefetch" href="//al5sm.com">
     <link rel="dns-prefetch" href="//nap5k.com">
     <link rel="dns-prefetch" href="//quge5.com">
-    <meta property="og:site_name" content="KoraLive Football">
+    <meta property="og:site_name" content="koratv Football">
     <meta property="og:title" content="${esc(page.title)}">
     <meta property="og:description" content="${esc(page.description)}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${url}">
     <meta property="og:image" content="${imageUrl}">
-    <meta property="og:image:alt" content="KoraLive Football logo">
+    <meta property="og:image:alt" content="koratv Football logo">
     <meta property="og:locale" content="ar_AR">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${esc(page.title)}">
@@ -480,7 +480,7 @@ function updateNewsPage() {
   const page = {
     file: "news.html",
     slug: "news.html",
-    title: "آخر أخبار كرة القدم اليوم | KoraLive Football",
+    title: "آخر أخبار كرة القدم اليوم | koratv Football",
     h1: "آخر أخبار كرة القدم اليوم",
     description:
       "تابع آخر أخبار كرة القدم اليوم على كورة لايف: انتقالات اللاعبين، نتائج المباريات، أخبار الدوريات، والقنوات الناقلة للأحداث المهمة.",
@@ -518,7 +518,7 @@ ${buildHead(page)}
     <header class="header">
         <div class="logo">
             <a href="/" aria-label="كورة لايف">
-                <img src="/assets/images/logo.png" alt="KoraLive Football" loading="lazy" width="45" height="45">
+                <img src="/assets/images/logo.png" alt="koratv Football" loading="lazy" width="45" height="45">
             </a>
         </div>
         <h1 class="header-title">${page.h1}</h1>
@@ -553,7 +553,7 @@ ${buildHead(page)}
             </div>
         </div>
         <div class="copyright">
-            <p>Copyright © <span id="current-year"></span> Koralive.Football - All rights reserved</p>
+            <p>Copyright © <span id="current-year"></span> koratv.Football - All rights reserved</p>
         </div>
     </footer>
 

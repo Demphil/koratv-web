@@ -1,6 +1,6 @@
 // assets/js/news.js
 
-const CACHE_KEY = "koralive_rss_news_v5_hespress"; // كاش جديد تماماً
+const CACHE_KEY = "koratv_rss_news_v5_hespress"; // كاش جديد تماماً
 const CACHE_DURATION = 2 * 60 * 60 * 1000; 
 
 const elements = {
