@@ -25,6 +25,9 @@ const DOM = {
   todayTab: document.getElementById('today-tab'),
   tomorrowTab: document.getElementById('tomorrow-tab'),
 };
+const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
+const PLAYER_ORIGIN = 'https://medic.cymru';
+const PLAYER_PATH = '/739184.html';
 
 function hideLoading() {
   if (DOM.loadingScreen) DOM.loadingScreen.style.display = 'none';
@@ -157,7 +160,6 @@ function renderMatch(match) {
   const matchId = `${homeTeamName}_vs_${awayTeamName}`
     .toLocaleLowerCase('ar').trim().replace(/\s+/g, '_');
   const stableId = match.matchId || match.match_id || `${matchId}-${match.scheduledAt?.slice(0, 10) || 'undated'}`;
-  const publicWatchId = opaqueWatchId(stableId);
   
   // ==========================================
   // 🚀 الإصلاح الجذري لمشكلة منتصف الليل والتوقيت
@@ -224,7 +226,7 @@ function renderMatch(match) {
 
   return `
     <div class="match-card-link not-clickable">
-      <article class="match-card ${matchStatusClass}" data-match-id="${publicWatchId}">
+      <article class="match-card ${matchStatusClass}" data-match-id="${stableId}">
         ${statusBadge}
         <div class="teams">
           <div class="team">
@@ -327,6 +329,42 @@ function createMatchElement(match) {
   const template = document.createElement('template');
   template.innerHTML = renderMatch({ ...match, matchId: matchIdentity(match) }).trim();
   return template.content.firstElementChild;
+}
+
+async function openSecurePlayer(matchId) {
+  const safeMatchId = String(matchId || '').trim();
+  if (!safeMatchId) return;
+  const tab = window.open('about:blank', '_blank');
+  if (!tab) return;
+  tab.opener = null;
+
+  try {
+    const response = await fetch(`${STREAM_API_ORIGIN}/api/generate-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      credentials: 'omit',
+      body: JSON.stringify({ matchId: safeMatchId })
+    });
+    if (!response.ok) throw new Error(`Token request failed with status ${response.status}`);
+    const payload = await response.json();
+    if (!payload?.token) throw new Error('Missing playback token');
+    tab.location.replace(`${PLAYER_ORIGIN}${PLAYER_PATH}?k=${encodeURIComponent(payload.token)}`);
+  } catch (error) {
+    tab.close();
+    console.error('[MATCHES] secure player launch failed:', error);
+  }
+}
+
+function setupSecurePlayerLinks() {
+  if (document.body?.dataset?.securePlayerLinksReady === 'true') return;
+  if (document.body) document.body.dataset.securePlayerLinksReady = 'true';
+  document.addEventListener('click', (event) => {
+    const card = event.target.closest('.match-card[data-match-id]');
+    if (!card) return;
+    event.preventDefault();
+    void openSecurePlayer(card.dataset.matchId);
+  });
 }
 
 function renderSection(container, matches, message) {
@@ -435,6 +473,7 @@ function setupTabs() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    setupSecurePlayerLinks();
     setupTabs();
     loadAndRenderMatches().catch(error => {
         console.error("An error occurred while loading matches:", error);
