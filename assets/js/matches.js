@@ -25,9 +25,70 @@ const DOM = {
   todayTab: document.getElementById('today-tab'),
   tomorrowTab: document.getElementById('tomorrow-tab'),
 };
+const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
+const PLAYER_ORIGIN = 'https://medic.cymru';
+const PLAYER_PATH = '/739184.html';
 
 function hideLoading() {
   if (DOM.loadingScreen) DOM.loadingScreen.style.display = 'none';
+}
+
+async function openSecurePlayer(matchId) {
+  const safeMatchId = String(matchId || '').trim();
+  if (!safeMatchId) return;
+  const playerTab = window.open('about:blank', '_blank', 'noopener,noreferrer');
+  if (!playerTab) throw new Error('popup_blocked');
+  playerTab.opener = null;
+
+  let response;
+  try {
+    response = await fetch(`${STREAM_API_ORIGIN}/api/generate-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      credentials: 'omit',
+      body: JSON.stringify({ matchId: safeMatchId })
+    });
+  } catch (error) {
+    playerTab.close();
+    throw error;
+  }
+
+  if (!response.ok) {
+    playerTab.close();
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || 'token_request_failed');
+  }
+
+  const { token } = await response.json();
+  if (!token) {
+    playerTab.close();
+    throw new Error('token_missing');
+  }
+
+  playerTab.location.replace(`${PLAYER_ORIGIN}${PLAYER_PATH}?k=${encodeURIComponent(token)}`);
+}
+
+function setupSecurePlayerLinks() {
+  if (document.body?.dataset.securePlayerLinksBound === '1') return;
+  if (document.body) document.body.dataset.securePlayerLinksBound = '1';
+
+  document.addEventListener('click', async (event) => {
+    const matchCard = event.target.closest('.match-card[data-match-id]');
+    if (!matchCard) return;
+    const matchId = matchCard.dataset.matchId;
+    if (!matchId || matchCard.dataset.opening === '1') return;
+
+    matchCard.dataset.opening = '1';
+    try {
+      await openSecurePlayer(matchId);
+    } catch (error) {
+      console.warn('[MATCHES] secure player launch failed:', error);
+      window.openWaitModal?.('التغطية الرقمية للنتائج غير متاحة حالياً، يرجى المحاولة بعد قليل.');
+    } finally {
+      delete matchCard.dataset.opening;
+    }
+  });
 }
 
 window.openWaitModal = function(message) {
@@ -224,7 +285,7 @@ function renderMatch(match) {
 
   return `
     <div class="match-card-link not-clickable">
-      <article class="match-card ${matchStatusClass}" data-match-id="${publicWatchId}">
+      <article class="match-card ${matchStatusClass}" data-match-id="${stableId}" data-watch-id="${publicWatchId}">
         ${statusBadge}
         <div class="teams">
           <div class="team">
@@ -435,6 +496,7 @@ function setupTabs() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    setupSecurePlayerLinks();
     setupTabs();
     loadAndRenderMatches().catch(error => {
         console.error("An error occurred while loading matches:", error);
