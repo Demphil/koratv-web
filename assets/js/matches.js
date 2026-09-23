@@ -7,6 +7,10 @@ import {
   getMoroccoDay
 } from './api.js';
 
+const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
+const PLAYER_ORIGIN = 'https://medic.cymru';
+const PLAYER_PATH = '/739184.html';
+
 const publicSupabaseConfig = window.__SUPABASE_CONFIG__ || {};
 const supabaseClient = window.supabase?.createClient && publicSupabaseConfig.url && publicSupabaseConfig.anonKey
   ? window.supabase.createClient(publicSupabaseConfig.url, publicSupabaseConfig.anonKey, {
@@ -158,6 +162,7 @@ function renderMatch(match) {
     .toLocaleLowerCase('ar').trim().replace(/\s+/g, '_');
   const stableId = match.matchId || match.match_id || `${matchId}-${match.scheduledAt?.slice(0, 10) || 'undated'}`;
   const publicWatchId = opaqueWatchId(stableId);
+  const watchUrl = `${PLAYER_ORIGIN}${PLAYER_PATH}?m=${encodeURIComponent(publicWatchId)}`;
   
   // ==========================================
   // 🚀 الإصلاح الجذري لمشكلة منتصف الليل والتوقيت
@@ -191,6 +196,11 @@ function renderMatch(match) {
   const isEnded = match.playbackState === 'ended' || /result|finished|ended|full.?time|انته/.test(sourceStatus) || diffMins < -matchDuration;
   const isLive = !isEnded && (match.isLive === true || (diffMins <= 0 && diffMins >= -matchDuration));
   const isSoon = diffMins > 0 && diffMins <= 60; 
+  const canOpenSecurePlayer = match.sourceReady === true && match.playbackState === 'live' && !isEnded;
+  const linkAttributes = canOpenSecurePlayer
+    ? `href="${watchUrl}" data-secure-match-id="${encodeURIComponent(stableId)}"`
+    : 'href="javascript:void(0)"';
+  const linkClass = canOpenSecurePlayer ? 'clickable' : 'not-clickable';
 
   let timeText = match.time;
   
@@ -223,8 +233,8 @@ function renderMatch(match) {
   }
 
   return `
-    <div class="match-card-link not-clickable">
-      <article class="match-card ${matchStatusClass}" data-match-id="${publicWatchId}">
+    <a ${linkAttributes} class="match-card-link ${linkClass}">
+      <article class="match-card ${matchStatusClass}" data-match-id="${stableId}" data-watch-id="${publicWatchId}">
         ${statusBadge}
         <div class="teams">
           <div class="team">
@@ -242,7 +252,7 @@ function renderMatch(match) {
         </div>
         ${renderLiveData(match, matchDate, isLive)}
       </article>
-    </div>
+    </a>
   `;
 }
 
@@ -305,6 +315,68 @@ function opaqueWatchId(value) {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return String(hash).padStart(10, '0');
+}
+
+async function openSecurePlayer(matchId) {
+  if (!matchId) return;
+  const playerTab = window.open('about:blank', '_blank');
+  if (!playerTab) {
+    window.openWaitModal?.('يرجى السماح بفتح تبويب جديد للمشاهدة.');
+    return;
+  }
+  playerTab.opener = null;
+  playerTab.document.title = 'جاري تجهيز المشغل';
+  playerTab.document.body.textContent = 'جاري تجهيز المشغل...';
+  playerTab.document.documentElement.dir = 'rtl';
+  window.openWaitModal?.('جاري تجهيز المشغل الآمن...');
+  let response;
+  try {
+    response = await fetch(`${STREAM_API_ORIGIN}/api/generate-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      credentials: 'omit',
+      body: JSON.stringify({ matchId })
+    });
+  } catch {
+    playerTab.close();
+    window.openWaitModal?.('تعذر الاتصال بخادم البث. حاول مرة أخرى.');
+    return;
+  }
+
+  if (!response.ok) {
+    playerTab.close();
+    const payload = await response.json().catch(() => ({}));
+    const messages = {
+      upcoming: 'سيُفتح البث قبل بداية المباراة بعشرين دقيقة.',
+      ended: 'انتهت المباراة وتم إغلاق البث.',
+      channel_unavailable: 'لم تُحدد القناة الناقلة بعد.',
+      source_unavailable: 'مصدر القناة غير متوفر حالياً.'
+    };
+    window.openWaitModal?.(messages[payload.error] || 'البث غير متاح حالياً. حاول مرة أخرى لاحقاً.');
+    return;
+  }
+
+  const { token } = await response.json().catch(() => ({}));
+  if (!token) {
+    playerTab.close();
+    window.openWaitModal?.('لم يتمكن الخادم من إنشاء جلسة مشاهدة آمنة.');
+    return;
+  }
+  window.closeWaitModal?.();
+  if (!playerTab.closed) {
+    playerTab.location.replace(`${PLAYER_ORIGIN}${PLAYER_PATH}?k=${encodeURIComponent(token)}`);
+  }
+}
+
+function setupSecurePlayerLinks() {
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest?.('.match-card-link.clickable[data-secure-match-id]');
+    if (!link) return;
+    event.preventDefault();
+    const matchId = decodeURIComponent(link.dataset.secureMatchId || '');
+    openSecurePlayer(matchId);
+  });
 }
 
 function matchRenderSignature(match) {
@@ -436,6 +508,7 @@ function setupTabs() {
 
 document.addEventListener('DOMContentLoaded', () => {
     setupTabs();
+  setupSecurePlayerLinks();
     loadAndRenderMatches().catch(error => {
         console.error("An error occurred while loading matches:", error);
         hideLoading();
