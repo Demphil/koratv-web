@@ -12,7 +12,7 @@ module.exports = {
       watch: false,
       max_memory_restart: "512M",
       kill_timeout: 10000,
-      listen_timeout: 10000,
+      listen_timeout: 60000,
       restart_delay: 2000,
       exp_backoff_restart_delay: 100,
       env_production: {
