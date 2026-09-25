@@ -89,15 +89,63 @@ jobs:
             find /var/www/koratv-player -type f -exec chmod 0644 {} +
 
             PLAYER_DOMAIN=fabor.sbs
+            PLAYER_TLS_READY=false
             if [ ! -f "/etc/letsencrypt/live/$PLAYER_DOMAIN/fullchain.pem" ]; then
               resolved_ips="$(getent ahostsv4 "$PLAYER_DOMAIN" | awk '{print $1}' | sort -u | tr '\n' ' ')"
               public_ip="$(curl --fail --silent --show-error --max-time 10 https://api.ipify.org || true)"
               if ! printf '%s\n' "$resolved_ips" | grep -qw "$public_ip"; then
-                echo "DNS for $PLAYER_DOMAIN must point to this VPS before enabling the player certificate. Resolved: ${resolved_ips:-none}; VPS: ${public_ip:-unknown}"
-                exit 1
-              fi
-              install -d -m 0755 /var/www/certbot
-              cat > /etc/nginx/sites-available/fabor-bootstrap <<'NGINX_BOOTSTRAP'
+                echo "DNS for $PLAYER_DOMAIN is not ready yet. Resolved: ${resolved_ips:-none}; VPS: ${public_ip:-unknown}. Installing HTTP player bootstrap and skipping TLS smoke checks for now."
+                cat > /etc/nginx/sites-available/fabor-bootstrap <<'NGINX_BOOTSTRAP'
+            server {
+                listen 80;
+                server_name fabor.sbs www.fabor.sbs;
+                root /var/www/koratv-player;
+                add_header Content-Security-Policy "default-src 'none'; script-src 'self' https: 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; media-src blob:; connect-src https:; worker-src blob:; frame-src https:; frame-ancestors 'self' https://frajatv.fun https://www.frajatv.fun https://fraja.online https://koratv.click https://www.koratv.click; base-uri 'none'; form-action 'none'" always;
+                add_header X-Content-Type-Options nosniff always;
+                add_header Cache-Control no-store always;
+                location /.well-known/acme-challenge/ {
+                    root /var/www/certbot;
+                    try_files $uri =404;
+                }
+                location = / {
+                    return 403;
+                }
+                location = /739184.html {
+                    proxy_pass http://127.0.0.1:3100;
+                    proxy_http_version 1.1;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $remote_addr;
+                    proxy_set_header X-Forwarded-Proto http;
+                    proxy_set_header CF-Connecting-IP "";
+                }
+                location = /watch.html {
+                    proxy_pass http://127.0.0.1:3100;
+                    proxy_http_version 1.1;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $remote_addr;
+                    proxy_set_header X-Forwarded-Proto http;
+                    proxy_set_header CF-Connecting-IP "";
+                }
+                location ~ "^/[A-Za-z0-9]{10,24}$" {
+                    proxy_pass http://127.0.0.1:3100;
+                    proxy_http_version 1.1;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $remote_addr;
+                    proxy_set_header X-Forwarded-Proto http;
+                    proxy_set_header CF-Connecting-IP "";
+                }
+                location / {
+                    try_files $uri =404;
+                }
+            }
+            NGINX_BOOTSTRAP
+                ln -sfn /etc/nginx/sites-available/fabor-bootstrap /etc/nginx/sites-enabled/fabor-bootstrap
+              else
+                install -d -m 0755 /var/www/certbot
+                cat > /etc/nginx/sites-available/fabor-bootstrap <<'NGINX_BOOTSTRAP'
             server {
                 listen 80;
                 server_name fabor.sbs www.fabor.sbs;
@@ -110,18 +158,25 @@ jobs:
                 }
             }
             NGINX_BOOTSTRAP
-              ln -sfn /etc/nginx/sites-available/fabor-bootstrap /etc/nginx/sites-enabled/fabor-bootstrap
-              nginx -t
-              systemctl reload nginx
-              certbot certonly --webroot -w /var/www/certbot \
-                -d fabor.sbs -d www.fabor.sbs \
-                --non-interactive --agree-tos --register-unsafely-without-email
-              rm -f /etc/nginx/sites-enabled/fabor-bootstrap
+                ln -sfn /etc/nginx/sites-available/fabor-bootstrap /etc/nginx/sites-enabled/fabor-bootstrap
+                nginx -t
+                systemctl reload nginx
+                certbot certonly --webroot -w /var/www/certbot \
+                  -d fabor.sbs -d www.fabor.sbs \
+                  --non-interactive --agree-tos --register-unsafely-without-email
+                rm -f /etc/nginx/sites-enabled/fabor-bootstrap
+                PLAYER_TLS_READY=true
+              fi
+            else
+              PLAYER_TLS_READY=true
             fi
 
-            install -m 0644 nginx.conf.example /etc/nginx/sites-available/koratv
-            ln -sfn /etc/nginx/sites-available/koratv /etc/nginx/sites-enabled/koratv
-            rm -f /etc/nginx/sites-enabled/stream-api-bootstrap
+            if [ "$PLAYER_TLS_READY" = true ]; then
+              install -m 0644 nginx.conf.example /etc/nginx/sites-available/koratv
+              ln -sfn /etc/nginx/sites-available/koratv /etc/nginx/sites-enabled/koratv
+              rm -f /etc/nginx/sites-enabled/fabor-bootstrap
+              rm -f /etc/nginx/sites-enabled/stream-api-bootstrap
+            fi
             nginx -t
 
             cd "$PROJECT_DIR"
@@ -144,12 +199,16 @@ jobs:
             fi
 
             curl --fail --silent --show-error https://stream-api.koratv.click/healthz >/dev/null
-            curl --fail --silent --show-error -H 'Referer: https://koratv.click/' https://fabor.sbs/739184.html >/dev/null
-            test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://fabor.sbs/739184.html)" = "403"
+            if [ "$PLAYER_TLS_READY" = true ]; then
+              curl --fail --silent --show-error -H 'Referer: https://koratv.click/' https://fabor.sbs/739184.html >/dev/null
+              test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://fabor.sbs/739184.html)" = "403"
+            fi
             curl --fail --silent --show-error -D /tmp/koratv-api-headers -o /dev/null \
               -A 'Koratv-Deployment-Check/1.0' \
               -H 'Origin: https://koratv.click' https://stream-api.koratv.click/api/matches
             grep -qi '^access-control-allow-origin: https://koratv.click' /tmp/koratv-api-headers
-            curl --fail --silent --show-error -D /tmp/koratv-player-headers -o /dev/null \
-              -H 'Referer: https://koratv.click/' https://fabor.sbs/739184.html
-            grep -qi '^content-security-policy:.*frame-ancestors.*https://koratv.click' /tmp/koratv-player-headers
+            if [ "$PLAYER_TLS_READY" = true ]; then
+              curl --fail --silent --show-error -D /tmp/koratv-player-headers -o /dev/null \
+                -H 'Referer: https://koratv.click/' https://fabor.sbs/739184.html
+              grep -qi '^content-security-policy:.*frame-ancestors.*https://koratv.click' /tmp/koratv-player-headers
+            fi
