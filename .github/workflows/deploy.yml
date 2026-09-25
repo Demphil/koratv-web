@@ -42,7 +42,10 @@ jobs:
             cd "$PROJECT_DIR"
             git remote set-url origin "$REPO_URL"
             git fetch --prune origin main
+            git reset --hard HEAD
+            git clean -fd -e streaming-gateway/.env -e secure-streaming/.env
             git checkout -B main origin/main
+            git clean -fd -e streaming-gateway/.env -e secure-streaming/.env
 
             test -f "$APP_DIR/.env"
 
