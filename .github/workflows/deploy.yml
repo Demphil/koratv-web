@@ -68,6 +68,7 @@ jobs:
             git pull --ff-only origin main
 
             cd "$APP_DIR"
+            rm -rf node_modules
             npm ci --omit=dev
             node scripts/setup-env.js
             node --env-file=.env --input-type=module -e "import { loadConfig } from './config.js'; loadConfig(); console.log('Gateway configuration is valid')"
@@ -76,6 +77,7 @@ jobs:
             npm run build:player
 
             cd "$SECURE_APP_DIR"
+            rm -rf node_modules
             npm ci --omit=dev
             node --check scripts/daily-refresh-cron.js
             node --check scripts/refresh-streaming-data.js
