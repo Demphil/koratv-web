@@ -17,7 +17,7 @@ jobs:
   deploy:
     name: Deploy to Njalla VPS
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - name: Pull, test, build, and restart
@@ -28,7 +28,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           timeout: 30s
-          command_timeout: 12m
+          command_timeout: 20m
           script: |
             set -euo pipefail
 
@@ -69,7 +69,7 @@ jobs:
 
             cd "$APP_DIR"
             rm -rf node_modules
-            npm ci --omit=dev
+            npm ci --omit=dev --no-audit --fund=false
             node scripts/setup-env.js
             node --env-file=.env --input-type=module -e "import { loadConfig } from './config.js'; loadConfig(); console.log('Gateway configuration is valid')"
             npm test
@@ -78,7 +78,7 @@ jobs:
 
             cd "$SECURE_APP_DIR"
             rm -rf node_modules
-            npm ci --omit=dev
+            npm install --omit=dev --no-audit --fund=false
             node --check scripts/daily-refresh-cron.js
             node --check scripts/refresh-streaming-data.js
 
