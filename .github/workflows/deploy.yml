@@ -17,10 +17,10 @@ jobs:
   deploy:
     name: Deploy to Njalla VPS
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
 
     steps:
-      - name: Pull, test, build, and restart
+      - name: Pull, test, build, and restart gateway only
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.VPS_IP }}
@@ -28,44 +28,23 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           timeout: 30s
-          command_timeout: 20m
+          command_timeout: 12m
           script: |
             set -euo pipefail
 
             PROJECT_DIR=/opt/koratv/koratv-web
             APP_DIR="$PROJECT_DIR/streaming-gateway"
-            SECURE_APP_DIR="$PROJECT_DIR/secure-streaming"
+            REPO_URL=https://github.com/Demphil/koratv-web.git
+            PLAYER_DOMAIN=fabor.sbs
 
             test -d "$PROJECT_DIR/.git"
-            test -f "$APP_DIR/.env"
-            touch "$SECURE_APP_DIR/.env"
-            chmod 600 "$SECURE_APP_DIR/.env"
-
-            set_env_value() {
-              file="$1"
-              key="$2"
-              value="$3"
-              if [ -z "$value" ]; then
-                return 0
-              fi
-              tmp="$(mktemp)"
-              grep -v "^${key}=" "$file" > "$tmp" || true
-              printf '%s=%s\n' "$key" "$value" >> "$tmp"
-              cat "$tmp" > "$file"
-              rm -f "$tmp"
-            }
-
-            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_HOST '${{ secrets.IPTV_PROVIDER_HOST }}'
-            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_BACKUP_HOST '${{ secrets.IPTV_PROVIDER_BACKUP_HOST }}'
-            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_USERNAME '${{ secrets.IPTV_PROVIDER_USERNAME }}'
-            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_PASSWORD '${{ secrets.IPTV_PROVIDER_PASSWORD }}'
-            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_TYPE '${{ secrets.IPTV_PROVIDER_TYPE }}'
-            set_env_value "$SECURE_APP_DIR/.env" IPTV_PROVIDER_OUTPUT '${{ secrets.IPTV_PROVIDER_OUTPUT }}'
 
             cd "$PROJECT_DIR"
+            git remote set-url origin "$REPO_URL"
             git fetch --prune origin main
-            git checkout main
-            git pull --ff-only origin main
+            git checkout -B main origin/main
+
+            test -f "$APP_DIR/.env"
 
             cd "$APP_DIR"
             rm -rf node_modules
@@ -76,113 +55,39 @@ jobs:
             npm run check:supabase
             npm run build:player
 
-            cd "$SECURE_APP_DIR"
-            rm -rf node_modules
-            npm install --omit=dev --no-audit --fund=false
-            node --check scripts/daily-refresh-cron.js
-            node --check scripts/refresh-streaming-data.js
-
-            cd "$APP_DIR"
-            install -d -m 0755 /var/www/koratv-player
+            install -d -m 0755 /var/www/koratv-player /var/www/certbot
             cp -a dist/. /var/www/koratv-player/
             find /var/www/koratv-player -type d -exec chmod 0755 {} +
             find /var/www/koratv-player -type f -exec chmod 0644 {} +
 
-            PLAYER_DOMAIN=fabor.sbs
-            PLAYER_TLS_READY=false
-            if [ ! -f "/etc/letsencrypt/live/$PLAYER_DOMAIN/fullchain.pem" ]; then
-              resolved_ips="$(getent ahostsv4 "$PLAYER_DOMAIN" | awk '{print $1}' | sort -u | tr '\n' ' ')"
-              public_ip="$(curl --fail --silent --show-error --max-time 10 https://api.ipify.org || true)"
-              if ! printf '%s\n' "$resolved_ips" | grep -qw "$public_ip"; then
-                echo "DNS for $PLAYER_DOMAIN is not ready yet. Resolved: ${resolved_ips:-none}; VPS: ${public_ip:-unknown}. Installing HTTP player bootstrap and skipping TLS smoke checks for now."
-                cat > /etc/nginx/sites-available/fabor-bootstrap <<'NGINX_BOOTSTRAP'
-            server {
-                listen 80;
-                server_name fabor.sbs www.fabor.sbs;
-                root /var/www/koratv-player;
-                add_header Content-Security-Policy "default-src 'none'; script-src 'self' https: 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; media-src blob:; connect-src https:; worker-src blob:; frame-src https:; frame-ancestors 'self' https://frajatv.fun https://www.frajatv.fun https://fraja.online https://koratv.click https://www.koratv.click; base-uri 'none'; form-action 'none'" always;
-                add_header X-Content-Type-Options nosniff always;
-                add_header Cache-Control no-store always;
-                location /.well-known/acme-challenge/ {
-                    root /var/www/certbot;
-                    try_files $uri =404;
-                }
-                location = / {
-                    return 403;
-                }
-                location = /739184.html {
-                    proxy_pass http://127.0.0.1:3100;
-                    proxy_http_version 1.1;
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $remote_addr;
-                    proxy_set_header X-Forwarded-Proto http;
-                    proxy_set_header CF-Connecting-IP "";
-                }
-                location = /watch.html {
-                    proxy_pass http://127.0.0.1:3100;
-                    proxy_http_version 1.1;
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $remote_addr;
-                    proxy_set_header X-Forwarded-Proto http;
-                    proxy_set_header CF-Connecting-IP "";
-                }
-                location ~ "^/[A-Za-z0-9]{10,24}$" {
-                    proxy_pass http://127.0.0.1:3100;
-                    proxy_http_version 1.1;
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $remote_addr;
-                    proxy_set_header X-Forwarded-Proto http;
-                    proxy_set_header CF-Connecting-IP "";
-                }
-                location / {
-                    try_files $uri =404;
-                }
-            }
-            NGINX_BOOTSTRAP
-                ln -sfn /etc/nginx/sites-available/fabor-bootstrap /etc/nginx/sites-enabled/fabor-bootstrap
-              else
-                install -d -m 0755 /var/www/certbot
-                cat > /etc/nginx/sites-available/fabor-bootstrap <<'NGINX_BOOTSTRAP'
-            server {
-                listen 80;
-                server_name fabor.sbs www.fabor.sbs;
-                root /var/www/certbot;
-                location /.well-known/acme-challenge/ {
-                    try_files $uri =404;
-                }
-                location / {
-                    return 404;
-                }
-            }
-            NGINX_BOOTSTRAP
-                ln -sfn /etc/nginx/sites-available/fabor-bootstrap /etc/nginx/sites-enabled/fabor-bootstrap
-                nginx -t
-                systemctl reload nginx
-                certbot certonly --webroot -w /var/www/certbot \
-                  -d fabor.sbs -d www.fabor.sbs \
-                  --non-interactive --agree-tos --register-unsafely-without-email
-                rm -f /etc/nginx/sites-enabled/fabor-bootstrap
-                PLAYER_TLS_READY=true
-              fi
+            if [ -f "/etc/letsencrypt/live/$PLAYER_DOMAIN/fullchain.pem" ]; then
+              install -m 0644 nginx.conf.example /etc/nginx/sites-available/koratv
             else
-              PLAYER_TLS_READY=true
+              install -m 0644 nginx.http-player.conf.example /etc/nginx/sites-available/koratv
             fi
 
-            if [ "$PLAYER_TLS_READY" = true ]; then
-              install -m 0644 nginx.conf.example /etc/nginx/sites-available/koratv
-              ln -sfn /etc/nginx/sites-available/koratv /etc/nginx/sites-enabled/koratv
-              rm -f /etc/nginx/sites-enabled/fabor-bootstrap
-              rm -f /etc/nginx/sites-enabled/stream-api-bootstrap
-            fi
+            ln -sfn /etc/nginx/sites-available/koratv /etc/nginx/sites-enabled/koratv
+            rm -f /etc/nginx/sites-enabled/fabor-bootstrap
+            rm -f /etc/nginx/sites-enabled/stream-api-bootstrap
             nginx -t
+            systemctl reload nginx
+
+            resolved_ips="$(getent ahostsv4 "$PLAYER_DOMAIN" | awk '{print $1}' | sort -u | tr '\n' ' ')"
+            public_ip="$(curl --fail --silent --show-error --max-time 10 https://api.ipify.org || true)"
+            if [ ! -f "/etc/letsencrypt/live/$PLAYER_DOMAIN/fullchain.pem" ] && printf '%s\n' "$resolved_ips" | grep -qw "$public_ip"; then
+              certbot certonly --webroot -w /var/www/certbot \
+                -d fabor.sbs -d www.fabor.sbs \
+                --non-interactive --agree-tos --register-unsafely-without-email
+              install -m 0644 nginx.conf.example /etc/nginx/sites-available/koratv
+              nginx -t
+              systemctl reload nginx
+            elif [ ! -f "/etc/letsencrypt/live/$PLAYER_DOMAIN/fullchain.pem" ]; then
+              echo "Player DNS/TLS is not ready yet for $PLAYER_DOMAIN. Current resolved IPs: ${resolved_ips:-none}; VPS: ${public_ip:-unknown}. HTTP player bootstrap is installed."
+            fi
 
             cd "$PROJECT_DIR"
             pm2 startOrReload ecosystem.config.js --env production
             pm2 save
-            systemctl reload nginx
 
             healthy=false
             for attempt in 1 2 3 4 5 6; do
@@ -199,16 +104,12 @@ jobs:
             fi
 
             curl --fail --silent --show-error https://stream-api.koratv.click/healthz >/dev/null
-            if [ "$PLAYER_TLS_READY" = true ]; then
-              curl --fail --silent --show-error -H 'Referer: https://koratv.click/' https://fabor.sbs/739184.html >/dev/null
-              test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://fabor.sbs/739184.html)" = "403"
-            fi
             curl --fail --silent --show-error -D /tmp/koratv-api-headers -o /dev/null \
               -A 'Koratv-Deployment-Check/1.0' \
               -H 'Origin: https://koratv.click' https://stream-api.koratv.click/api/matches
             grep -qi '^access-control-allow-origin: https://koratv.click' /tmp/koratv-api-headers
-            if [ "$PLAYER_TLS_READY" = true ]; then
-              curl --fail --silent --show-error -D /tmp/koratv-player-headers -o /dev/null \
-                -H 'Referer: https://koratv.click/' https://fabor.sbs/739184.html
-              grep -qi '^content-security-policy:.*frame-ancestors.*https://koratv.click' /tmp/koratv-player-headers
+
+            if [ -f "/etc/letsencrypt/live/$PLAYER_DOMAIN/fullchain.pem" ]; then
+              curl --fail --silent --show-error -H 'Referer: https://koratv.click/' https://fabor.sbs/739184.html >/dev/null
+              test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://fabor.sbs/739184.html)" = "403"
             fi
