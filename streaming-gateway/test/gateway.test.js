@@ -9,7 +9,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   const config = {
     secret: 'test-only-secret-with-at-least-32-bytes',
     hmacSecret: 'test-only-separate-hmac-secret-with-32-bytes',
-    frontend: 'https://koratv.click', player: 'https://medic.cymru', api: 'https://api.example.com',
+    frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example.com',
     trustedProxies: ['loopback'], sessionTtl: 7200,
     upstreamOrigins: new Set(['https://media.example.com']),
     getPlayback: async () => ({
@@ -72,6 +72,8 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   assert.equal((await request('/healthz', config.player)).status, 200);
+  assert.equal((await fetch(base + '/739184.html', { headers: { 'User-Agent': 'Browser test' } })).status, 403);
+  assert.equal((await fetch(base + '/739184.html', { headers: { Referer: `${config.frontend}/`, 'User-Agent': 'Browser test' } })).status, 200);
   assert.equal((await request('/api/matches', config.frontend, null, '203.0.113.1', { 'User-Agent': 'Googlebot/2.1' })).status, 200);
   assert.equal((await request('/api/matches', config.frontend, null, '203.0.113.1', { 'User-Agent': 'UnknownBot/1.0' })).status, 403);
   const matchesResponse = await request('/api/matches', config.frontend);

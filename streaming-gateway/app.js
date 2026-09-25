@@ -10,6 +10,26 @@ import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mj
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
+const playerSources = "script-src 'self' https: 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; media-src blob:; connect-src https:; worker-src blob:; frame-src https:";
+
+function originFromHeader(value) {
+  if (!value) return '';
+  try {
+    return new URL(String(value)).origin;
+  } catch {
+    return '';
+  }
+}
+
+function frameAncestors(frontendOrigins) {
+  return ["'self'", ...frontendOrigins].join(' ');
+}
+
+function canServePlayerDocument(req, allowedOrigins) {
+  const origin = originFromHeader(req.headers.origin);
+  const referer = originFromHeader(req.headers.referer);
+  return allowedOrigins.has(origin) || allowedOrigins.has(referer);
+}
 
 function moroccoPart(value, options) {
   const date = new Date(value);
@@ -172,6 +192,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     const bearer = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1];
     return req.query.token || bearer || '';
   };
+  const frontendOrigins = config.frontendOrigins || new Set([config.frontend]);
+  const playerFrameAncestors = frameAncestors(frontendOrigins);
+  const playerDocumentCsp = `default-src 'none'; ${playerSources}; frame-ancestors ${playerFrameAncestors}; base-uri 'none'; form-action 'none'`;
   const requireOrigin = (req, expected) => {
     const allowedOrigins = expected instanceof Set ? expected : new Set([expected]);
     if (!allowedOrigins.has(req.headers.origin)) throw new Error('Forbidden');
@@ -217,19 +240,24 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       res.status(503).json({ status: 'unavailable' });
     }
   });
-  app.get(/^\/[A-Za-z0-9]{10,24}$/, async (req, res) => {
+  const servePlayerDocument = async (req, res) => {
     try {
+      if (!canServePlayerDocument(req, frontendOrigins)) return res.sendStatus(403);
       const html = await readFile(new URL('./dist/739184.html', import.meta.url), 'utf8');
       res.set({
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
-        'Content-Security-Policy': "default-src 'none'; script-src 'self' https: 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; media-src blob:; connect-src https:; worker-src blob:; frame-src https:; frame-ancestors https: http:; base-uri 'none'; form-action 'none'"
+        'Content-Security-Policy': playerDocumentCsp,
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        'X-Content-Type-Options': 'nosniff'
       });
       res.send(html);
     } catch {
       res.sendStatus(404);
     }
-  });
+  };
+  app.get(['/739184.html', '/watch.html'], servePlayerDocument);
+  app.get(/^\/[A-Za-z0-9]{10,24}$/, servePlayerDocument);
 
   const seal = (url, session) => {
     const iv = randomBytes(12);

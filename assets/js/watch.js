@@ -1,6 +1,6 @@
 // assets/js/watch.js
 const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
-const PLAYER_ORIGIN = 'https://medic.cymru';
+const PLAYER_ORIGIN = 'https://fabor.sbs';
 const PLAYER_PATH = '/739184.html';
 
 function normalizeMatchId(value) {

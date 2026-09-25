@@ -10,6 +10,17 @@ const validHttpsOrigin = (value) => {
     return false;
   }
 };
+const requiredFrontendOrigins = [
+  'https://frajatv.fun',
+  'https://www.frajatv.fun',
+  'https://fraja.online',
+  'https://koratv.click',
+  'https://www.koratv.click'
+];
+const validOriginsList = (value) => {
+  const origins = String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+  return requiredFrontendOrigins.every((origin) => origins.includes(origin)) && origins.every(validHttpsOrigin);
+};
 const publicValues = {
   NEXT_PUBLIC_SUPABASE_URL: { value: 'https://vzgldruuinbwslrfwjkb.supabase.co', valid: validHttpsOrigin },
   NEXT_PUBLIC_SUPABASE_ANON_KEY: {
@@ -47,8 +58,9 @@ const gatewayText = await configure(gateway, await readFile(new URL('../.env.exa
     value: 'https://stream-api.koratv.click',
     valid: validHttpsOrigin
   },
-  FRONTEND_ORIGIN: { value: 'https://koratv.click', valid: validHttpsOrigin },
-  PLAYER_ORIGIN: { value: 'https://medic.cymru', valid: validHttpsOrigin }
+  FRONTEND_ORIGIN: { value: 'https://frajatv.fun', valid: (value) => value === 'https://frajatv.fun' },
+  FRONTEND_ORIGINS: { value: requiredFrontendOrigins.join(','), valid: validOriginsList },
+  PLAYER_ORIGIN: { value: 'https://fabor.sbs', valid: (value) => value === 'https://fabor.sbs' }
 });
 const jwtSecret = gatewayText.match(/^JWT_SECRET=(.*)$/m)?.[1]?.trim();
 await configure(gateway, gatewayText, {

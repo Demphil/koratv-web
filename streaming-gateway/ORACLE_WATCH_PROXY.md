@@ -6,10 +6,10 @@ It does not install or run FFmpeg.
 
 ## Request flow
 
-1. `fraja.online` or `koratv.click` loads matches from the existing gateway.
+1. `frajatv.fun` or `koratv.click` loads matches from the existing gateway.
 2. The frontend requests an entry ticket from the gateway.
-3. The browser opens `https://medic.cymru/739184.html?k=...`.
-4. `medic.cymru` on Oracle redeems the entry ticket.
+3. The browser opens `https://fabor.sbs/739184.html?k=...`.
+4. `fabor.sbs` on Oracle redeems the entry ticket.
 5. Oracle reads the channel source from Supabase, stores an opaque session in
    Redis, fetches the IPTV HLS playlist, rewrites every playlist/segment/key URL
    through `/api/resource`, and sends only proxied URLs to the browser.
@@ -30,10 +30,10 @@ pass-through proxy; quality variants are the provider's native HLS qualities.
 
 ## Recommended split
 
-- Keep `fraja.online` on GitHub Pages as a static frontend.
+- Keep `frajatv.fun` on GitHub Pages as a static frontend.
 - Keep `stream-api.koratv.click` on Njalla for match JSON and token creation if
   it is already stable.
-- Point `medic.cymru` to Oracle Cloud for the player and HLS proxy if Oracle had
+- Point `fabor.sbs` to Oracle Cloud for the player and HLS proxy if Oracle had
   better IPTV routing.
 - Use the same `JWT_SECRET`, `HMAC_SECRET`, Supabase settings, Redis behavior,
   and client-IP proxy settings on both gateways.
@@ -62,7 +62,7 @@ pm2 save
 ```
 
 Enable `nginx.oracle.conf.example` after replacing certificate paths with the
-real `medic.cymru` certificate, then run:
+real `fabor.sbs` certificate, then run:
 
 ```bash
 sudo nginx -t

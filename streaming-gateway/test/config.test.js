@@ -8,7 +8,8 @@ const valid = {
   HMAC_SECRET: 'h'.repeat(48),
   PUBLIC_API_ORIGIN: 'https://stream-api.koratv.click',
   FRONTEND_ORIGIN: 'https://koratv.click',
-  PLAYER_ORIGIN: 'https://medic.cymru',
+  FRONTEND_ORIGINS: 'https://frajatv.fun,https://www.frajatv.fun,https://fraja.online,https://koratv.click,https://www.koratv.click',
+  PLAYER_ORIGIN: 'https://fabor.sbs',
   NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
   NEXT_PUBLIC_SUPABASE_ANON_KEY: 'public-test-key',
   STREAM_SESSION_TTL_SECONDS: '7200',
@@ -18,6 +19,8 @@ const valid = {
 test('configuration accepts independent secrets and HTTPS origins', () => {
   const config = loadConfig(valid);
   assert.equal(config.api, valid.PUBLIC_API_ORIGIN);
+  assert.ok(config.frontendOrigins.has('https://frajatv.fun'));
+  assert.ok(config.frontendOrigins.has('https://koratv.click'));
   assert.equal(config.enableAntiBot, true);
   assert.equal(loadConfig({ ...valid, ENABLE_ANTI_BOT: 'false' }).enableAntiBot, false);
   assert.equal(config.sessionTtl, 7200);

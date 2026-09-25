@@ -85,6 +85,38 @@ jobs:
             cp -a dist/. /var/www/koratv-player/
             find /var/www/koratv-player -type d -exec chmod 0755 {} +
             find /var/www/koratv-player -type f -exec chmod 0644 {} +
+
+            PLAYER_DOMAIN=fabor.sbs
+            if [ ! -f "/etc/letsencrypt/live/$PLAYER_DOMAIN/fullchain.pem" ]; then
+              resolved_ips="$(getent ahostsv4 "$PLAYER_DOMAIN" | awk '{print $1}' | sort -u | tr '\n' ' ')"
+              public_ip="$(curl --fail --silent --show-error --max-time 10 https://api.ipify.org || true)"
+              if ! printf '%s\n' "$resolved_ips" | grep -qw "$public_ip"; then
+                echo "DNS for $PLAYER_DOMAIN must point to this VPS before enabling the player certificate. Resolved: ${resolved_ips:-none}; VPS: ${public_ip:-unknown}"
+                exit 1
+              fi
+              install -d -m 0755 /var/www/certbot
+              cat > /etc/nginx/sites-available/fabor-bootstrap <<'NGINX_BOOTSTRAP'
+            server {
+                listen 80;
+                server_name fabor.sbs www.fabor.sbs;
+                root /var/www/certbot;
+                location /.well-known/acme-challenge/ {
+                    try_files $uri =404;
+                }
+                location / {
+                    return 404;
+                }
+            }
+            NGINX_BOOTSTRAP
+              ln -sfn /etc/nginx/sites-available/fabor-bootstrap /etc/nginx/sites-enabled/fabor-bootstrap
+              nginx -t
+              systemctl reload nginx
+              certbot certonly --webroot -w /var/www/certbot \
+                -d fabor.sbs -d www.fabor.sbs \
+                --non-interactive --agree-tos --register-unsafely-without-email
+              rm -f /etc/nginx/sites-enabled/fabor-bootstrap
+            fi
+
             install -m 0644 nginx.conf.example /etc/nginx/sites-available/koratv
             ln -sfn /etc/nginx/sites-available/koratv /etc/nginx/sites-enabled/koratv
             rm -f /etc/nginx/sites-enabled/stream-api-bootstrap
@@ -110,11 +142,12 @@ jobs:
             fi
 
             curl --fail --silent --show-error https://stream-api.koratv.click/healthz >/dev/null
-            curl --fail --silent --show-error https://medic.cymru/739184.html >/dev/null
+            curl --fail --silent --show-error -H 'Referer: https://koratv.click/' https://fabor.sbs/739184.html >/dev/null
+            test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://fabor.sbs/739184.html)" = "403"
             curl --fail --silent --show-error -D /tmp/koratv-api-headers -o /dev/null \
               -A 'Koratv-Deployment-Check/1.0' \
               -H 'Origin: https://koratv.click' https://stream-api.koratv.click/api/matches
             grep -qi '^access-control-allow-origin: https://koratv.click' /tmp/koratv-api-headers
             curl --fail --silent --show-error -D /tmp/koratv-player-headers -o /dev/null \
-              https://medic.cymru/739184.html
-            grep -qi '^content-security-policy:.*connect-src https:' /tmp/koratv-player-headers
+              -H 'Referer: https://koratv.click/' https://fabor.sbs/739184.html
+            grep -qi '^content-security-policy:.*frame-ancestors.*https://koratv.click' /tmp/koratv-player-headers

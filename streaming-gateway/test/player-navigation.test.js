@@ -38,13 +38,13 @@ test('match opens a tab before token fetch and preserves the original page', asy
   };
   await vm.runInNewContext(`${source.slice(start, end)}; openSecurePlayer('match-1')`, {
     window, STREAM_API_ORIGIN: 'https://stream-api.koratv.click',
-    PLAYER_ORIGIN: 'https://medic.cymru', PLAYER_PATH: '/739184.html',
+    PLAYER_ORIGIN: 'https://fabor.sbs', PLAYER_PATH: '/739184.html',
     fetch: async () => {
       events.push('fetch');
       return { ok: true, json: async () => ({ token: 'test-ticket' }) };
     },
   });
-  assert.deepEqual(events, ['open', 'fetch', 'https://medic.cymru/739184.html?k=test-ticket']);
+  assert.deepEqual(events, ['open', 'fetch', 'https://fabor.sbs/739184.html?k=test-ticket']);
   assert.equal(window.location.href, 'https://koratv.click/');
   assert.equal(tab.opener, null);
 });
