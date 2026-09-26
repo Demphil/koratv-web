@@ -235,26 +235,50 @@ function setImage(id, src) {
   }
 }
 
+function cleanText(value, fallback = '') {
+  const text = String(value ?? '').trim();
+  if (!text || /^null$/i.test(text) || /^undefined$/i.test(text)) return fallback;
+  return text;
+}
+
+function cleanScore(value) {
+  const score = cleanText(value);
+  if (!score || /^vs$/i.test(score) || /null|undefined/i.test(score)) return 'VS';
+  const parts = score.split('-').map((part) => cleanText(part));
+  if (parts.length >= 2 && parts[0] !== '' && parts[1] !== '') return `${parts[0]} - ${parts[1]}`;
+  return 'VS';
+}
+
 function renderMatchApiMap(match) {
   const goals = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player) : [];
   const isLive = match.playbackState === 'live';
   const isEnded = match.playbackState === 'ended';
   const hasCards = cardTotal(match.yellowCards) > 0 || cardTotal(match.redCards) > 0;
-  const hasStats = Boolean(match.score && match.score !== 'VS') || hasCards || match.liveMinute != null;
+  const score = cleanScore(match.score);
+  const hasStats = score !== 'VS' || hasCards || match.liveMinute != null;
   const nodes = [
-    { key: 'fixtures', label: 'Fixtures', value: 'المباراة', tone: 'green', active: true },
-    { key: 'live', label: 'Live', value: isLive ? 'مباشر' : isEnded ? 'منتهية' : 'قريباً', tone: 'green', active: isLive || isEnded },
-    { key: 'events', label: 'Events', value: goals.length || hasCards ? 'أحداث' : 'بانتظار', tone: 'green', active: isLive || isEnded || goals.length || hasCards },
-    { key: 'statistics', label: 'Statistics', value: hasStats ? 'إحصائيات' : 'جاهزة', tone: 'blue', active: hasStats },
-    { key: 'players', label: 'Players', value: goals.length ? 'مسجلون' : 'لاعبون', tone: 'red', active: goals.length > 0 },
-    { key: 'teams', label: 'Teams', value: 'الفريقان', tone: 'cyan', active: true }
+    { key: 'fixtures', label: 'Fixtures', value: 'المباراة', tone: 'green', active: true, detail: `${cleanText(match.league, 'بطولة غير محددة')} · ${cleanText(match.time, 'توقيت غير محدد')}` },
+    { key: 'live', label: 'Live', value: isLive ? 'مباشر' : isEnded ? 'منتهية' : 'قريباً', tone: 'green', active: isLive || isEnded, detail: isLive && match.liveMinute != null ? `الدقيقة ${match.liveMinute}` : isEnded ? 'المباراة انتهت' : 'المباراة لم تبدأ بعد' },
+    { key: 'events', label: 'Events', value: goals.length || hasCards ? 'أحداث' : 'بانتظار', tone: 'green', active: isLive || isEnded || goals.length || hasCards, detail: goals.length ? goals.slice(0, 8).map((goal) => `${goal.minute ? `${goal.minute}' ` : ''}${goal.player}`).join(' · ') : 'لا توجد أحداث أهداف مسجلة بعد' },
+    { key: 'statistics', label: 'Statistics', value: hasStats ? 'إحصائيات' : 'جاهزة', tone: 'blue', active: hasStats, detail: `النتيجة: ${score !== 'VS' ? score : '0 - 0'} · صفراء: ${cardTotal(match.yellowCards)} · حمراء: ${cardTotal(match.redCards)}` },
+    { key: 'players', label: 'Players', value: goals.length ? 'مسجلون' : 'لاعبون', tone: 'red', active: goals.length > 0, detail: goals.length ? goals.slice(0, 8).map((goal) => goal.player).join(' · ') : 'أسماء اللاعبين تظهر عند توفر الأحداث من API-Football' },
+    { key: 'teams', label: 'Teams', value: 'الفريقان', tone: 'cyan', active: true, detail: `${cleanText(match.homeTeam)} ضد ${cleanText(match.awayTeam)}` }
   ];
   return nodes.map((node) => `
-    <span class="match-api-node tone-${node.tone}${node.active ? ' is-active' : ''}" data-endpoint="${node.key}">
+    <span class="match-api-node tone-${node.tone}${node.active ? ' is-active' : ''}" data-endpoint="${node.key}" data-detail="${escapeHtml(node.detail)}" role="button" tabindex="0">
       <b>${escapeHtml(node.label)}</b>
       <small>${escapeHtml(node.value)}</small>
     </span>
   `).join('');
+}
+
+function activateMatchApiNode(node) {
+  const map = node.closest('.match-api-map');
+  if (!map) return;
+  map.querySelectorAll('.match-api-node').forEach((item) => item.classList.toggle('is-selected', item === node));
+  const detail = document.getElementById('match-api-detail');
+  if (!detail) return;
+  detail.innerHTML = `<strong>${escapeHtml(node.querySelector('b')?.textContent || '')}</strong><span>${escapeHtml(node.dataset.detail || '')}</span>`;
 }
 
 async function loadMatchPanel(matchId) {
@@ -273,7 +297,7 @@ async function loadMatchPanel(matchId) {
     setText('match-state-pill', match.playbackState === 'ended' ? 'انتهت' : match.playbackState === 'live' ? 'مباشر الآن' : 'قريباً');
     setText('match-home-name', match.homeTeam || '');
     setText('match-away-name', match.awayTeam || '');
-    setText('match-score', match.score || 'VS');
+    setText('match-score', cleanScore(match.score));
     setText('match-minute', match.playbackState === 'ended' ? 'النتيجة النهائية' : match.liveMinute != null && Number.isFinite(Number(match.liveMinute)) ? `الدقيقة ${match.liveMinute}` : match.time || '');
     setText('match-yellow-cards', String(cardTotal(match.yellowCards)));
     setText('match-red-cards', String(cardTotal(match.redCards)));
@@ -281,6 +305,8 @@ async function loadMatchPanel(matchId) {
     setImage('match-away-logo', match.awayLogo);
     const map = document.getElementById('match-api-map');
     if (map) map.innerHTML = renderMatchApiMap(match);
+    const teamsNode = map?.querySelector('[data-endpoint="teams"]');
+    if (teamsNode) activateMatchApiNode(teamsNode);
     const goals = document.getElementById('match-goals');
     const scorers = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 8) : [];
     goals.innerHTML = scorers.map((goal) => `<span>${escapeHtml(goal.minute ? `${goal.minute}' ` : '')}${escapeHtml(goal.player)}</span>`).join('');
@@ -643,6 +669,18 @@ refreshStreamButton?.addEventListener('click', () => {
   } else {
     location.reload();
   }
+});
+document.addEventListener('click', (event) => {
+  const node = event.target.closest?.('.match-api-node');
+  if (!node) return;
+  event.preventDefault();
+  activateMatchApiNode(node);
+});
+document.addEventListener('keydown', (event) => {
+  const node = event.target.closest?.('.match-api-node');
+  if (!node || !['Enter', ' '].includes(event.key)) return;
+  event.preventDefault();
+  activateMatchApiNode(node);
 });
 embedModal?.addEventListener('click', (event) => {
   if (event.target.closest('[data-close-embed]')) closeEmbedModal();

@@ -64,6 +64,20 @@ function clampLiveMinute(row) {
   return Math.min(130, Math.max(0, Math.floor((Date.now() - kickoff.getTime()) / 60_000)));
 }
 
+function cleanText(value, fallback = '') {
+  const text = String(value ?? '').trim();
+  if (!text || /^null$/i.test(text) || /^undefined$/i.test(text)) return fallback;
+  return text;
+}
+
+function normalizeScore(value, playbackState = '') {
+  const score = cleanText(value);
+  if (!score || /^vs$/i.test(score) || /null|undefined/i.test(score)) return 'VS';
+  const parts = score.split('-').map((part) => cleanText(part));
+  if (parts.length >= 2 && parts[0] !== '' && parts[1] !== '') return `${parts[0]} - ${parts[1]}`;
+  return 'VS';
+}
+
 function normalizeCardCount(value) {
   if (typeof value === 'number') return { home: Number.isFinite(value) ? value : 0, away: 0 };
   if (!value || typeof value !== 'object') return null;
@@ -88,11 +102,11 @@ function normalizeMatch(row, config) {
     homeLogo: payload.homeLogo || payload.homeTeam?.logo || '',
     awayLogo: payload.awayLogo || payload.awayTeam?.logo || '',
     scheduledAt,
-    time: payload.time || moroccoPart(scheduledAt, { hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }),
-    score: payload.score || 'VS',
+    time: cleanText(payload.time, moroccoPart(scheduledAt, { hourCycle: 'h23', hour: '2-digit', minute: '2-digit' })),
+    score: normalizeScore(payload.score, playbackState),
     league: row.league || payload.league || '',
     commentator: payload.commentator || '',
-    status: payload.status || payload.state || payload.matchStatus || '',
+    status: cleanText(payload.status || payload.state || payload.matchStatus),
     streams: [],
     sourceReady: row.source_ready === true && playbackState === 'live',
     sourceAvailable: row.source_ready === true,

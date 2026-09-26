@@ -628,6 +628,7 @@ body.tamper-lock .player-container {
   background: rgba(255, 255, 255, 0.055);
   border: 1px solid rgba(255, 255, 255, 0.1);
   text-align: center;
+  cursor: pointer;
 }
 
 .match-api-node::after {
@@ -661,6 +662,11 @@ body.tamper-lock .player-container {
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
+.match-api-node.is-selected {
+  outline: 2px solid rgba(255, 255, 255, 0.46);
+  outline-offset: 2px;
+}
+
 .match-api-node.tone-green.is-active {
   background: linear-gradient(145deg, rgba(64, 196, 122, 0.24), rgba(31, 117, 77, 0.18));
   border-color: rgba(64, 196, 122, 0.36);
@@ -679,6 +685,30 @@ body.tamper-lock .player-container {
 .match-api-node.tone-cyan.is-active {
   background: linear-gradient(145deg, rgba(69, 205, 214, 0.22), rgba(8, 87, 93, 0.18));
   border-color: rgba(93, 227, 235, 0.32);
+}
+
+.match-api-detail {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(0, 0, 0, 0.18));
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  text-align: center;
+}
+
+.match-api-detail strong {
+  color: #fff;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.match-api-detail span {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.45;
 }
 
 .match-goals {

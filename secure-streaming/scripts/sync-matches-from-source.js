@@ -142,7 +142,7 @@ function apiFootballStatus(status = {}) {
 function apiFootballScore(fixture = {}) {
   const home = fixture?.goals?.home;
   const away = fixture?.goals?.away;
-  return Number.isFinite(Number(home)) && Number.isFinite(Number(away)) ? `${home} - ${away}` : "VS";
+  return home != null && away != null && Number.isFinite(Number(home)) && Number.isFinite(Number(away)) ? `${home} - ${away}` : "VS";
 }
 
 function apiFootballEventSide(event, homeName, awayName) {
