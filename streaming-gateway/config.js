@@ -41,6 +41,7 @@ export function loadConfig(env = process.env) {
     player: publicOrigin('PLAYER_ORIGIN', env.PLAYER_ORIGIN || 'https://fabor.sbs'),
     api: publicOrigin('PUBLIC_API_ORIGIN', env.PUBLIC_API_ORIGIN),
     relaxEntryIpBinding: env.RELAX_ENTRY_IP_BINDING === 'true',
+    relaxHlsIpBinding: env.RELAX_HLS_IP_BINDING === 'true',
     trustedProxies: (env.TRUSTED_PROXIES || '').split(',').filter(Boolean),
     cloudflareProxies: (env.CLOUDFLARE_HEADER_TRUSTED_PROXIES || '').split(',').filter(Boolean),
     sessionTtl: Math.max(300, Number(env.STREAM_SESSION_TTL_SECONDS || 300)),
