@@ -298,6 +298,16 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     const selected = sources.find((item) => String(item?.label || '').toLowerCase() === quality);
     return selected?.url || playback.stream_url;
   };
+  const streamCandidates = (playback = {}, requestedQuality = '') => {
+    const preferred = selectStreamUrl(playback, requestedQuality);
+    const sources = Array.isArray(playback.quality_sources) ? playback.quality_sources : [];
+    const urls = [
+      preferred,
+      playback.stream_url,
+      ...sources.map((item) => item?.url)
+    ].map((url) => String(url || '').trim()).filter(Boolean);
+    return [...new Set(urls)];
+  };
   app.get('/api/config', async (req, res) => {
     try {
       const playback = await config.getPlayback(String(req.query.matchId || ''));
@@ -377,29 +387,45 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       if (!claims.sourceId) return res.sendStatus(403);
     } catch { return res.sendStatus(403); }
     try {
+      let playback = null;
+      let candidateSources = null;
       if (req.path === '/api/stream.m3u8') {
-        const playback = await config.getPlayback(claims.matchId);
+        playback = await config.getPlayback(claims.matchId);
         if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
-        await redis.set(`stream-source:${claims.sourceId}`, selectStreamUrl(playback, req.query.quality), { EX: config.sessionTtl });
+        candidateSources = streamCandidates(playback, req.query.quality);
+        if (!candidateSources.length) return res.sendStatus(403);
+        await redis.set(`stream-source:${claims.sourceId}`, candidateSources[0], { EX: config.sessionTtl });
       }
       const rootSource = await redis.get(`stream-source:${claims.sourceId}`);
       if (!rootSource) return res.sendStatus(403);
-      const rootUrl = new URL(rootSource);
-      const runtimeOrigins = new Set([rootUrl.origin]);
-      const source = allowedUrl(req.path === '/api/stream.m3u8' ? rootSource : unseal(req.query.resource, claims.jti), runtimeOrigins);
       const headers = {
         'User-Agent': config.upstreamUserAgent,
         Accept: '*/*'
       };
       if (req.headers.range) headers.Range = req.headers.range;
-      const upstream = await fetchUpstream(source, { headers, redirect: 'follow' });
-      if (!upstream.ok) {
+      const rootUrls = req.path === '/api/stream.m3u8' ? candidateSources : [rootSource];
+      let source;
+      let upstream;
+      let runtimeOrigins;
+      for (const sourceHref of rootUrls) {
+        const rootUrl = new URL(sourceHref);
+        runtimeOrigins = new Set([rootUrl.origin]);
+        source = allowedUrl(req.path === '/api/stream.m3u8' ? sourceHref : unseal(req.query.resource, claims.jti), runtimeOrigins);
+        upstream = await fetchUpstream(source, { headers, redirect: 'follow' });
+        if (upstream.ok) {
+          if (req.path === '/api/stream.m3u8' && sourceHref !== rootSource) {
+            await redis.set(`stream-source:${claims.sourceId}`, sourceHref, { EX: config.sessionTtl });
+          }
+          break;
+        }
         console.error('[stream-proxy] upstream rejected request', {
           status: upstream.status,
           source: `${source.origin}${source.pathname}`,
           type: upstream.headers.get('content-type') || ''
         });
         await upstream.body?.cancel();
+      }
+      if (!upstream.ok) {
         return res.sendStatus(502);
       }
       const type = upstream.headers.get('content-type') || '';
