@@ -60,7 +60,8 @@ const gatewayText = await configure(gateway, await readFile(new URL('../.env.exa
   },
   FRONTEND_ORIGIN: { value: 'https://frajatv.fun', valid: (value) => value === 'https://frajatv.fun' },
   FRONTEND_ORIGINS: { value: requiredFrontendOrigins.join(','), valid: validOriginsList },
-  PLAYER_ORIGIN: { value: 'https://fabor.sbs', valid: (value) => value === 'https://fabor.sbs' }
+  PLAYER_ORIGIN: { value: 'https://fabor.sbs', valid: (value) => value === 'https://fabor.sbs' },
+  IPTV_UPSTREAM_USER_AGENT: { value: 'koratvProviderSync/1.0', valid: (value) => value === 'koratvProviderSync/1.0' }
 });
 const jwtSecret = gatewayText.match(/^JWT_SECRET=(.*)$/m)?.[1]?.trim();
 await configure(gateway, gatewayText, {
@@ -71,6 +72,7 @@ await configure(gateway, gatewayText, {
 });
 await configure(frontend, '', {
   ...publicValues,
-  NEXT_PUBLIC_STREAM_GATEWAY_ORIGIN: { value: 'https://stream-api.koratv.click', valid: validHttpsOrigin }
+  NEXT_PUBLIC_STREAM_GATEWAY_ORIGIN: { value: 'https://stream-api.koratv.click', valid: validHttpsOrigin },
+  IPTV_UPSTREAM_USER_AGENT: { value: 'koratvProviderSync/1.0', valid: (value) => value === 'koratvProviderSync/1.0' }
 });
 console.log('Gateway and frontend .env files are ready. Existing values preserved; no secrets printed.');

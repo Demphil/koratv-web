@@ -76,7 +76,7 @@ async function isWorkingHlsUrl(url, timeoutMs = 8000) {
       signal: controller.signal,
       headers: {
         accept: "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
-        "user-agent": process.env.IPTV_UPSTREAM_USER_AGENT || "VLC/3.0.20 LibVLC/3.0.20"
+        "user-agent": process.env.IPTV_UPSTREAM_USER_AGENT || "koratvProviderSync/1.0"
       }
     });
     if (!response.ok) {

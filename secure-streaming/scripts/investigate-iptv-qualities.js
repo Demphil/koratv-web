@@ -75,7 +75,7 @@ async function fetchText(url, timeoutMs = 90000) {
     signal: AbortSignal.timeout(timeoutMs),
     headers: {
       accept: "application/vnd.apple.mpegurl, application/x-mpegURL, text/plain, */*",
-      "user-agent": process.env.IPTV_UPSTREAM_USER_AGENT || "VLC/3.0.20 LibVLC/3.0.20"
+      "user-agent": process.env.IPTV_UPSTREAM_USER_AGENT || "koratvProviderSync/1.0"
     }
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

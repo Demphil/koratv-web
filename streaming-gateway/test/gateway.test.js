@@ -11,6 +11,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     secret: 'test-only-secret-with-at-least-32-bytes',
     hmacSecret: 'test-only-separate-hmac-secret-with-32-bytes',
     frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example.com',
+    upstreamUserAgent: 'koratvProviderSync/1.0',
     frontendOrigins: new Set(['https://koratv.click']),
     trustedProxies: ['loopback'], sessionTtl: 7200,
     upstreamOrigins: new Set(['https://media.example.com']),
@@ -77,9 +78,11 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   };
   const fetchedPaths = [];
   const fetchedUrls = [];
-  const server = createApp({ config, redis, fetchImpl: async (url) => {
+  const fetchedUserAgents = [];
+  const server = createApp({ config, redis, fetchImpl: async (url, options) => {
     fetchedUrls.push(String(url));
     fetchedPaths.push(url.pathname);
+    fetchedUserAgents.push(options.headers['User-Agent']);
     if (url.pathname.endsWith('.m3u8')) {
       const isMaster = url.pathname.endsWith('/master.m3u8');
       const body = isMaster
@@ -165,6 +168,8 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal((await request(`/api/stream.m3u8?token=${expired}`, config.player)).status, 403);
   const playlist = await request(`/api/stream.m3u8?token=${session.token}`, config.player);
   assert.equal(playlist.status, 200);
+  assert.ok(fetchedUserAgents.length > 0);
+  assert.ok(fetchedUserAgents.every((userAgent) => userAgent === config.upstreamUserAgent));
   const content = await playlist.text();
   assert.ok(!content.includes('media.example.com'));
   assert.ok(content.includes('URI="https://api.example.com/api/resource?resource='));
