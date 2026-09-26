@@ -32,6 +32,35 @@ function providerHost(url) {
   }
 }
 
+function providerOrigin(url) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+}
+
+function rewriteProviderUrlOrigin(url, origin) {
+  if (!origin || !url) return url;
+  try {
+    const target = new URL(url);
+    const canonical = new URL(origin);
+    target.protocol = canonical.protocol;
+    target.host = canonical.host;
+    return target.href;
+  } catch {
+    return url;
+  }
+}
+
+function rewriteProviderEntryOrigins(entries, origin) {
+  if (!origin) return entries;
+  return entries.map((entry) => ({
+    ...entry,
+    url: rewriteProviderUrlOrigin(entry.url, origin)
+  }));
+}
+
 function normalizeProviderHost(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -421,7 +450,7 @@ export async function syncIptvProvider(options = {}) {
     bytes: m3uText.length
   });
 
-  const providerEntries = parseM3uText(m3uText);
+  const providerEntries = rewriteProviderEntryOrigins(parseM3uText(m3uText), providerOrigin(provider.url));
   const entries = sportsOnly ? providerEntries.filter(isSportsProviderEntry) : providerEntries;
   const targetChannels = sportsOnly ? existingChannels.filter(isSportsChannel) : existingChannels;
   const streamNames = targetChannels.map((channel) => channel.name);

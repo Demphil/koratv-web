@@ -26,7 +26,7 @@ jobs:
       IPTV_PROVIDER_PASSWORD: ${{ secrets.IPTV_PROVIDER_PASSWORD }}
       IPTV_PROVIDER_TYPE: ${{ secrets.IPTV_PROVIDER_TYPE }}
       IPTV_PROVIDER_OUTPUT: ${{ secrets.IPTV_PROVIDER_OUTPUT }}
-      IPTV_VALIDATE_STREAMS: "false"
+      IPTV_VALIDATE_STREAMS: "true"
       IPTV_SYNC_DEACTIVATE_MISSING: "true"
       IPTV_SYNC_ONLY_SPORTS: "true"
 
@@ -48,4 +48,3 @@ jobs:
       - name: Fetch provider playlist and replace stream links
         working-directory: secure-streaming
         run: npm run sync:iptv:links
-
