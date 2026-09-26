@@ -403,6 +403,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const type = upstream.headers.get('content-type') || '';
       if (/mpegurl/i.test(type) || source.pathname.endsWith('.m3u8')) {
         // Relative segments belong to the final playlist URL after redirects.
+        if (upstream.url) {
+          runtimeOrigins.add(new URL(upstream.url).origin);
+        }
         const manifestUrl = allowedUrl(upstream.url || source.href, runtimeOrigins);
         const text = await upstream.text();
         if (!text.trimStart().startsWith('#EXTM3U')) {

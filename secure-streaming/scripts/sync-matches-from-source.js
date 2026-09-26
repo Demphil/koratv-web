@@ -9,6 +9,13 @@ const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%8
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
 const dryRun = process.argv.includes("--dry-run");
 const enrichAfterSync = process.env.GEMINI_ENRICH_AFTER_MATCH_SYNC === "true";
+const apiFootballKey = process.env.API_FOOTBALL_KEY
+  || process.env.APIFOOTBALL_KEY
+  || process.env.FOOTBALL_API_KEY
+  || process.env.RAPIDAPI_KEY
+  || "";
+const apiFootballBaseUrl = (process.env.API_FOOTBALL_BASE_URL || "https://v3.football.api-sports.io").replace(/\/+$/, "");
+const apiFootballDetailLimit = Number(process.env.API_FOOTBALL_DETAIL_LIMIT || 16);
 
 const KOOORA_LEAGUE_CHANNEL_FALLBACKS = [
   { pattern: /الدوري الانجليزي الممتاز|premier league/i, channels: ["beIN SPORTS HD 2", "beIN SPORTS HD 1"] },
@@ -24,7 +31,7 @@ const KOOORA_LEAGUE_CHANNEL_FALLBACKS = [
   { pattern: /بطوله امم اوروبا|uefa euro|كاس امم افريقيا|afcon/i, channels: ["beIN SPORTS MAX 1", "beIN SPORTS MAX 2", "beIN SPORTS HD 1"] },
   { pattern: /دوري ابطال افريقيا|كاس الكونف|كاس السوبر الافريقي|بطوله امم افريقيا للمحليين/i, channels: ["beIN SPORTS HD 6", "beIN SPORTS HD 7", "beIN SPORTS HD 1"] },
   { pattern: /الدوري المصري الممتاز/i, channels: ["On Time Sports 1", "ON TIME SPORTS 2", "أون سبورت 1"] },
-  { pattern: /البطوله الوطنيه الاحترافيه المغربيه|الدوري المغربي/i, channels: ["الرياضية المغربية", "Arryadia TNT", "الرياضية المغربية 1"] },
+  { pattern: /البطوله الوطنيه الاحترافيه المغربيه|البطولة الوطنية الاحترافية المغربية|الدوري المغربي|botola/i, channels: ["الرياضية المغربية", "Arryadia TNT", "الرياضية المغربية 1"] },
   { pattern: /الرابطه التونسيه المحترفه الاولي|الرابطة التونسية المحترفة الأولى/i, channels: ["beIN SPORTS HD 6", "beIN SPORTS HD 7"] },
   { pattern: /الرابطه الجزائريه المحترفه الاولي|الرابطة الجزائرية المحترفة الأولى/i, channels: ["beIN SPORTS HD 6", "beIN SPORTS HD 7"] },
   { pattern: /دوري روشن السعودي|saudi pro/i, channels: ["ثمانية 1", "ثمانية 2", "ثمانية 3"] },
@@ -86,6 +93,161 @@ function matchSlug(homeTeam, awayTeam) {
 
 function fixturesUrlForDate(date) {
   return process.env.MATCH_SOURCE_TOMORROW_URL || `${FIXTURES_SITE_URL}/${date}`;
+}
+
+function apiFootballEnabled() {
+  return Boolean(apiFootballKey) && process.env.MATCH_SOURCE_PROVIDER !== "kooora";
+}
+
+async function fetchApiFootball(path, params = {}) {
+  const url = new URL(`${apiFootballBaseUrl}${path}`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
+  }
+
+  const headers = {
+    "x-apisports-key": apiFootballKey,
+    "accept": "application/json"
+  };
+  if (/rapidapi/i.test(apiFootballBaseUrl) || process.env.RAPIDAPI_KEY) {
+    headers["x-rapidapi-key"] = apiFootballKey;
+    headers["x-rapidapi-host"] = process.env.API_FOOTBALL_RAPIDAPI_HOST || "v3.football.api-sports.io";
+  }
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) throw new Error(`API-Football ${path} failed with ${response.status}`);
+  const body = await response.json();
+  if (Array.isArray(body?.errors) && body.errors.length) {
+    throw new Error(`API-Football ${path} error: ${body.errors.join(", ")}`);
+  }
+  if (body?.errors && typeof body.errors === "object" && Object.keys(body.errors).length) {
+    throw new Error(`API-Football ${path} error: ${JSON.stringify(body.errors)}`);
+  }
+  return Array.isArray(body?.response) ? body.response : [];
+}
+
+function apiFootballStatus(status = {}) {
+  const short = String(status.short || "").toUpperCase();
+  const elapsed = Number(status.elapsed);
+  const liveCodes = new Set(["1H", "HT", "2H", "ET", "BT", "P", "SUSP", "INT", "LIVE"]);
+  const finishedCodes = new Set(["FT", "AET", "PEN"]);
+  return {
+    raw: short || String(status.long || "FIXTURE").toUpperCase(),
+    isLive: liveCodes.has(short),
+    isFinished: finishedCodes.has(short),
+    liveMinute: Number.isFinite(elapsed) ? elapsed : null
+  };
+}
+
+function apiFootballScore(fixture = {}) {
+  const home = fixture?.goals?.home;
+  const away = fixture?.goals?.away;
+  return Number.isFinite(Number(home)) && Number.isFinite(Number(away)) ? `${home} - ${away}` : "VS";
+}
+
+function apiFootballEventSide(event, homeName, awayName) {
+  const teamName = normalizeTeamName(event?.team?.name || "");
+  if (teamName && teamName === normalizeTeamName(homeName)) return "home";
+  if (teamName && teamName === normalizeTeamName(awayName)) return "away";
+  return "";
+}
+
+function apiFootballEvents(events = [], homeName, awayName) {
+  const goals = [];
+  const yellowCards = { home: 0, away: 0 };
+  const redCards = { home: 0, away: 0 };
+
+  for (const event of events) {
+    const side = apiFootballEventSide(event, homeName, awayName);
+    const type = String(event?.type || "").toLowerCase();
+    const detail = String(event?.detail || "").toLowerCase();
+    const minute = event?.time?.elapsed ?? "";
+    const player = event?.player?.name || "";
+    if (type === "goal" && player) goals.push({ player, minute, team: side });
+    if (type === "card" && side && /yellow/.test(detail)) yellowCards[side] += 1;
+    if (type === "card" && side && /red/.test(detail)) redCards[side] += 1;
+  }
+
+  return {
+    goals,
+    yellowCards: yellowCards.home || yellowCards.away ? yellowCards : null,
+    redCards: redCards.home || redCards.away ? redCards : null
+  };
+}
+
+async function collectApiFootballRows() {
+  const dates = [moroccoDateParts(0), moroccoDateParts(1)];
+  const rows = [];
+  const detailTargets = [];
+
+  for (const date of dates) {
+    const fixtures = await fetchApiFootball("/fixtures", { date, timezone: "Africa/Casablanca" });
+    for (const fixture of fixtures) {
+      const homeTeam = fixture?.teams?.home?.name?.trim();
+      const awayTeam = fixture?.teams?.away?.name?.trim();
+      const league = fixture?.league?.name || "";
+      const kickoff = fixture?.fixture?.date;
+      if (!homeTeam || !awayTeam || !kickoff) continue;
+      if (!isAllowedMatch({ league, homeTeam, awayTeam })) continue;
+
+      const status = apiFootballStatus(fixture?.fixture?.status);
+      const matchId = matchSlug(homeTeam, awayTeam);
+      const row = {
+        id: `${String(kickoff).slice(0, 10)}_${matchId}`,
+        match_id: matchId,
+        home_team: homeTeam,
+        away_team: awayTeam,
+        league,
+        kickoff_time: kickoff,
+        channel: null,
+        source: "api-football",
+        active: true,
+        payload: {
+          score: apiFootballScore(fixture),
+          status: status.raw,
+          isLive: status.isLive,
+          isFinished: status.isFinished,
+          liveMinute: status.liveMinute,
+          goals: [],
+          yellowCards: null,
+          redCards: null,
+          time: new Intl.DateTimeFormat("en-GB", {
+            timeZone: "Africa/Casablanca", hourCycle: "h23", hour: "2-digit", minute: "2-digit"
+          }).format(new Date(kickoff)),
+          homeLogo: fixture?.teams?.home?.logo || "",
+          awayLogo: fixture?.teams?.away?.logo || "",
+          sourceFixtureId: fixture?.fixture?.id || "",
+          channelSource: "trusted_source_required",
+          dataSource: "api-football"
+        },
+        updated_at: new Date().toISOString()
+      };
+      rows.push(row);
+      if ((status.isLive || status.isFinished) && detailTargets.length < apiFootballDetailLimit) {
+        detailTargets.push({ fixtureId: fixture?.fixture?.id, row });
+      }
+    }
+  }
+
+  for (const target of detailTargets) {
+    if (!target.fixtureId) continue;
+    try {
+      const events = await fetchApiFootball("/fixtures/events", { fixture: target.fixtureId });
+      const normalized = apiFootballEvents(events, target.row.home_team, target.row.away_team);
+      target.row.payload = {
+        ...target.row.payload,
+        goals: normalized.goals,
+        yellowCards: normalized.yellowCards,
+        redCards: normalized.redCards,
+        eventDetailsLoaded: true
+      };
+    } catch (error) {
+      console.warn(`API-Football events failed for ${target.fixtureId}: ${error.message}`);
+    }
+  }
+
+  console.log(`Parsed ${rows.length} matches from API-Football (${dates.join(", ")}).`);
+  return rows;
 }
 
 async function fetchHtml(url) {
@@ -459,6 +621,16 @@ async function mergeExistingChannels(supabase, rows) {
 }
 
 export async function collectMatchRowsFromSource() {
+  if (apiFootballEnabled()) {
+    try {
+      const apiRows = await collectApiFootballRows();
+      if (apiRows.length) return [...new Map(apiRows.map((row) => [`${String(row.kickoff_time || '').slice(0, 10)}:${row.match_id}`, row])).values()];
+      console.warn("API-Football returned no allowed matches; falling back to Kooora source.");
+    } catch (error) {
+      console.error(`API-Football source failed: ${error.message}; falling back to Kooora source.`);
+    }
+  }
+
   const tomorrowDate = moroccoDateParts(1);
   const pages = [
     { url: BASE_SITE_URL, dayOffset: 0 },
