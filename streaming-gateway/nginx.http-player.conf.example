@@ -2,6 +2,13 @@
 # The API stays on its existing HTTPS certificate. The player domain is exposed on HTTP only
 # until certbot can issue /etc/letsencrypt/live/fabor.sbs.
 
+upstream koratv_gateway {
+    server 127.0.0.1:3100;
+    keepalive 64;
+    keepalive_requests 1000;
+    keepalive_timeout 60s;
+}
+
 server {
     listen 80;
     server_name stream-api.koratv.click;
@@ -26,15 +33,19 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://127.0.0.1:3100;
+        proxy_pass http://koratv_gateway;
         proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header CF-Connecting-IP "";
         proxy_buffering off;
-        proxy_read_timeout 30s;
+        proxy_request_buffering off;
+        proxy_socket_keepalive on;
+        proxy_read_timeout 90s;
+        proxy_send_timeout 90s;
     }
 
     location / {
@@ -87,14 +98,20 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://127.0.0.1:3100;
+        proxy_pass http://koratv_gateway;
         proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header Origin $http_origin;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto http;
         proxy_set_header CF-Connecting-IP "";
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_socket_keepalive on;
+        proxy_read_timeout 90s;
+        proxy_send_timeout 90s;
     }
 
     location ~ "^/[A-Za-z0-9]{10,24}$" {

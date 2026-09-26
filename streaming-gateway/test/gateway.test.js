@@ -77,8 +77,12 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     fetchedUrls.push(String(url));
     fetchedPaths.push(url.pathname);
     if (url.pathname.endsWith('.m3u8')) {
-      const response = new Response('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:6,\nsegment.ts\n', { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } });
-      Object.defineProperty(response, 'url', { value: 'https://media.example.com/redirected/live/index.m3u8' });
+      const isMaster = url.pathname.endsWith('/master.m3u8');
+      const body = isMaster
+        ? '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="master.key"\n#EXT-X-STREAM-INF:BANDWIDTH=800000\nvariant/index.m3u8\n'
+        : '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:6,\nsegment.ts\n';
+      const response = new Response(body, { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } });
+      Object.defineProperty(response, 'url', { value: isMaster ? 'https://media.example.com/redirected/live/master.m3u8' : 'https://media.example.com/redirected/live/index.m3u8' });
       return response;
     }
     return new Response(new Uint8Array([71, 0, 1]), { headers: { 'Content-Type': 'video/mp2t' } });
@@ -157,10 +161,24 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.ok(!content.includes('media.example.com'));
   assert.ok(content.includes('URI="https://api.example.com/api/resource?resource='));
   assert.ok(content.includes('token='));
-  const segment = new URL(content.trim().split('\n').at(-1));
-  assert.equal((await request(segment.pathname + segment.search, config.player, null, '203.0.113.1')).status, 200);
-  assert.equal((await request(segment.pathname + segment.search, config.player, null, '203.0.113.1', { Authorization: `Bearer ${session.token}` })).status, 200);
+  const childPlaylistUrl = new URL(content.trim().split('\n').at(-1));
+  const childPlaylistResponse = await request(childPlaylistUrl.pathname + childPlaylistUrl.search, config.player);
+  assert.equal(childPlaylistResponse.status, 200);
+  const childPlaylist = await childPlaylistResponse.text();
+  assert.ok(childPlaylist.startsWith('#EXTM3U'));
+  assert.ok(childPlaylist.includes('api.example.com/api/resource?resource='));
+  const segment = new URL(childPlaylist.trim().split('\n').at(-1));
+  const segmentResponses = await Promise.all([
+    request(segment.pathname + segment.search, config.player, null, '203.0.113.1'),
+    request(segment.pathname + segment.search, config.player, null, '203.0.113.1', { Authorization: `Bearer ${session.token}` })
+  ]);
+  assert.deepEqual(segmentResponses.map((response) => response.status), [200, 200]);
+  await Promise.all(segmentResponses.map((response) => response.arrayBuffer()));
   assert.ok(fetchedPaths.includes('/redirected/live/segment.ts'));
+  assert.equal(fetchedPaths.filter((path) => path === '/redirected/live/segment.ts').length, 1);
+  const health = await (await request('/healthz', config.player)).json();
+  assert.ok(health.hlsCache.bytes > 0);
+  assert.ok(health.hlsCache.prefetched > 0);
   config.getPlaybackForSource = async () => ({ is_streaming_active: false, reason: 'ended' });
   assert.equal((await request(`/api/stream.m3u8?token=${session.token}`, config.player)).status, 403);
   assert.equal((await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).status, 409);

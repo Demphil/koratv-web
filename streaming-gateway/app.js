@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createClientIpResolver } from './client-ip.js';
 import { antiBotMiddleware } from './anti-bot.js';
+import { HlsResourceCache } from './hls-resource-cache.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
 
 const issuer = 'koratv-gateway';
@@ -68,6 +69,19 @@ function cleanText(value, fallback = '') {
   const text = String(value ?? '').trim();
   if (!text || /^null$/i.test(text) || /^undefined$/i.test(text)) return fallback;
   return text;
+}
+
+function hlsResourceKind(url) {
+  const path = String(url.pathname || '').toLowerCase();
+  if (/\.m3u8?$/.test(path)) return 'manifest';
+  if (/\.(?:ts|m4s|mp4|cmfv|cmfa|aac)$/.test(path)) return 'segment';
+  return '';
+}
+
+function cacheTtl(kind) {
+  return kind === 'manifest'
+    ? Math.max(250, Number(process.env.HLS_MANIFEST_CACHE_TTL_MS || 900))
+    : Math.max(1000, Number(process.env.HLS_SEGMENT_CACHE_TTL_MS || 30000));
 }
 
 function normalizeScore(value, playbackState = '') {
@@ -245,6 +259,12 @@ function allowedMatch(match) {
 
 export function createApp({ config, redis, fetchImpl = fetch }) {
   const app = express();
+  const hlsCache = new HlsResourceCache({
+    maxBytes: Math.max(4, Number(process.env.HLS_CACHE_MAX_MB || 32)) * 1024 * 1024,
+    maxEntryBytes: Math.max(1, Number(process.env.HLS_CACHE_MAX_ENTRY_MB || 6)) * 1024 * 1024,
+    prefetchConcurrency: Math.max(1, Number(process.env.HLS_PREFETCH_CONCURRENCY || 2)),
+    maxPrefetchQueue: Math.max(2, Number(process.env.HLS_PREFETCH_QUEUE_LIMIT || 24))
+  });
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustedProxies);
   app.use(express.json({ limit: '2kb' }));
@@ -330,11 +350,18 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     }
     throw lastError || new Error('upstream_fetch_failed');
   };
+  const fetchCachedUpstream = (source, options, version = '') => {
+    const kind = hlsResourceKind(source);
+    const cache = kind && !options.headers?.Range && options.method !== 'HEAD';
+    if (!cache) return fetchUpstream(source, options);
+    const key = `${kind}:${source.href}${kind === 'segment' && version ? `:${version}` : ''}`;
+    return hlsCache.load(key, { ttlMs: cacheTtl(kind) }, () => fetchUpstream(source, options));
+  };
 
   app.get('/healthz', async (req, res) => {
     try {
       await redis.ping();
-      res.json({ status: 'ok' });
+      res.json({ status: 'ok', hlsCache: hlsCache.stats() });
     } catch {
       res.status(503).json({ status: 'unavailable' });
     }
@@ -362,7 +389,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', key, iv);
     cipher.setAAD(Buffer.from(session));
-    const data = Buffer.concat([cipher.update(url, 'utf8'), cipher.final()]);
+    const payload = typeof url === 'string' ? url : JSON.stringify(url);
+    const data = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
     return Buffer.concat([iv, cipher.getAuthTag(), data]).toString('base64url');
   };
   const unseal = (value, session) => {
@@ -370,7 +398,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     const cipher = createDecipheriv('aes-256-gcm', key, data.subarray(0, 12));
     cipher.setAAD(Buffer.from(session));
     cipher.setAuthTag(data.subarray(12, 28));
-    return Buffer.concat([cipher.update(data.subarray(28)), cipher.final()]).toString('utf8');
+    const plaintext = Buffer.concat([cipher.update(data.subarray(28)), cipher.final()]).toString('utf8');
+    if (plaintext.startsWith('{')) {
+      try { return JSON.parse(plaintext); } catch { throw new Error('Invalid sealed resource'); }
+    }
+    return plaintext;
   };
   const allowedUrl = (value, runtimeOrigins = new Set(), options = {}) => {
     const url = new URL(value);
@@ -509,13 +541,20 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       let source;
       let upstream;
       let runtimeOrigins;
+      let cacheVersion = '';
       for (const sourceHref of rootUrls) {
         const rootUrl = new URL(sourceHref);
         runtimeOrigins = new Set([rootUrl.origin]);
-        source = req.path === '/api/stream.m3u8'
-          ? allowedUrl(sourceHref, runtimeOrigins)
-          : allowedUrl(unseal(req.query.resource, claims.jti), runtimeOrigins, { sealed: true });
-        upstream = await fetchUpstream(source, { headers, redirect: 'follow' });
+        if (req.path === '/api/stream.m3u8') {
+          source = allowedUrl(sourceHref, runtimeOrigins);
+        } else {
+          const sealedResource = unseal(req.query.resource, claims.jti);
+          const descriptor = typeof sealedResource === 'string' ? { url: sealedResource } : sealedResource;
+          source = allowedUrl(descriptor.url, runtimeOrigins, { sealed: true });
+          cacheVersion = String(descriptor.version || '');
+        }
+        runtimeOrigins.add(source.origin);
+        upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, cacheVersion);
         if (upstream.ok) {
           if (req.path === '/api/stream.m3u8' && sourceHref !== rootSource) {
             await redis.set(`stream-source:${claims.sourceId}`, sourceHref, { EX: config.sessionTtl });
@@ -547,18 +586,37 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           });
           return res.sendStatus(502);
         }
-        const rewrite = (uri) => {
+        const mediaSequence = Number(text.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/m)?.[1]);
+        const hasMediaSequence = Number.isSafeInteger(mediaSequence) && mediaSequence >= 0;
+        const manifestVersion = hasMediaSequence ? '' : createHash('sha256').update(text).digest('hex').slice(0, 16);
+        let segmentIndex = 0;
+        const prefetch = [];
+        const rewrite = (uri, version = '') => {
           const target = allowedUrl(new URL(uri, manifestUrl).href, runtimeOrigins);
+          if (hlsResourceKind(target) === 'segment' && version) prefetch.push({ target, version });
           const url = new URL(`${config.api}/api/resource`);
-          url.searchParams.set('resource', seal(target.href, claims.jti));
+          url.searchParams.set('resource', seal({ url: target.href, version }, claims.jti));
           url.searchParams.set('token', sessionToken);
           return url.href;
         };
         const manifest = text.split(/\r?\n/).map((line) => {
           if (!line.trim()) return line;
           if (line.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (_, uri) => `URI="${rewrite(uri)}"`);
-          return rewrite(line.trim());
+          const uri = line.trim();
+          const target = allowedUrl(new URL(uri, manifestUrl).href, runtimeOrigins);
+          if (hlsResourceKind(target) !== 'segment') return rewrite(uri);
+          const version = hasMediaSequence ? `msn-${mediaSequence + segmentIndex}` : `mf-${manifestVersion}-${segmentIndex}`;
+          segmentIndex += 1;
+          return rewrite(uri, version);
         }).join('\n');
+        for (const { target, version } of prefetch.slice(-Math.max(1, Number(process.env.HLS_PREFETCH_SEGMENTS || 2)))) {
+          const prefetchHeaders = { 'User-Agent': config.upstreamUserAgent, Accept: '*/*' };
+          hlsCache.schedulePrefetch(
+            `segment:${target.href}:${version}`,
+            { ttlMs: cacheTtl('segment') },
+            () => fetchUpstream(target, { headers: prefetchHeaders, redirect: 'follow' })
+          );
+        }
         return res.type('application/vnd.apple.mpegurl').send(manifest);
       }
       for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {

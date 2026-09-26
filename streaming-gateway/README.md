@@ -54,7 +54,13 @@ The player requires MediaSource support. hls.js attaches a blob media URL; nativ
 
 The entry ticket is removed from the address bar immediately and redeemed once. Redact token query strings from API, CDN and player access logs. Entry tickets expire in 300 seconds; the redeemed HLS session defaults to 10800 seconds through `STREAM_SESSION_TTL_SECONDS`. Every manifest, segment and encryption-key request validates the session, IP, Origin and current match state.
 
-## 3. Next.js frontend
+## 4. HLS stability and cache limits
+
+The gateway keeps a short in-memory manifest cache and a bounded segment LRU. Concurrent requests for the same upstream object share one fetch; media playlists prefetch their last two complete segments with a two-request worker limit. Segment keys include the HLS media sequence (or a manifest fingerprint when absent), so a provider that reuses a segment URL cannot serve stale bytes after the playlist advances. Byte-range requests and encryption keys bypass segment caching. Defaults are 32 MiB per gateway process, 6 MiB per cached object, 900 ms for manifests, and 30 seconds for immutable segment versions; tune these with the `HLS_*` variables in `.env`.
+
+The gateway uses a persistent Undici keep-alive pool. PM2 runs one gateway process so its bounded RAM cache and singleflight map are shared by all viewers on this VPS. `/healthz` reports cache counters without exposing source URLs. Larger HLS.js buffers trade some live delay for resilience. These measures reduce avoidable origin requests and segment-transition stalls, but cannot promise zero buffering when the IPTV origin, viewer network, or device cannot deliver/decode segments in time.
+
+## 5. Next.js frontend
 
 Set `NEXT_PUBLIC_STREAM_GATEWAY_ORIGIN=https://stream-api.koratv.click` in the Next.js build environment. Import `src/components/isolated-player/MatchCard.jsx` in a server-rendered match page:
 

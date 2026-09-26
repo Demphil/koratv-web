@@ -20,6 +20,7 @@ let player;
 let loadTimer;
 let retryTimer;
 let qualityStallTimer;
+let stallRecoveryTimer;
 let matchTimer;
 let networkRetries = 0;
 let mediaRetries = 0;
@@ -27,6 +28,7 @@ let sessionExpiresAt = 0;
 let selectedManualHeight = 0;
 let reconnectAttempt = 0;
 let lastReadyAt = 0;
+let lastStallRecoveryAt = 0;
 let currentMatchInfo = null;
 let selectedMatchTab = 'details';
 let selectedLineupSide = 'home';
@@ -486,23 +488,23 @@ function isAllowedStreamApiUrl(url) {
 function hlsOptions() {
   return {
     enableWorker: true,
-    lowLatencyMode: true,
+    lowLatencyMode: false,
     startLevel: -1,
     capLevelToPlayerSize: true,
     autoStartLoad: true,
     startFragPrefetch: true,
-    maxBufferLength: 10,
-    maxMaxBufferLength: 24,
-    maxBufferSize: 24 * 1000 * 1000,
-    backBufferLength: 18,
-    liveSyncDuration: 2,
-    liveMaxLatencyDuration: 8,
+    maxBufferLength: 45,
+    maxMaxBufferLength: 90,
+    maxBufferSize: 64 * 1000 * 1000,
+    backBufferLength: 30,
+    liveSyncDurationCount: 4,
+    liveMaxLatencyDurationCount: 10,
     liveDurationInfinity: true,
-    maxLiveSyncPlaybackRate: 1.15,
-    maxBufferHole: 0.35,
-    highBufferWatchdogPeriod: 1,
-    nudgeOffset: 0.12,
-    nudgeMaxRetry: 4,
+    maxLiveSyncPlaybackRate: 1.05,
+    maxBufferHole: 0.5,
+    highBufferWatchdogPeriod: 2,
+    nudgeOffset: 0.2,
+    nudgeMaxRetry: 6,
     manifestLoadingTimeOut: 8000,
     manifestLoadingMaxRetry: 1,
     manifestLoadingRetryDelay: 500,
@@ -533,6 +535,10 @@ function connectStream(attempt = 0) {
   armLoadTimeout();
   hls = new Hls(hlsOptions());
   hls.on(Hls.Events.ERROR, (_, data) => {
+    if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+      scheduleStallRecovery();
+      return;
+    }
     if (!data.fatal) return;
     if ([401, 403].includes(data.response?.code)) {
       try { sessionStorage.removeItem(sessionKey); } catch {}
@@ -571,6 +577,25 @@ function connectStream(attempt = 0) {
   });
   hls.loadSource(streamUrlForQuality(currentQuality));
   hls.attachMedia(video);
+}
+
+function scheduleStallRecovery() {
+  if (video.paused || !hls || Date.now() - lastStallRecoveryAt < 3500) return;
+  clearTimeout(stallRecoveryTimer);
+  stallRecoveryTimer = setTimeout(() => {
+    if (video.paused || !hls || video.readyState >= 3) return;
+    lastStallRecoveryAt = Date.now();
+    hls.startLoad(-1);
+    const ranges = video.buffered;
+    for (let index = 0; index < ranges.length - 1; index += 1) {
+      const currentEnd = ranges.end(index);
+      const nextStart = ranges.start(index + 1);
+      if (currentEnd >= video.currentTime && nextStart - currentEnd <= 1.25) {
+        video.currentTime = nextStart + 0.05;
+        break;
+      }
+    }
+  }, 1600);
 }
 
 function armLoadTimeout() {
@@ -781,6 +806,7 @@ async function loadWatchNews() {
 video.addEventListener('playing', () => {
   clearTimeout(loadTimer);
   clearTimeout(qualityStallTimer);
+  clearTimeout(stallRecoveryTimer);
   networkRetries = 0;
   mediaRetries = 0;
   reconnectAttempt = 0;
@@ -843,12 +869,12 @@ copyEmbedCode?.addEventListener('click', async () => {
     document.execCommand('copy');
   }
 });
-video.addEventListener('canplay', () => { clearTimeout(loadTimer); lastReadyAt = Date.now(); });
-video.addEventListener('waiting', () => { monitorQualityStall(); armLoadTimeout(); });
-video.addEventListener('stalled', () => { monitorQualityStall(); armLoadTimeout(); });
+video.addEventListener('canplay', () => { clearTimeout(loadTimer); clearTimeout(stallRecoveryTimer); lastReadyAt = Date.now(); });
+video.addEventListener('waiting', () => { monitorQualityStall(); armLoadTimeout(); scheduleStallRecovery(); });
+video.addEventListener('stalled', () => { monitorQualityStall(); armLoadTimeout(); scheduleStallRecovery(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) loadMatchPanel(activeMatchId); });
 window.addEventListener('pagehide', () => {
-  clearTimeout(expiryTimer); clearTimeout(loadTimer); clearTimeout(retryTimer);
+  clearTimeout(expiryTimer); clearTimeout(loadTimer); clearTimeout(retryTimer); clearTimeout(stallRecoveryTimer);
   clearInterval(matchTimer); hls?.destroy();
 });
 window.addEventListener('resize', () => {

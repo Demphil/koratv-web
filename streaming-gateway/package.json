@@ -18,7 +18,8 @@
     "jsonwebtoken": "^9.0.3",
     "plyr": "^3.8.4",
     "proxy-addr": "^2.0.8",
-    "redis": "^6.2.1"
+    "redis": "^6.2.1",
+    "undici": "^7.30.0"
   },
   "devDependencies": {
     "smol-toml": "^1.8.0",
