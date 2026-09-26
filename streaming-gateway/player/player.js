@@ -411,6 +411,8 @@ function connectStream(attempt = 0) {
   hls.on(Hls.Events.ERROR, (_, data) => {
     if (!data.fatal) return;
     if ([401, 403].includes(data.response?.code)) {
+      try { sessionStorage.removeItem(sessionKey); } catch {}
+      hlsSessionToken = '';
       failPlayback('انتهت جلسة المشاهدة أو رُفض الوصول. افتح المباراة مجدداً من الموقع.', false);
     } else if (selectedManualHeight && (data.type === Hls.ErrorTypes.NETWORK_ERROR || data.type === Hls.ErrorTypes.MEDIA_ERROR)) {
       fallbackToAuto('الجودة المختارة غير مستقرة. تم الرجوع للوضع التلقائي.');

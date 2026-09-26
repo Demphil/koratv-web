@@ -196,7 +196,7 @@ function renderMatch(match) {
   const isEnded = match.playbackState === 'ended' || /result|finished|ended|full.?time|انته/.test(sourceStatus) || diffMins < -matchDuration;
   const isLive = !isEnded && (match.isLive === true || (diffMins <= 0 && diffMins >= -matchDuration));
   const isSoon = diffMins > 0 && diffMins <= 60; 
-  const canOpenSecurePlayer = match.sourceReady === true && match.playbackState === 'live' && !isEnded;
+  const canOpenSecurePlayer = isLive && !isEnded;
   const linkAttributes = canOpenSecurePlayer
     ? `href="${watchUrl}" data-secure-match-id="${encodeURIComponent(stableId)}"`
     : 'href="javascript:void(0)"';
