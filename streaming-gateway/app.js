@@ -61,7 +61,9 @@ function clampLiveMinute(row) {
   const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
   const kickoff = new Date(scheduledAt);
   if (Number.isNaN(kickoff.getTime())) return null;
-  return Math.min(130, Math.max(0, Math.floor((Date.now() - kickoff.getTime()) / 60_000)));
+  const elapsed = Math.floor((Date.now() - kickoff.getTime()) / 60_000);
+  if (elapsed <= 0) return null;
+  return Math.min(130, elapsed);
 }
 
 function cleanText(value, fallback = '') {
