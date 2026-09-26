@@ -97,6 +97,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal(infoBody.match.goals[0].player, 'Test Scorer');
   assert.equal((await request('/api/generate-token', 'https://bad.example', { channel: 'demo' })).status, 403);
   const entry = await (await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).json();
+  assert.equal((await request('/api/generate-token', config.player, { matchId: 'match-1' })).status, 200);
   assert.equal(entry.expiresIn, 300);
   assert.equal(jwt.decode(entry.token).stream_url, undefined);
   assert.equal((await request('/api/redeem-token', config.player, { token: entry.token }, '203.0.113.2')).status, 403);
