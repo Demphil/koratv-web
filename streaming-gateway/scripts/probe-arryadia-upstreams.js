@@ -31,32 +31,50 @@ for (const channel of data || []) {
     .filter(Boolean);
   for (const sourceValue of [...new Set(sources)]) {
     const source = canonicalize(sourceValue);
-    let status = 0;
-    let validManifest = false;
-    let errorType = '';
-    try {
-      const response = await fetch(source, {
-        redirect: 'follow',
+    const quality = sourceValue === channel.original_url
+      ? 'default'
+      : (channel.quality_variants || []).find((item) => item.url === sourceValue)?.label || 'variant';
+    const profiles = [
+      { client: 'configured', headers: { 'User-Agent': config.upstreamUserAgent } },
+      { client: 'provider-sync', headers: { 'User-Agent': 'koratvProviderSync/1.0' } },
+      {
+        client: 'browser',
         headers: {
-          Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
-          'User-Agent': config.upstreamUserAgent
-        },
-        signal: AbortSignal.timeout(8000)
-      });
-      status = response.status;
-      if (response.ok) validManifest = (await response.text()).trimStart().startsWith('#EXTM3U');
-      else await response.body?.cancel();
-    } catch (error) {
-      errorType = error?.name === 'TimeoutError' ? 'timeout' : 'network';
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36',
+          Referer: `${source.origin}/`
+        }
+      }
+    ];
+    for (const profile of profiles) {
+      let status = 0;
+      let validManifest = false;
+      let errorType = '';
+      try {
+        const response = await fetch(source, {
+          redirect: 'follow',
+          headers: {
+            Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
+            ...profile.headers
+          },
+          signal: AbortSignal.timeout(8000)
+        });
+        status = response.status;
+        if (response.ok) validManifest = (await response.text()).trimStart().startsWith('#EXTM3U');
+        else await response.body?.cancel();
+      } catch (error) {
+        errorType = error?.name === 'TimeoutError' ? 'timeout' : 'network';
+      }
+      console.log(JSON.stringify({
+        channel: channel.name,
+        active: channel.active,
+        quality,
+        client: profile.client,
+        rootAllowed: config.upstreamOrigins.has(source.origin),
+        status,
+        validManifest,
+        error: errorType || undefined
+      }));
+      if (validManifest) break;
     }
-    console.log(JSON.stringify({
-      channel: channel.name,
-      active: channel.active,
-      quality: sourceValue === channel.original_url ? 'default' : (channel.quality_variants || []).find((item) => item.url === sourceValue)?.label || 'variant',
-      rootAllowed: config.upstreamOrigins.has(source.origin),
-      status,
-      validManifest,
-      error: errorType || undefined
-    }));
   }
 }
