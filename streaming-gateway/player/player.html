@@ -20,6 +20,11 @@
     </aside>
 
     <main class="main-content">
+      <aside class="app-promo" aria-label="مساحة الإعلان عن التطبيق">
+        <span class="app-promo-mark" aria-hidden="true">K</span>
+        <div><strong>تطبيقنا الرياضي</strong><span>مساحة مخصّصة للإعلان عن التطبيق قريباً</span></div>
+        <span class="app-promo-badge">قريباً</span>
+      </aside>
       <section id="player-container" class="player-container" aria-live="polite">
         <video id="video" controls playsinline controlslist="nodownload noplaybackrate"></video>
         <button id="embed-button" class="embed-button player-tool-button" type="button" aria-label="كود التضمين">&lt;/&gt;</button>
@@ -68,7 +73,11 @@
           <span><i class="card-dot yellow"></i><b id="match-yellow-cards">0</b> صفراء</span>
           <span><i class="card-dot red"></i><b id="match-red-cards">0</b> حمراء</span>
         </div>
-        <div id="match-api-map" class="match-api-map" aria-label="خريطة بيانات API-Football"></div>
+        <div id="match-api-map" class="match-api-map" role="tablist" aria-label="معلومات المباراة">
+          <button class="match-api-node is-selected" type="button" role="tab" aria-selected="true" data-endpoint="details">التفاصيل</button>
+          <button class="match-api-node" type="button" role="tab" aria-selected="false" data-endpoint="lineups">التشكيلة</button>
+          <button class="match-api-node" type="button" role="tab" aria-selected="false" data-endpoint="standings">الترتيب</button>
+        </div>
         <div id="match-api-detail" class="match-api-detail" aria-live="polite"></div>
         <div id="match-goals" class="match-goals"></div>
       </section>
@@ -80,10 +89,12 @@
     </main>
 
     <aside class="ad-sidebar">
-      <a href="https://www.profitableratecpmnetwork.com/fmy8wx8s?key=98d446d2e90401d0d69d4d38e261833d" target="_blank" rel="sponsored noopener noreferrer">
-        <span class="ad-title red">تطبيق كورة</span>
-        <span class="ad-copy">حمل التطبيق لمتابعة المباريات</span>
-      </a>
+      <div class="app-promo app-promo-sidebar" aria-label="مساحة محفوظة للإعلان عن التطبيق">
+        <span class="app-promo-mark" aria-hidden="true">K</span>
+        <strong>تطبيقنا الرياضي</strong>
+        <span class="app-promo-copy">مساحة الإعلان هنا بعد الإطلاق</span>
+        <span class="app-promo-badge">قريباً</span>
+      </div>
     </aside>
   </div>
 

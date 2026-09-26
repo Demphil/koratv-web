@@ -11,6 +11,7 @@
     "import:m3u:dry": "node scripts/import-m3u.js --dry-run",
     "test:streams": "node scripts/test-streams.js",
     "check:supabase": "node scripts/check-supabase-setup.js",
+    "test": "node --test test/*.test.js",
     "sync:matches": "node scripts/sync-matches-from-source.js",
     "sync:matches:dry": "node scripts/sync-matches-from-source.js --dry-run",
     "sync:matches:daily": "node scripts/sync-matches-daily.js",

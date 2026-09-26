@@ -99,6 +99,8 @@ function normalizeMatch(row, config) {
     matchId: row.match_id || row.id,
     homeTeam: row.home_team || payload.homeTeam?.name || payload.homeTeam || '',
     awayTeam: row.away_team || payload.awayTeam?.name || payload.awayTeam || '',
+    homeTeamId: payload.homeTeamId || null,
+    awayTeamId: payload.awayTeamId || null,
     homeLogo: payload.homeLogo || payload.homeTeam?.logo || '',
     awayLogo: payload.awayLogo || payload.awayTeam?.logo || '',
     scheduledAt,
@@ -121,11 +123,75 @@ function normalizeMatch(row, config) {
       minute: String(goal.minute || '').slice(0, 12),
       team: String(goal.team || '').slice(0, 16)
     })) : [],
+    events: normalizeMatchEvents(payload.events),
+    lineups: normalizeLineups(payload.lineups),
+    statistics: normalizeMatchStatistics(payload.statistics),
+    venue: cleanText(payload.venue).slice(0, 120),
+    venueCity: cleanText(payload.venueCity).slice(0, 90),
+    referee: cleanText(payload.referee).slice(0, 90),
+    standings: Array.isArray(payload.standings) ? payload.standings.slice(0, 40) : [],
     dataSource: payload.dataSource || row.source || '',
     sourceFixtureId: payload.sourceFixtureId || payload.sourceMatchId || '',
     eventDetailsLoaded: payload.eventDetailsLoaded === true,
     updatedAt: row.updated_at
   };
+}
+
+function safePlayerPhoto(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' && url.hostname === 'media.api-sports.io' ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function normalizeLineups(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 2).map((lineup) => {
+    const normalizePlayers = (players, limit) => (Array.isArray(players) ? players : []).slice(0, limit).map((entry) => ({
+      id: entry?.id || null,
+      name: cleanText(entry?.name).slice(0, 90),
+      number: Number(entry?.number) || null,
+      position: cleanText(entry?.position).slice(0, 12),
+      grid: cleanText(entry?.grid).slice(0, 12),
+      photo: safePlayerPhoto(entry?.photo)
+    }));
+    return {
+      team: cleanText(lineup?.team?.name).slice(0, 90),
+      teamId: lineup?.team?.id || null,
+      formation: cleanText(lineup?.formation).slice(0, 16),
+      coach: cleanText(lineup?.coach?.name).slice(0, 90),
+      coachPhoto: safePlayerPhoto(lineup?.coach?.photo),
+      startXI: normalizePlayers(lineup?.startXI, 11),
+      substitutes: normalizePlayers(lineup?.substitutes, 15)
+    };
+  });
+}
+
+function normalizeMatchStatistics(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 2).map((team) => ({
+    team: cleanText(team?.team?.name).slice(0, 90),
+    statistics: (Array.isArray(team?.statistics) ? team.statistics : []).slice(0, 50).map((item) => ({
+      type: cleanText(item?.type).slice(0, 60),
+      value: item?.value == null ? null : String(item.value).slice(0, 40)
+    }))
+  }));
+}
+
+function normalizeMatchEvents(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 100).map((event) => ({
+    elapsed: Number(event?.elapsed) || null,
+    extra: Number(event?.extra) || null,
+    team: cleanText(event?.team).slice(0, 90),
+    player: cleanText(event?.player).slice(0, 90),
+    assist: cleanText(event?.assist).slice(0, 90),
+    type: cleanText(event?.type).slice(0, 40),
+    detail: cleanText(event?.detail).slice(0, 60),
+    comments: cleanText(event?.comments).slice(0, 100)
+  }));
 }
 
 function normalizeMatchName(value) {

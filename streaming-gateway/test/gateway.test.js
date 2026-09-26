@@ -42,7 +42,22 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     }, {
       id: 'match-botafogo', match_id: 'match-botafogo', home_team: 'Botafogo', away_team: 'MLS Away',
       league: 'Campeonato Brasileiro Série A', kickoff_time: liveKickoff, channel: 'demo',
-      payload: { score: '2 - 1', goals: [{ player: 'Test Scorer', minute: 55, team: 'home' }] },
+      payload: {
+        score: '2 - 1', goals: [{ player: 'Test Scorer', minute: 55, team: 'home' }],
+        homeTeamId: 10, awayTeamId: 20,
+        events: [{ elapsed: 55, player: 'Test Scorer', team: 'Botafogo', type: 'Goal', detail: 'Normal Goal' }],
+        statistics: [{ team: { name: 'Botafogo' }, statistics: [{ type: 'Ball Possession', value: '58%' }] }],
+        lineups: [{
+          teamId: 10, team: 'Botafogo', formation: '4-3-3', coach: 'Coach',
+          startXI: [
+            { id: 1, name: 'Player One', number: 9, position: 'F', grid: '1:1', photo: 'https://media.api-sports.io/football/players/1.png' },
+            { id: 2, name: 'Untrusted Photo', photo: 'https://bad.example/photo.png' }
+          ],
+          substitutes: []
+        }],
+        standings: [{ rank: 1, team: 'Botafogo', points: 42 }],
+        venue: 'Test Stadium', referee: 'Test Referee'
+      },
       source_ready: true, active: true, updated_at: '2026-09-20T10:00:00Z'
     }],
   };
@@ -57,7 +72,9 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     get: async (key) => store.get(key) || null,
   };
   const fetchedPaths = [];
+  const fetchedUrls = [];
   const server = createApp({ config, redis, fetchImpl: async (url) => {
+    fetchedUrls.push(String(url));
     fetchedPaths.push(url.pathname);
     if (url.pathname.endsWith('.m3u8')) {
       const response = new Response('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:6,\nsegment.ts\n', { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } });
@@ -95,6 +112,12 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal(infoResponse.status, 200);
   const infoBody = await infoResponse.json();
   assert.equal(infoBody.match.goals[0].player, 'Test Scorer');
+  assert.equal(infoBody.match.homeTeamId, 10);
+  assert.equal(infoBody.match.events[0].elapsed, 55);
+  assert.equal(infoBody.match.lineups[0].startXI[0].photo, 'https://media.api-sports.io/football/players/1.png');
+  assert.equal(infoBody.match.lineups[0].startXI[1].photo, '');
+  assert.equal(infoBody.match.standings[0].team, 'Botafogo');
+  assert.equal(infoBody.match.venue, 'Test Stadium');
   assert.equal((await request('/api/generate-token', 'https://bad.example', { channel: 'demo' })).status, 403);
   const entry = await (await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).json();
   assert.equal((await request('/api/generate-token', config.player, { matchId: 'match-1' })).status, 200);
@@ -122,6 +145,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     headers: { Referer: `${config.player}/739184.html`, Authorization: `Bearer ${session.token}`, 'User-Agent': 'Browser test', 'X-Forwarded-For': '203.0.113.1' }
   });
   assert.equal(browserStyleStream.status, 200);
+  assert.ok(fetchedUrls.includes('https://media.example.com/720/master.m3u8'));
   const claims = jwt.decode(session.token);
   delete claims.iat;
   claims.exp = Math.floor(Date.now() / 1000) - 1;

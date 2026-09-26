@@ -44,7 +44,7 @@ export async function cleanSupabaseData() {
   log("cleanup_started");
 
   if (dryRun) {
-    const tables = ["channel_language_alternatives", "live_matches", process.env.SUPABASE_MATCHES_TABLE || "matches"];
+    const tables = ["channel_language_alternatives", "live_matches"];
     if (resetChannels) tables.push("channels");
     log("cleanup_skipped_dry_run", { tables });
     return tables.map((table) => ({ table, deleted: 0, dryRun: true }));
@@ -55,7 +55,7 @@ export async function cleanSupabaseData() {
   const results = [];
   results.push(await deleteRows(supabase, { table: "channel_language_alternatives", idColumn: "id", sentinel: -1 }));
   results.push(await deleteRows(supabase, { table: "live_matches", idColumn: "id" }));
-  results.push(await deleteRows(supabase, { table: process.env.SUPABASE_MATCHES_TABLE || "matches", idColumn: "id" }));
+  log("cleanup_match_cache_preserved", { table: process.env.SUPABASE_MATCHES_TABLE || "matches" });
   if (resetChannels) {
     results.push(await deleteRows(supabase, { table: "channels", idColumn: "id", sentinel: "00000000-0000-0000-0000-000000000000" }));
   }

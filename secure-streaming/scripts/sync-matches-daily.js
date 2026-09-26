@@ -61,7 +61,7 @@ export async function syncMatchesDaily() {
   const cleanup = [];
   cleanup.push(await deleteRows(supabase, { table: "channel_language_alternatives", idColumn: "id", sentinel: -1 }));
   cleanup.push(await deleteRows(supabase, { table: "live_matches", idColumn: "id" }));
-  cleanup.push(await deleteRows(supabase, { table: matchesTable, idColumn: "id", sources: cleanupSources }));
+  log("daily_matches_cleanup_preserved_match_cache", { table: matchesTable, sources: cleanupSources });
 
   let matches;
   if (dryRun) {

@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Pull, test, build, and restart gateway only
+      - name: Pull, test, build, and restart streaming services
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.VPS_IP }}
@@ -34,6 +34,7 @@ jobs:
 
             PROJECT_DIR=/opt/koratv/koratv-web
             APP_DIR="$PROJECT_DIR/streaming-gateway"
+            SECURE_DIR="$PROJECT_DIR/secure-streaming"
             REPO_URL=https://github.com/Demphil/koratv-web.git
             PLAYER_DOMAIN=fabor.sbs
             SMOKE_UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36"
@@ -49,6 +50,12 @@ jobs:
             git clean -fd -e streaming-gateway/.env -e secure-streaming/.env
 
             test -f "$APP_DIR/.env"
+            test -f "$SECURE_DIR/.env"
+
+            cd "$SECURE_DIR"
+            npm ci --omit=dev --no-audit --fund=false
+            node --env-file=.env --input-type=module -e "if (!['API_FOOTBALL_KEY','APIFOOTBALL_KEY','FOOTBALL_API_KEY','RAPIDAPI_KEY'].some((name) => process.env[name])) throw new Error('API-Football key is missing from secure-streaming/.env'); console.log('API-Football sync configuration is present')"
+            npm test
 
             cd "$APP_DIR"
             rm -rf node_modules

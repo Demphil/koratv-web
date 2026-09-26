@@ -41,7 +41,7 @@ jobs:
         working-directory: secure-streaming
         run: npm ci
 
-      - name: Delete old matches and scrape new matches
+      - name: Sync Kooora matches without deleting cached match details
         working-directory: secure-streaming
         run: npm run sync:matches:daily
 

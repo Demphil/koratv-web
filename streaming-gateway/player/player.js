@@ -28,6 +28,9 @@ let selectedManualHeight = 0;
 let reconnectAttempt = 0;
 let lastReadyAt = 0;
 let currentMatchInfo = null;
+let selectedMatchTab = 'details';
+let selectedLineupSide = 'home';
+let resumeAfterQualityChange = false;
 const sessionKey = 'koratv-playback-session';
 const MAX_RECONNECT_ATTEMPTS = 3;
 const MAX_MEDIA_RECOVERIES = 2;
@@ -250,118 +253,97 @@ function cleanScore(value) {
   return 'VS';
 }
 
-function renderMatchApiMap(match) {
-  const goals = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player) : [];
-  const isLive = match.playbackState === 'live';
-  const isEnded = match.playbackState === 'ended';
-  const hasCards = cardTotal(match.yellowCards) > 0 || cardTotal(match.redCards) > 0;
-  const score = cleanScore(match.score);
-  const hasStats = score !== 'VS' || hasCards || match.liveMinute != null;
-  const nodes = [
-    { key: 'fixtures', label: 'Fixtures', value: 'المباراة', tone: 'green', active: true, detail: `${cleanText(match.league, 'بطولة غير محددة')} · ${cleanText(match.time, 'توقيت غير محدد')}` },
-    { key: 'live', label: 'Live', value: isLive ? 'مباشر' : isEnded ? 'منتهية' : 'قريباً', tone: 'green', active: isLive || isEnded, detail: isLive && match.liveMinute != null ? `الدقيقة ${match.liveMinute}` : isEnded ? 'المباراة انتهت' : 'المباراة لم تبدأ بعد' },
-    { key: 'events', label: 'Events', value: goals.length || hasCards ? 'أحداث' : 'بانتظار', tone: 'green', active: isLive || isEnded || goals.length || hasCards, detail: goals.length ? goals.slice(0, 8).map((goal) => `${goal.minute ? `${goal.minute}' ` : ''}${goal.player}`).join(' · ') : 'لا توجد أحداث أهداف مسجلة بعد' },
-    { key: 'statistics', label: 'Statistics', value: hasStats ? 'إحصائيات' : 'جاهزة', tone: 'blue', active: hasStats, detail: `النتيجة: ${score !== 'VS' ? score : '0 - 0'} · صفراء: ${cardTotal(match.yellowCards)} · حمراء: ${cardTotal(match.redCards)}` },
-    { key: 'players', label: 'Players', value: goals.length ? 'مسجلون' : 'لاعبون', tone: 'red', active: goals.length > 0, detail: goals.length ? goals.slice(0, 8).map((goal) => goal.player).join(' · ') : 'أسماء اللاعبين تظهر عند توفر الأحداث من API-Football' },
-    { key: 'teams', label: 'Teams', value: 'الفريقان', tone: 'cyan', active: true, detail: `${cleanText(match.homeTeam)} ضد ${cleanText(match.awayTeam)}` }
-  ];
-  return nodes.map((node) => `
-    <span class="match-api-node tone-${node.tone}${node.active ? ' is-active' : ''}" data-endpoint="${node.key}" data-detail="${escapeHtml(node.detail)}" role="button" tabindex="0">
-      <b>${escapeHtml(node.label)}</b>
-      <small>${escapeHtml(node.value)}</small>
-    </span>
-  `).join('');
-}
-
 function teamInitials(value) {
   return cleanText(value, 'TV').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 }
 
-function renderPitch(match) {
-  const homeLogo = match.homeLogo ? `<img src="${escapeHtml(match.homeLogo)}" alt="">` : `<span>${escapeHtml(teamInitials(match.homeTeam))}</span>`;
-  const awayLogo = match.awayLogo ? `<img src="${escapeHtml(match.awayLogo)}" alt="">` : `<span>${escapeHtml(teamInitials(match.awayTeam))}</span>`;
-  return `
-    <div class="lineup-pitch" aria-label="ملعب التشكيلة">
-      <div class="pitch-line half"></div>
-      <div class="pitch-circle"></div>
-      <div class="lineup-team home">
-        <div class="lineup-badge">${homeLogo}</div>
-        <strong>${escapeHtml(cleanText(match.homeTeam, 'الفريق الأول'))}</strong>
-        <span>4-3-3</span>
-      </div>
-      <div class="lineup-team away">
-        <div class="lineup-badge">${awayLogo}</div>
-        <strong>${escapeHtml(cleanText(match.awayTeam, 'الفريق الثاني'))}</strong>
-        <span>4-2-3-1</span>
-      </div>
-    </div>
-  `;
+function formatEventMinute(event) {
+  const elapsed = Number(event.elapsed || event.minute);
+  if (!Number.isFinite(elapsed)) return 'حدث';
+  return `${elapsed}${event.extra ? `+${event.extra}` : ''}'`;
 }
 
-function renderMatchDetail(endpoint, match) {
-  if (!match) return '<span>جاري تحميل بيانات المباراة...</span>';
-  const goals = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 8) : [];
-  const score = cleanScore(match.score);
-  if (endpoint === 'teams') {
-    return `
-      <strong>التشكيلة والفرق</strong>
-      ${renderPitch(match)}
-      <div class="detail-note">تُعرض أسماء اللاعبين فور وصول التشكيلة الرسمية من مزود البيانات.</div>
-    `;
+function renderPlayerCard(player) {
+  const grid = String(player.grid || '').match(/^([1-5]):([1-5])$/);
+  const slot = grid ? `slot-${grid[1]}-${grid[2]}` : 'lineup-unplaced';
+  const photo = player.photo ? `<img src="${escapeHtml(player.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="lineup-player-placeholder">${escapeHtml(teamInitials(player.name))}</span>`;
+  return `<div class="lineup-player ${slot}" title="${escapeHtml(player.name)}">${photo}<b>${escapeHtml(String(player.number || ''))}</b><span>${escapeHtml(cleanText(player.name, 'لاعب'))}</span></div>`;
+}
+
+function lineupForSide(match, side) {
+  const teamName = side === 'home' ? match.homeTeam : match.awayTeam;
+  const teamId = side === 'home' ? match.homeTeamId : match.awayTeamId;
+  return (match.lineups || []).find((lineup) => (teamId && String(lineup.teamId) === String(teamId))
+    || normalizeTeamNameForUi(lineup.team) === normalizeTeamNameForUi(teamName));
+}
+
+function normalizeTeamNameForUi(value) {
+  return cleanText(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
+}
+
+function renderLineups(match) {
+  const lineup = lineupForSide(match, selectedLineupSide);
+  const home = selectedLineupSide === 'home';
+  const teamName = home ? match.homeTeam : match.awayTeam;
+  const players = lineup?.startXI || [];
+  const placed = players.filter((player) => /^([1-5]):([1-5])$/.test(String(player.grid || '')));
+  const unplaced = players.filter((player) => !/^([1-5]):([1-5])$/.test(String(player.grid || '')));
+  const teamButtons = `
+    <div class="lineup-team-switch" role="group" aria-label="اختيار الفريق">
+      <button type="button" data-lineup-side="home" aria-pressed="${home}">${escapeHtml(match.homeTeam)}</button>
+      <button type="button" data-lineup-side="away" aria-pressed="${!home}">${escapeHtml(match.awayTeam)}</button>
+    </div>`;
+  if (!lineup || !players.length) return `${teamButtons}<p class="empty-match-data">لم تصل التشكيلة الرسمية لهذه المباراة بعد.</p>`;
+  const pitch = placed.length ? `
+    <div class="lineup-pitch" aria-label="تشكيلة ${escapeHtml(teamName)}">
+      <div class="pitch-lines" aria-hidden="true"></div>
+      ${placed.map(renderPlayerCard).join('')}
+    </div>` : '';
+  return `${teamButtons}
+    <div class="lineup-heading"><strong>${escapeHtml(teamName)}</strong><span>${escapeHtml(lineup.formation || 'التشكيلة الأساسية')}</span></div>
+    ${pitch}
+    ${unplaced.length ? `<div class="lineup-gallery">${unplaced.map(renderPlayerCard).join('')}</div>` : ''}
+    <div class="lineup-meta">${lineup.coach ? `<span>المدرب: ${escapeHtml(lineup.coach)}</span>` : ''}<span>البدلاء: ${(lineup.substitutes || []).length}</span></div>
+    ${(lineup.substitutes || []).length ? `<h4 class="lineup-subtitle">البدلاء</h4><div class="lineup-gallery">${lineup.substitutes.map(renderPlayerCard).join('')}</div>` : ''}`;
+}
+
+function renderMatchDetail(tab, match) {
+  if (!match) return '<p class="empty-match-data">جاري تحميل بيانات المباراة...</p>';
+  if (tab === 'lineups') return renderLineups(match);
+  if (tab === 'standings') {
+    const table = Array.isArray(match.standings) ? match.standings : [];
+    return table.length ? `<div class="standings-list">${table.map((row) => `<div><b>${escapeHtml(row.rank || '')}</b><span>${escapeHtml(row.team || row.name || '')}</span><strong>${escapeHtml(row.points ?? '')}</strong></div>`).join('')}</div>`
+      : '<p class="empty-match-data">جدول الترتيب غير متوفر في بيانات هذه المباراة حالياً.</p>';
   }
-  if (endpoint === 'players') {
-    return `
-      <strong>اللاعبون المؤثرون</strong>
-      <div class="player-strip">
-        ${goals.length ? goals.map((goal) => `<span><b>${escapeHtml(teamInitials(goal.player))}</b>${escapeHtml(goal.player)}${goal.minute ? `<small>${escapeHtml(goal.minute)}'</small>` : ''}</span>`).join('') : '<em>لم تصل أسماء اللاعبين أو الهدافين بعد.</em>'}
-      </div>
-    `;
-  }
-  if (endpoint === 'statistics') {
-    return `
-      <strong>إحصائيات المباراة</strong>
-      <div class="detail-stats-grid">
-        <span><b>${escapeHtml(score !== 'VS' ? score : '0 - 0')}</b><small>النتيجة</small></span>
-        <span><b>${escapeHtml(String(cardTotal(match.yellowCards)))}</b><small>بطاقات صفراء</small></span>
-        <span><b>${escapeHtml(String(cardTotal(match.redCards)))}</b><small>بطاقات حمراء</small></span>
-      </div>
-    `;
-  }
-  if (endpoint === 'events') {
-    return `
-      <strong>أحداث المباراة</strong>
-      <div class="event-timeline">
-        ${goals.length ? goals.map((goal) => `<span><i>${escapeHtml(goal.minute ? `${goal.minute}'` : 'GOAL')}</i>${escapeHtml(goal.player)}</span>`).join('') : '<em>لا توجد أحداث مسجلة حالياً.</em>'}
-      </div>
-    `;
-  }
-  if (endpoint === 'live') {
-    return `
-      <strong>المتابعة الحية</strong>
-      <div class="detail-stats-grid">
-        <span><b>${escapeHtml(match.playbackState === 'live' ? 'مباشر' : match.playbackState === 'ended' ? 'انتهت' : 'قريباً')}</b><small>الحالة</small></span>
-        <span><b>${escapeHtml(match.liveMinute != null ? `${match.liveMinute}'` : cleanText(match.time, '--'))}</b><small>الدقيقة</small></span>
-        <span><b>${escapeHtml(score !== 'VS' ? score : '0 - 0')}</b><small>النتيجة</small></span>
-      </div>
-    `;
-  }
-  return `
-    <strong>بيانات المباراة</strong>
-    <div class="fixture-summary">
-      <span>${escapeHtml(cleanText(match.league, 'بطولة غير محددة'))}</span>
-      <b>${escapeHtml(cleanText(match.homeTeam))} ضد ${escapeHtml(cleanText(match.awayTeam))}</b>
-      <small>${escapeHtml(cleanText(match.time, 'توقيت غير محدد'))}</small>
-    </div>
-  `;
+  const statisticGroups = Array.isArray(match.statistics) ? match.statistics : [];
+  const stats = statisticGroups.length === 2 ? new Map(statisticGroups.map((team) => [team.team, new Map(team.statistics.map((item) => [item.type, item.value]))])) : null;
+  const statRows = stats ? [...new Set(statisticGroups.flatMap((team) => team.statistics.map((item) => item.type)))].map((type) => {
+    const values = statisticGroups.map((team) => [...team.statistics].find((item) => item.type === type)?.value ?? '--');
+    return `<div class="match-stat-row"><b>${escapeHtml(String(values[0]))}</b><span>${escapeHtml(type)}</span><b>${escapeHtml(String(values[1]))}</b></div>`;
+  }).join('') : '<p class="empty-match-data">إحصاءات الاستحواذ والتسديد تظهر عند وصولها من مزود المباراة.</p>';
+  const events = Array.isArray(match.events) && match.events.length ? match.events : (match.goals || []).map((goal) => ({ ...goal, type: 'Goal', detail: 'Goal' }));
+  const eventHtml = events.map((event) => `<div class="match-event"><time>${escapeHtml(formatEventMinute(event))}</time><span><b>${escapeHtml(event.player || event.detail || event.type || 'حدث')}</b><small>${escapeHtml([event.team, event.assist ? `تمريرة: ${event.assist}` : '', event.detail].filter(Boolean).join(' · '))}</small></span></div>`).join('');
+  return `<div class="match-context-row"><span>${escapeHtml(cleanText(match.league, ''))}</span><b>${escapeHtml(cleanText(match.venue, ''))}${match.venueCity ? ` · ${escapeHtml(match.venueCity)}` : ''}</b>${match.referee ? `<span>الحكم: ${escapeHtml(match.referee)}</span>` : ''}</div>
+    <div class="live-match-events">${eventHtml || '<p class="empty-match-data">لا توجد أحداث مسجلة حتى الآن.</p>'}</div>
+    <div class="live-match-statistics">${statRows}</div>`;
 }
 
 function activateMatchApiNode(node) {
   const map = node.closest('.match-api-map');
   if (!map) return;
-  map.querySelectorAll('.match-api-node').forEach((item) => item.classList.toggle('is-selected', item === node));
+  map.querySelectorAll('.match-api-node').forEach((item) => {
+    const selected = item === node;
+    item.classList.toggle('is-selected', selected);
+    item.setAttribute('aria-selected', String(selected));
+  });
+  selectedMatchTab = node.dataset.endpoint || 'details';
   const detail = document.getElementById('match-api-detail');
-  if (!detail) return;
-  detail.innerHTML = renderMatchDetail(node.dataset.endpoint || 'fixtures', currentMatchInfo);
+  if (detail) detail.innerHTML = renderMatchDetail(selectedMatchTab, currentMatchInfo);
+}
+
+function renderMatchPanel() {
+  const tab = document.querySelector(`.match-api-node[data-endpoint="${selectedMatchTab}"]`);
+  if (tab) activateMatchApiNode(tab);
 }
 
 async function loadMatchPanel(matchId) {
@@ -387,10 +369,7 @@ async function loadMatchPanel(matchId) {
     setText('match-red-cards', String(cardTotal(match.redCards)));
     setImage('match-home-logo', match.homeLogo);
     setImage('match-away-logo', match.awayLogo);
-    const map = document.getElementById('match-api-map');
-    if (map) map.innerHTML = renderMatchApiMap(match);
-    const teamsNode = map?.querySelector('[data-endpoint="teams"]');
-    if (teamsNode) activateMatchApiNode(teamsNode);
+    renderMatchPanel();
     const goals = document.getElementById('match-goals');
     const scorers = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 8) : [];
     goals.innerHTML = scorers.map((goal) => `<span>${escapeHtml(goal.minute ? `${goal.minute}' ` : '')}${escapeHtml(goal.player)}</span>`).join('');
@@ -578,6 +557,13 @@ function connectStream(attempt = 0) {
     lastReadyAt = Date.now();
     hideStatus();
     notifyParent('ready');
+    if (resumeAfterQualityChange) {
+      video.addEventListener('canplay', () => {
+        if (!resumeAfterQualityChange) return;
+        resumeAfterQualityChange = false;
+        video.play().catch(() => {});
+      }, { once: true });
+    }
     if (video.readyState >= 3) clearTimeout(loadTimer);
   });
   hls.on(Hls.Events.LEVEL_SWITCHED, () => {
@@ -625,7 +611,7 @@ function streamUrlForQuality(quality) {
 function setupQualityControl() {
   const heights = [...new Set((hls?.levels || []).map((level) => level.height).filter((height) => height > 0))].sort((a, b) => b - a);
   const providerHeights = availableQualities.map((quality) => Number(quality.height)).filter((height) => height > 0);
-  const options = [0, ...new Set(heights.length > 1 ? heights : [...heights, ...providerHeights])];
+  const options = [0, ...new Set([...heights, ...providerHeights].sort((a, b) => b - a))];
   if (player) {
     updateQualityMenu(options);
     return;
@@ -653,11 +639,11 @@ function updateQualityMenu(options) {
     button.setAttribute('role', 'menuitemradio');
     button.setAttribute('data-plyr', 'quality');
     button.setAttribute('value', String(height));
-    button.setAttribute('aria-checked', String(height === (player.quality || 0)));
+    button.setAttribute('aria-checked', String(height === (selectedManualHeight || 0)));
     button.textContent = height ? `${height}p` : 'تلقائي';
     Object.defineProperty(button, 'checked', {
       get: () => button.getAttribute('aria-checked') === 'true',
-      set: (checked) => button.setAttribute('aria-checked', String(checked)),
+      set: (checked) => button.setAttribute('aria-checked', String(checked))
     });
     button.addEventListener('click', () => {
       for (const item of list.children) item.setAttribute('aria-checked', String(item === button));
@@ -690,6 +676,15 @@ function changeQuality(height) {
     else hls.currentLevel = -1;
     return;
   }
+  const source = availableQualities.find((quality) => Number(quality.height) === selectedManualHeight);
+  if (source?.label) {
+    currentQuality = source.label;
+    resumeAfterQualityChange = !video.paused;
+    armLoadTimeout();
+    showLoading('جاري تغيير الجودة...', `${selectedManualHeight}p`);
+    hls.loadSource(streamUrlForQuality(currentQuality));
+    return;
+  }
   const levelIndex = hls.levels.findIndex((level) => Number(level.height) === selectedManualHeight);
   if (levelIndex >= 0) {
     currentQuality = '';
@@ -697,15 +692,7 @@ function changeQuality(height) {
     hls.nextLevel = levelIndex;
     return;
   }
-  const source = availableQualities.find((quality) => Number(quality.height) === selectedManualHeight);
-  currentQuality = source?.label || '';
-  if (!currentQuality) {
-    fallbackToAuto('هذه الجودة غير متاحة حالياً. تم الرجوع للوضع التلقائي.');
-    return;
-  }
-  armLoadTimeout();
-  showLoading('جاري تغيير الجودة...', `${selectedManualHeight}p`);
-  hls.loadSource(streamUrlForQuality(currentQuality));
+  fallbackToAuto('هذه الجودة غير متاحة حالياً. تم الرجوع للوضع التلقائي.');
 }
 
 function fallbackToAuto(message = 'تم الرجوع تلقائياً لأفضل جودة مستقرة.') {
@@ -818,16 +805,29 @@ refreshStreamButton?.addEventListener('click', () => {
   }
 });
 document.addEventListener('click', (event) => {
-  const node = event.target.closest?.('.match-api-node');
-  if (!node) return;
-  event.preventDefault();
-  activateMatchApiNode(node);
+  const tab = event.target.closest?.('.match-api-node');
+  if (tab) {
+    event.preventDefault();
+    activateMatchApiNode(tab);
+    return;
+  }
+  const side = event.target.closest?.('[data-lineup-side]');
+  if (side && currentMatchInfo) {
+    selectedLineupSide = side.dataset.lineupSide;
+    const detail = document.getElementById('match-api-detail');
+    if (detail) detail.innerHTML = renderLineups(currentMatchInfo);
+  }
 });
 document.addEventListener('keydown', (event) => {
-  const node = event.target.closest?.('.match-api-node');
+  const node = event.target.closest?.('.match-api-node, [data-lineup-side]');
   if (!node || !['Enter', ' '].includes(event.key)) return;
   event.preventDefault();
-  activateMatchApiNode(node);
+  if (node.matches('.match-api-node')) activateMatchApiNode(node);
+  else {
+    selectedLineupSide = node.dataset.lineupSide;
+    const detail = document.getElementById('match-api-detail');
+    if (detail && currentMatchInfo) detail.innerHTML = renderLineups(currentMatchInfo);
+  }
 });
 embedModal?.addEventListener('click', (event) => {
   if (event.target.closest('[data-close-embed]')) closeEmbedModal();
