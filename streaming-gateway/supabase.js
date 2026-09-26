@@ -62,7 +62,14 @@ async function mapWithConcurrency(items, limit, worker) {
 
 export function createMatchesReader(env) {
   const client = createServerClient(env);
-  const normalizeName = (value) => String(value || '').trim().toLocaleLowerCase('en');
+  const normalizeName = (value) => String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^a-z0-9\p{L}]+/giu, '')
+    .toLowerCase();
   return async () => {
     const [{ data, error }, channelsResult] = await Promise.all([
       client
