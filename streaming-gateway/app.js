@@ -190,7 +190,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       'X-Content-Type-Options': 'nosniff'
     });
     const frontendOrigins = config.frontendOrigins || new Set([config.frontend]);
-    const allowedOrigins = ['/api/generate-token', '/api/config', '/api/matches'].includes(req.path) ? frontendOrigins : new Set([config.player]);
+    const tokenOrigins = new Set([...frontendOrigins, config.player]);
+    const allowedOrigins = ['/api/generate-token', '/api/config', '/api/matches'].includes(req.path) ? tokenOrigins : new Set([config.player]);
     const requestOrigin = req.headers.origin;
     if (allowedOrigins.has(requestOrigin)) {
       res.set({ 'Access-Control-Allow-Origin': requestOrigin, Vary: 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range' });
@@ -371,7 +372,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   });
   app.post('/api/generate-token', async (req, res) => {
     try {
-      requireOrigin(req, config.frontendOrigins || config.frontend);
+      requireOrigin(req, new Set([...(config.frontendOrigins || new Set([config.frontend])), config.player]));
       const source = config.sourceForOrigin(originFromHeader(req.headers.origin));
       const playback = await config.getPlaybackForSource(source, String(req.body.matchId || ''));
       if (!playback.is_streaming_active) return res.status(409).json({ error: playback.reason || 'stream_unavailable' });

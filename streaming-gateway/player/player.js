@@ -413,6 +413,43 @@ async function start() {
     && value.expiresAt > Date.now() + 5000
     && (!matchId || value.matchId === matchId)
   );
+  const createSessionForMatch = async (matchId) => {
+    const ticketResponse = await fetch(`${STREAM_API_ORIGIN}/api/generate-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matchId }),
+      credentials: 'omit',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!ticketResponse.ok) throw new Error('تعذر إنشاء رابط مشاهدة لهذه المباراة حالياً.');
+    const ticket = await ticketResponse.json();
+    const response = await fetch(`${STREAM_API_ORIGIN}/api/redeem-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: ticket.token }),
+      credentials: 'omit',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) throw new Error('تعذر فتح جلسة المشاهدة.');
+    const data = await response.json();
+    if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
+    return { token: data.token, qualities: data.qualities || [], matchId, expiresAt: Date.now() + data.expiresIn * 1000 };
+  };
+  const recoverLiveSession = async () => {
+    const response = await fetch(`${STREAM_API_ORIGIN}/api/matches?day=today`, {
+      credentials: 'omit',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) throw new Error('افتح المباراة من الموقع للمتابعة.');
+    const data = await response.json();
+    const match = (data.matches || []).find((item) => item.isLive && item.sourceReady)
+      || (data.matches || []).find((item) => item.isLive)
+      || (data.matches || []).find((item) => item.sourceReady);
+    if (!match?.matchId) throw new Error('لا توجد مباراة ببث جاهز الآن. افتح المباراة من الموقع للمتابعة.');
+    activeMatchId = match.matchId;
+    loadMatchPanel(activeMatchId);
+    return createSessionForMatch(activeMatchId);
+  };
   if (entry) {
     activeMatchId = decodeJwtPayload(entry).matchId || '';
     loadMatchPanel(activeMatchId);
@@ -444,6 +481,10 @@ async function start() {
     }
   } else {
     session = readStoredSession();
+    if (!isUsableSession(session)) {
+      session = await recoverLiveSession();
+      try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
+    }
   }
   if (!session?.token || session.expiresAt <= Date.now()) throw new Error('انتهت جلسة المشاهدة. افتح المباراة من الموقع للمتابعة.');
   hlsSessionToken = session.token;
