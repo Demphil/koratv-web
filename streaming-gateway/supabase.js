@@ -84,9 +84,9 @@ export function createMatchesReader(env) {
     const usedChannelNames = [...new Set((data || [])
       .map((row) => normalizeName(row.channel || row.payload?.channel || ''))
       .filter((name) => channelsByName.has(name)))];
-    const healthChecks = env.CHECK_MATCH_SOURCE_HEALTH === 'false'
-      ? usedChannelNames.map((name) => [name, true])
-      : await mapWithConcurrency(usedChannelNames, Number(env.CHECK_SOURCE_HEALTH_CONCURRENCY || 2), async (name) => [name, await isPlayableHlsSource(channelsByName.get(name))]);
+    const healthChecks = env.CHECK_MATCH_SOURCE_HEALTH === 'true'
+      ? await mapWithConcurrency(usedChannelNames, Number(env.CHECK_SOURCE_HEALTH_CONCURRENCY || 2), async (name) => [name, await isPlayableHlsSource(channelsByName.get(name))])
+      : usedChannelNames.map((name) => [name, true]);
     const readyChannels = new Set(healthChecks
       .filter(([, ok]) => ok)
       .map(([name]) => name));
@@ -177,7 +177,7 @@ export function createPlaybackResolver(env) {
 
     const channel = await findChannel(client, channelName);
     if (!channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
-    if (env.CHECK_PLAYBACK_SOURCE_HEALTH !== 'false' && !(await isPlayableHlsSource(channel.original_url))) {
+    if (env.CHECK_PLAYBACK_SOURCE_HEALTH === 'true' && !(await isPlayableHlsSource(channel.original_url))) {
       return { is_streaming_active: false, reason: 'source_unavailable' };
     }
     const qualityVariants = normalizeQualityVariants(channel);

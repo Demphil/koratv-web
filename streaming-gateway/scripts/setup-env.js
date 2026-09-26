@@ -56,7 +56,7 @@ const gatewayText = await configure(gateway, await readFile(new URL('../.env.exa
   HMAC_SECRET: { value: randomSecret(), valid: validSecret },
   PUBLIC_API_ORIGIN: {
     value: 'https://stream-api.koratv.click',
-    valid: validHttpsOrigin
+    valid: (value) => value === 'https://stream-api.koratv.click'
   },
   FRONTEND_ORIGIN: { value: 'https://frajatv.fun', valid: (value) => value === 'https://frajatv.fun' },
   FRONTEND_ORIGINS: { value: requiredFrontendOrigins.join(','), valid: validOriginsList },
