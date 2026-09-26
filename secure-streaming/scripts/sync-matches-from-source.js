@@ -186,9 +186,10 @@ async function collectApiFootballRows() {
       const homeTeam = fixture?.teams?.home?.name?.trim();
       const awayTeam = fixture?.teams?.away?.name?.trim();
       const league = fixture?.league?.name || "";
+      const leagueCountry = fixture?.league?.country || "";
       const kickoff = fixture?.fixture?.date;
       if (!homeTeam || !awayTeam || !kickoff) continue;
-      if (!isAllowedMatch({ league, homeTeam, awayTeam })) continue;
+      if (!isAllowedMatch({ league, leagueCountry, homeTeam, awayTeam })) continue;
 
       const status = apiFootballStatus(fixture?.fixture?.status);
       const baseMatchId = matchSlug(homeTeam, awayTeam);
@@ -218,6 +219,7 @@ async function collectApiFootballRows() {
           }).format(new Date(kickoff)),
           homeLogo: fixture?.teams?.home?.logo || "",
           awayLogo: fixture?.teams?.away?.logo || "",
+          leagueCountry,
           sourceFixtureId: fixture?.fixture?.id || "",
           channelSource: "trusted_source_required",
           dataSource: "api-football"

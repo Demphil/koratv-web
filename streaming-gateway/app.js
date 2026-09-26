@@ -105,6 +105,7 @@ function normalizeMatch(row, config) {
     time: cleanText(payload.time, moroccoPart(scheduledAt, { hourCycle: 'h23', hour: '2-digit', minute: '2-digit' })),
     score: normalizeScore(payload.score, playbackState),
     league: row.league || payload.league || '',
+    leagueCountry: cleanText(payload.leagueCountry || payload.country || payload.league?.country),
     commentator: payload.commentator || '',
     status: cleanText(payload.status || payload.state || payload.matchStatus),
     streams: [],
@@ -170,6 +171,7 @@ function dedupeNormalizedMatches(matches) {
 function allowedMatch(match) {
   return isAllowedMatch({
     league: match.league,
+    leagueCountry: match.leagueCountry,
     homeTeam: match.homeTeam,
     awayTeam: match.awayTeam
   });

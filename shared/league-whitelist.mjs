@@ -77,6 +77,25 @@ export function isAllowedLeague(value) {
   return Boolean(normalized && ALLOWED_LEAGUE_PATTERNS.some((pattern) => pattern.test(normalized)));
 }
 
+function normalizeCountryName(value) {
+  return normalizeLeagueName(value).toLocaleLowerCase('en');
+}
+
+function isAllowedApiFootballLeague(value, country = '') {
+  const normalized = normalizeLeagueName(value).toLocaleLowerCase('en');
+  const normalizedCountry = normalizeCountryName(country);
+  if (!normalizedCountry) return isAllowedLeague(value);
+  if (/^premier league$/.test(normalized)) return /england/.test(normalizedCountry);
+  if (/^serie a$/.test(normalized)) return /italy/.test(normalizedCountry);
+  if (/^bundesliga$/.test(normalized)) return /germany/.test(normalizedCountry);
+  if (/^ligue 1$/.test(normalized)) return /france/.test(normalizedCountry);
+  if (/^la liga$/.test(normalized)) return /spain/.test(normalizedCountry);
+  if (/^national(?:\s*1)?$/.test(normalized)) return /france/.test(normalizedCountry);
+  if (/botola|البطوله الوطنيه الاحترافيه المغربيه|الدوري المغربي/.test(normalized)) return /morocco|المغرب/.test(normalizedCountry);
+  if (/saudi pro league|pro league|roshn/.test(normalized)) return /saudi/.test(normalizedCountry);
+  return isAllowedLeague(value);
+}
+
 const ALLOWED_TEAM_PATTERNS = [
   /inter\s*miami|inter\s*miami\s*cf|انتر\s*ميامي|إنتر\s*ميامي/i,
   /botafogo|botafogo\s*fr|بوتافوغو|بوتافوجو|بوتافوقو/i,
@@ -97,8 +116,8 @@ export function isAllowedNationalTeamException(value) {
   return Boolean(normalized && NATIONAL_TEAM_EXCEPTIONS.some((pattern) => pattern.test(normalized)));
 }
 
-export function isAllowedMatch({ league = '', homeTeam = '', awayTeam = '' } = {}) {
-  return isAllowedLeague(league)
+export function isAllowedMatch({ league = '', country = '', leagueCountry = '', homeTeam = '', awayTeam = '' } = {}) {
+  return isAllowedApiFootballLeague(league, country || leagueCountry)
     || isAllowedTeam(homeTeam)
     || isAllowedTeam(awayTeam)
     || isAllowedNationalTeamException(homeTeam)
