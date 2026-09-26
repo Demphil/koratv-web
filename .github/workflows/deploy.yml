@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Pull, test, build, and restart streaming services
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         with:
           host: ${{ secrets.VPS_IP }}
           username: ${{ secrets.VPS_USERNAME }}
@@ -29,6 +31,7 @@ jobs:
           port: 22
           timeout: 30s
           command_timeout: 12m
+          envs: API_FOOTBALL_KEY
           script: |
             set -euo pipefail
 
@@ -54,6 +57,9 @@ jobs:
 
             cd "$SECURE_DIR"
             npm ci --omit=dev --no-audit --fund=false
+            if [ -n "${API_FOOTBALL_KEY:-}" ]; then
+              node --input-type=module -e 'import { readFile, writeFile, chmod } from "node:fs/promises"; const key = process.env.API_FOOTBALL_KEY; if (!key || /[\r\n]/.test(key)) throw new Error("Invalid API-Football credential input"); const lines = (await readFile(".env", "utf8")).split(/\r?\n/).filter(line => !/^\s*(?:export\s+)?(?:API_FOOTBALL_KEY|APIFOOTBALL_KEY|FOOTBALL_API_KEY|RAPIDAPI_KEY)\s*=/.test(line)); lines.push(`API_FOOTBALL_KEY=${key}`); await writeFile(".env", `${lines.join("\n")}\n`, { mode: 0o600 }); await chmod(".env", 0o600); console.log("API-Football credential installed without displaying its value")'
+            fi
             node --env-file=.env --input-type=module -e "if (!['API_FOOTBALL_KEY','APIFOOTBALL_KEY','FOOTBALL_API_KEY','RAPIDAPI_KEY'].some((name) => process.env[name])) throw new Error('API-Football key is missing from secure-streaming/.env'); console.log('API-Football sync configuration is present')"
             npm test
 
