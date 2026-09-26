@@ -445,6 +445,7 @@ function failPlayback(message, retry = true) {
 function streamUrlForQuality(quality) {
   const url = new URL(`${STREAM_API_ORIGIN}/api/stream.m3u8`);
   if (quality) url.searchParams.set('quality', quality);
+  if (hlsSessionToken) url.searchParams.set('token', hlsSessionToken);
   return url.href;
 }
 

@@ -106,6 +106,9 @@ function normalizeMatch(row, config) {
       minute: String(goal.minute || '').slice(0, 12),
       team: String(goal.team || '').slice(0, 16)
     })) : [],
+    dataSource: payload.dataSource || row.source || '',
+    sourceFixtureId: payload.sourceFixtureId || payload.sourceMatchId || '',
+    eventDetailsLoaded: payload.eventDetailsLoaded === true,
     updatedAt: row.updated_at
   };
 }
@@ -380,10 +383,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   });
   app.get(['/api/stream.m3u8', '/api/resource'], async (req, res) => {
     let claims;
+    let sessionToken = '';
     try {
       requireOrigin(req, config.player);
-      const token = requestToken(req);
-      claims = verify(token, req, 'hls-session');
+      sessionToken = requestToken(req);
+      claims = verify(sessionToken, req, 'hls-session');
       if (!claims.sourceId) return res.sendStatus(403);
     } catch { return res.sendStatus(403); }
     try {
@@ -445,7 +449,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         }
         const rewrite = (uri) => {
           const target = allowedUrl(new URL(uri, manifestUrl).href, runtimeOrigins);
-          return `${config.api}/api/resource?resource=${seal(target.href, claims.jti)}`;
+          const url = new URL(`${config.api}/api/resource`);
+          url.searchParams.set('resource', seal(target.href, claims.jti));
+          url.searchParams.set('token', sessionToken);
+          return url.href;
         };
         const manifest = text.split(/\r?\n/).map((line) => {
           if (!line.trim()) return line;

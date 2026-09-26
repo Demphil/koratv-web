@@ -116,10 +116,10 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal(playlist.status, 200);
   const content = await playlist.text();
   assert.ok(!content.includes('media.example.com'));
-  assert.ok(!content.includes('token='));
   assert.ok(content.includes('URI="https://api.example.com/api/resource?resource='));
+  assert.ok(content.includes('token='));
   const segment = new URL(content.trim().split('\n').at(-1));
-  assert.equal((await request(segment.pathname + segment.search, config.player)).status, 403);
+  assert.equal((await request(segment.pathname + segment.search, config.player, null, '203.0.113.1')).status, 200);
   assert.equal((await request(segment.pathname + segment.search, config.player, null, '203.0.113.1', { Authorization: `Bearer ${session.token}` })).status, 200);
   assert.ok(fetchedPaths.includes('/redirected/live/segment.ts'));
   config.getPlayback = async () => ({ is_streaming_active: false, reason: 'ended' });
