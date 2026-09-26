@@ -5,6 +5,7 @@ import { createApp } from '../app.js';
 
 test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   const store = new Map();
+  const matchInfoLookups = [];
   const liveKickoff = new Date(Date.now() + 10 * 60_000).toISOString();
   const config = {
     secret: 'test-only-secret-with-at-least-32-bytes',
@@ -25,7 +26,9 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
         { label: '720p', height: 720, url: 'https://media.example.com/720/master.m3u8' }
       ]
     }),
-    getMatchesForOrigin: async () => [{
+    getMatchesForOrigin: async (origin, matchId) => {
+      if (matchId) matchInfoLookups.push({ origin, matchId });
+      return [{
       id: 'match-1', match_id: 'match-1', home_team: 'Home', away_team: 'Away',
       league: 'الدوري الإسباني', kickoff_time: liveKickoff, channel: 'demo',
       payload: {
@@ -59,7 +62,8 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
         venue: 'Test Stadium', referee: 'Test Referee'
       },
       source_ready: true, active: true, updated_at: '2026-09-20T10:00:00Z'
-    }],
+    }];
+    },
   };
   const redis = {
     incr: async () => 1, expire: async () => 1,
@@ -116,6 +120,9 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal(infoResponse.status, 200);
   const infoBody = await infoResponse.json();
   assert.equal(infoBody.match.goals[0].player, 'Test Scorer');
+  assert.equal(infoBody.match.matchId, 'match-botafogo');
+  assert.equal(matchInfoLookups.at(-1).matchId, 'match-botafogo');
+  assert.equal(infoBody.match.channelName, 'demo');
   assert.equal(infoBody.match.homeTeamId, 10);
   assert.equal(infoBody.match.events[0].elapsed, 55);
   assert.equal(infoBody.match.lineups[0].startXI[0].photo, 'https://media.api-sports.io/football/players/1.png');
@@ -124,6 +131,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal(infoBody.match.venue, 'Test Stadium');
   assert.equal((await request('/api/generate-token', 'https://bad.example', { channel: 'demo' })).status, 403);
   const entry = await (await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).json();
+  assert.equal((await request('/api/generate-token', config.frontend, { matchId: 'different-match' })).status, 409);
   assert.equal((await request('/api/generate-token', config.player, { matchId: 'match-1' })).status, 200);
   assert.equal(entry.expiresIn, 300);
   assert.equal(jwt.decode(entry.token).stream_url, undefined);

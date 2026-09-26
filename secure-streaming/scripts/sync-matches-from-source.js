@@ -3,6 +3,7 @@ import * as cheerio from "cheerio";
 import { fileURLToPath } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
 import { isAllowedMatch, normalizeTeamName } from "../../shared/league-whitelist.mjs";
+import { findChannelNameMatch } from "../../shared/channel-name-match.mjs";
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
@@ -557,13 +558,9 @@ function matchMinute(match = {}) {
 }
 
 function pickExistingChannel(channelNames, candidates) {
-  const normalized = channelNames.map((name) => ({ name, key: normalizeLookup(name) }));
   for (const candidate of candidates) {
-    const key = normalizeLookup(candidate);
-    const exact = normalized.find((channel) => channel.key === key);
-    if (exact) return exact.name;
-    const partial = normalized.find((channel) => key.length >= 5 && (channel.key.includes(key) || key.includes(channel.key)));
-    if (partial) return partial.name;
+    const match = findChannelNameMatch(candidate, channelNames);
+    if (match) return match;
   }
   return "";
 }

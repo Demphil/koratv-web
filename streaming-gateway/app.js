@@ -113,6 +113,8 @@ function normalizeMatch(row, config) {
     matchId: row.match_id || row.id,
     homeTeam: row.home_team || payload.homeTeam?.name || payload.homeTeam || '',
     awayTeam: row.away_team || payload.awayTeam?.name || payload.awayTeam || '',
+    homeTeamArabic: cleanText(payload.homeTeamArabic || payload.homeTeam?.nameAr || payload.homeTeam?.arabicName),
+    awayTeamArabic: cleanText(payload.awayTeamArabic || payload.awayTeam?.nameAr || payload.awayTeam?.arabicName),
     homeTeamId: payload.homeTeamId || null,
     awayTeamId: payload.awayTeamId || null,
     homeLogo: payload.homeLogo || payload.homeTeam?.logo || '',
@@ -121,6 +123,7 @@ function normalizeMatch(row, config) {
     time: cleanText(payload.time, moroccoPart(scheduledAt, { hourCycle: 'h23', hour: '2-digit', minute: '2-digit' })),
     score: normalizeScore(payload.score, playbackState),
     league: row.league || payload.league || '',
+    channelName: cleanText(row.channel || payload.channel),
     leagueCountry: cleanText(payload.leagueCountry || payload.country || payload.league?.country),
     commentator: payload.commentator || '',
     status: cleanText(payload.status || payload.state || payload.matchStatus),
@@ -470,7 +473,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const matchId = String(req.query.matchId || '').trim();
       if (!matchId || matchId.length > 160) return res.sendStatus(400);
       const origin = originFromHeader(req.headers.origin) || originFromHeader(req.headers.referer);
-      const match = (await config.getMatchesForOrigin(origin))
+      const match = (await config.getMatchesForOrigin(origin, matchId))
         .map((row) => normalizeMatch(row, config))
         .find((item) => (item.matchId === matchId || item.match_id === matchId) && allowedMatch(item));
       if (!match) return res.sendStatus(404);
@@ -483,14 +486,16 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       requireOrigin(req, tokenOrigins);
       const source = config.sourceForOrigin(originFromHeader(req.headers.origin));
-      const playback = await config.getPlaybackForSource(source, String(req.body.matchId || ''));
+      const requestedMatchId = String(req.body.matchId || '');
+      const playback = await config.getPlaybackForSource(source, requestedMatchId);
       if (!playback.is_streaming_active) return res.status(409).json({ error: playback.reason || 'stream_unavailable' });
+      if (playback.match_id !== requestedMatchId) return res.status(409).json({ error: 'match_mismatch' });
       const rateKey = `stream-rate:${ipHash(req)}:${Math.floor(Date.now() / 60000)}`;
       const count = await redis.incr(rateKey);
       if (count === 1) await redis.expire(rateKey, 60);
       if (count > 20) return res.sendStatus(429);
       const token = sign({ ip: ipHash(req), channel: playback.channel_id, matchId: playback.match_id, source }, 'player-entry');
-      res.json({ token, expiresIn: entryTtl });
+      res.json({ token, expiresIn: entryTtl, channelName: playback.channel_id });
     } catch { res.sendStatus(403); }
   });
   // Entry tickets are consumed atomically across workers; HLS sessions support repeated segment requests.
@@ -507,7 +512,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       res.json({
         token: sign({ ip: claims.ip, channel: claims.channel, matchId: claims.matchId, source: claims.source, sourceId }, 'hls-session', config.sessionTtl),
         expiresIn: config.sessionTtl,
-        qualities: publicQualities(playback)
+        qualities: publicQualities(playback),
+        channelName: claims.channel
       });
     } catch { res.sendStatus(403); }
   });

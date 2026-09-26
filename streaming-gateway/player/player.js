@@ -32,8 +32,22 @@ let lastStallRecoveryAt = 0;
 let currentMatchInfo = null;
 let selectedMatchTab = 'details';
 let selectedLineupSide = 'home';
+let matchPanelRequestSequence = 0;
 let resumeAfterQualityChange = false;
 const sessionKey = 'koratv-playback-session';
+const arabicTeamNames = new Map(Object.entries({
+  argentina: 'الأرجنتين', australia: 'أستراليا', belgium: 'بلجيكا', brazil: 'البرازيل',
+  canada: 'كندا', china: 'الصين', croatia: 'كرواتيا', denmark: 'الدنمارك',
+  egypt: 'مصر', england: 'إنجلترا', finland: 'فنلندا', france: 'فرنسا',
+  germany: 'ألمانيا', ghana: 'غانا', greece: 'اليونان', hungary: 'المجر',
+  iran: 'إيران', iraq: 'العراق', italy: 'إيطاليا', japan: 'اليابان',
+  jordan: 'الأردن', mexico: 'المكسيك', morocco: 'المغرب', netherlands: 'هولندا',
+  nigeria: 'نيجيريا', norway: 'النرويج', portugal: 'البرتغال', qatar: 'قطر',
+  'saudi arabia': 'السعودية', scotland: 'اسكتلندا', senegal: 'السنغال', serbia: 'صربيا',
+  'south africa': 'جنوب أفريقيا', 'south korea': 'كوريا الجنوبية', spain: 'إسبانيا',
+  sweden: 'السويد', switzerland: 'سويسرا', tunisia: 'تونس', turkey: 'تركيا',
+  ukraine: 'أوكرانيا', 'united states': 'الولايات المتحدة', uruguay: 'الأوروغواي', wales: 'ويلز'
+}));
 const MAX_RECONNECT_ATTEMPTS = 3;
 const MAX_MEDIA_RECOVERIES = 2;
 const INITIAL_LOAD_TIMEOUT_MS = 18000;
@@ -283,6 +297,24 @@ function normalizeTeamNameForUi(value) {
   return cleanText(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
 }
 
+function arabicTeamLabel(match, side) {
+  const supplied = cleanText(match?.[`${side}TeamArabic`]);
+  if (supplied) return supplied;
+  const name = cleanText(match?.[`${side}Team`]);
+  if (/[\u0600-\u06ff]/.test(name)) return name;
+  return arabicTeamNames.get(normalizeTeamNameForUi(name)) || '';
+}
+
+function updateChannelLabel(channelName) {
+  const channel = cleanText(channelName);
+  const badge = document.getElementById('broadcast-channel-name');
+  const label = document.getElementById('match-channel-name');
+  const overlay = document.querySelector('.broadcast-decoy');
+  if (badge) badge.textContent = channel || 'القناة غير محددة';
+  if (overlay) overlay.hidden = false;
+  if (label) label.textContent = channel ? `القناة المرتبطة: ${channel}` : 'لم تُحدد قناة موثقة لهذه المباراة';
+}
+
 function renderLineups(match) {
   const lineup = lineupForSide(match, selectedLineupSide);
   const home = selectedLineupSide === 'home';
@@ -350,6 +382,7 @@ function renderMatchPanel() {
 
 async function loadMatchPanel(matchId) {
   if (!matchId) return;
+  const requestSequence = ++matchPanelRequestSequence;
   try {
     const response = await fetch(`${STREAM_API_ORIGIN}/api/match-info?matchId=${encodeURIComponent(matchId)}`, {
       cache: 'no-store',
@@ -357,7 +390,8 @@ async function loadMatchPanel(matchId) {
     });
     if (!response.ok) return;
     const { match } = await response.json();
-    if (!match) return;
+    if (requestSequence !== matchPanelRequestSequence || activeMatchId !== matchId) return;
+    if (!match || match.matchId !== matchId) return;
     currentMatchInfo = match;
     const panel = document.getElementById('match-panel');
     panel.hidden = false;
@@ -365,12 +399,17 @@ async function loadMatchPanel(matchId) {
     setText('match-state-pill', match.playbackState === 'ended' ? 'انتهت' : match.playbackState === 'live' ? 'مباشر الآن' : 'قريباً');
     setText('match-home-name', match.homeTeam || '');
     setText('match-away-name', match.awayTeam || '');
+    const homeArabic = document.getElementById('match-home-name-ar');
+    const awayArabic = document.getElementById('match-away-name-ar');
+    if (homeArabic) { homeArabic.textContent = arabicTeamLabel(match, 'home'); homeArabic.hidden = !homeArabic.textContent; }
+    if (awayArabic) { awayArabic.textContent = arabicTeamLabel(match, 'away'); awayArabic.hidden = !awayArabic.textContent; }
     setText('match-score', cleanScore(match.score));
     setText('match-minute', match.playbackState === 'ended' ? 'النتيجة النهائية' : match.liveMinute != null && Number.isFinite(Number(match.liveMinute)) ? `الدقيقة ${match.liveMinute}` : match.time || '');
     setText('match-yellow-cards', String(cardTotal(match.yellowCards)));
     setText('match-red-cards', String(cardTotal(match.redCards)));
     setImage('match-home-logo', match.homeLogo);
     setImage('match-away-logo', match.awayLogo);
+    updateChannelLabel(match.channelName);
     renderMatchPanel();
     const goals = document.getElementById('match-goals');
     const scorers = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 8) : [];
@@ -414,7 +453,7 @@ async function start() {
     if (!response.ok) throw new Error('تعذر فتح جلسة المشاهدة.');
     const data = await response.json();
     if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
-    return { token: data.token, qualities: data.qualities || [], matchId, expiresAt: Date.now() + data.expiresIn * 1000 };
+    return { token: data.token, qualities: data.qualities || [], channelName: data.channelName || ticket.channelName || '', matchId, expiresAt: Date.now() + data.expiresIn * 1000 };
   };
   const recoverLiveSession = async () => {
     const response = await fetch(`${STREAM_API_ORIGIN}/api/matches?day=today`, {
@@ -456,7 +495,7 @@ async function start() {
       } else {
         const data = await response.json();
         if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
-        session = { token: data.token, qualities: data.qualities || [], matchId: activeMatchId, expiresAt: Date.now() + data.expiresIn * 1000 };
+        session = { token: data.token, qualities: data.qualities || [], channelName: data.channelName || '', matchId: activeMatchId, expiresAt: Date.now() + data.expiresIn * 1000 };
         try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
       }
     }
@@ -472,6 +511,7 @@ async function start() {
   activeMatchId = session.matchId;
   sessionExpiresAt = session.expiresAt;
   availableQualities = Array.isArray(session.qualities) ? session.qualities : [];
+  updateChannelLabel(session.channelName);
   loadMatchPanel(activeMatchId);
   matchTimer = setInterval(() => { if (!document.hidden) loadMatchPanel(activeMatchId); }, 15000);
   connectStream(0);

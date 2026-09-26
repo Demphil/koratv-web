@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { findChannelNameMatch } from '../shared/channel-name-match.mjs';
 
 function createServerClient(env) {
   const url = env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL;
@@ -82,14 +83,6 @@ async function mapWithConcurrency(items, limit, worker) {
 
 export function createMatchesReader(env, sourceFilter = null) {
   const client = createServerClient(env);
-  const normalizeName = (value) => String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/ى/g, 'ي')
-    .replace(/ة/g, 'ه')
-    .replace(/[^a-z0-9\p{L}]+/giu, '')
-    .toLowerCase();
   return async () => {
     let matchesQuery = client
       .from(env.SUPABASE_MATCHES_TABLE || 'matches')
@@ -109,26 +102,28 @@ export function createMatchesReader(env, sourceFilter = null) {
     ]);
     if (error) throw new Error(`Match storage unavailable (${error.code || 'network'})`);
     if (channelsResult.error) throw new Error(`Channel storage unavailable (${channelsResult.error.code || 'network'})`);
-    const channelsByName = new Map((channelsResult.data || [])
-      .filter((channel) => channel?.original_url)
-      .map((channel) => [normalizeName(channel.name), channel.original_url]));
-    const defaultChannelName = normalizeName(env.DEFAULT_LIVE_CHANNEL || 'beIN SPORTS HD 1');
-    const usedChannelNames = [...new Set((data || [])
-      .map((row) => normalizeName(row.channel || row.payload?.channel || env.DEFAULT_LIVE_CHANNEL || 'beIN SPORTS HD 1'))
-      .filter((name) => channelsByName.has(name)))];
+    const availableChannels = (channelsResult.data || []).filter((channel) => channel?.name && channel?.original_url);
+    const resolveChannel = (name) => {
+      const matchedName = findChannelNameMatch(name, availableChannels.map((channel) => channel.name));
+      return availableChannels.find((channel) => channel.name === matchedName) || null;
+    };
+    const resolvedRows = (data || []).map((row) => ({
+      row,
+      channel: resolveChannel(row.channel || row.payload?.channel)
+    }));
+    const usedChannelNames = [...new Set(resolvedRows
+      .map(({ channel }) => channel?.name)
+      .filter(Boolean))];
     const healthChecks = env.CHECK_MATCH_SOURCE_HEALTH === 'true'
-      ? await mapWithConcurrency(usedChannelNames, Number(env.CHECK_SOURCE_HEALTH_CONCURRENCY || 2), async (name) => [name, await isPlayableHlsSource(channelsByName.get(name))])
+      ? await mapWithConcurrency(usedChannelNames, Number(env.CHECK_SOURCE_HEALTH_CONCURRENCY || 2), async (name) => [name, await isPlayableHlsSource(availableChannels.find((channel) => channel.name === name)?.original_url)])
       : usedChannelNames.map((name) => [name, true]);
     const readyChannels = new Set(healthChecks
-      .filter(([, ok]) => ok)
-      .map(([name]) => name));
-    return Array.isArray(data)
-      ? data.map((row) => {
-          const payload = row.payload || {};
-          const channelName = normalizeName(row.channel || payload.channel || defaultChannelName);
-          return { ...row, source_ready: readyChannels.has(normalizeName(channelName)) };
-        })
-      : [];
+        .filter(([, ok]) => ok)
+        .map(([name]) => name));
+    return resolvedRows.map(({ row, channel }) => ({
+      ...row,
+      source_ready: Boolean(channel && readyChannels.has(channel.name))
+    }));
   };
 }
 
@@ -153,14 +148,6 @@ async function findMatch(client, table, matchId, sourceFilter = null) {
 }
 
 async function findChannel(client, channelName) {
-  const normalizeChannelName = (value) => String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/ى/g, 'ي')
-    .replace(/ة/g, 'ه')
-    .replace(/[^a-z0-9\p{L}]+/giu, '')
-    .toLowerCase();
   const selectColumns = 'id,name,original_url,quality_variants,active';
   const withQualities = await client.from('channels')
     .select(selectColumns)
@@ -184,16 +171,18 @@ async function findChannel(client, channelName) {
     .eq('active', true)
     .limit(1000);
   if (!allWithQualities.error) {
-    const wanted = normalizeChannelName(channelName);
-    return (allWithQualities.data || []).find((channel) => normalizeChannelName(channel.name) === wanted) || null;
+    const channels = allWithQualities.data || [];
+    const matchedName = findChannelNameMatch(channelName, channels.map((channel) => channel.name));
+    return channels.find((channel) => channel.name === matchedName) || null;
   }
   const allWithoutQualities = await client.from('channels')
     .select('id,name,original_url,active')
     .eq('active', true)
     .limit(1000);
   if (allWithoutQualities.error) throw new Error(`Channel lookup unavailable (${allWithoutQualities.error.code || 'network'})`);
-  const wanted = normalizeChannelName(channelName);
-  const channel = (allWithoutQualities.data || []).find((item) => normalizeChannelName(item.name) === wanted);
+  const channels = allWithoutQualities.data || [];
+  const matchedName = findChannelNameMatch(channelName, channels.map((channel) => channel.name));
+  const channel = channels.find((item) => item.name === matchedName);
   return channel ? { ...channel, quality_variants: [] } : null;
 }
 
@@ -235,10 +224,10 @@ export function createPlaybackResolver(env, sourceFilter = null) {
       return { is_streaming_active: false, reason: 'upcoming' };
     }
 
-    const channelName = String(match.channel || payload.channel || env.DEFAULT_LIVE_CHANNEL || 'beIN SPORTS HD 1').trim();
+    const channelName = String(match.channel || payload.channel || '').trim();
     if (!channelName) return { is_streaming_active: false, reason: 'channel_unavailable' };
 
-    const channel = await findChannel(client, channelName) || await findChannel(client, env.DEFAULT_LIVE_CHANNEL || 'beIN SPORTS HD 1');
+    const channel = await findChannel(client, channelName);
     if (!channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
     const streamUrl = canonicalizeXtreamHlsUrl(channel.original_url);
     if (env.CHECK_PLAYBACK_SOURCE_HEALTH === 'true' && !(await isPlayableHlsSource(streamUrl))) {

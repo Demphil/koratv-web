@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadConfig } from '../config.js';
+import { loadConfig, sourceForMatchId } from '../config.js';
 import { isAllowedLeague } from '../../shared/league-whitelist.mjs';
 
 const valid = {
@@ -44,6 +44,28 @@ test('configuration identifies the unsafe origin variable', () => {
       }),
     /without credentials/
   );
+});
+
+test('match identifiers pin player metadata to their originating feed', () => {
+  assert.equal(sourceForMatchId('api-football_2026-09-26_england_vs_spain'), 'api-football');
+  assert.equal(sourceForMatchId('kooora_2026-09-26_england_vs_spain'), 'kooora');
+  assert.equal(sourceForMatchId('legacy-match-id'), '');
+});
+
+test('Kooora feed includes its legacy today-match source', async () => {
+  const originalFetch = globalThis.fetch;
+  let matchSourceFilter = '';
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith('/matches')) matchSourceFilter = url.searchParams.get('source') || '';
+    return new Response('[]', { headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    await loadConfig(valid).getMatchesForOrigin('https://koratv.click');
+    assert.match(matchSourceFilter, /kooora-today-matches/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('league whitelist admits requested competitions and rejects lower divisions', () => {

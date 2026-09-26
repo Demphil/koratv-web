@@ -29,6 +29,7 @@ jobs:
       IPTV_VALIDATE_STREAMS: "true"
       IPTV_SYNC_DEACTIVATE_MISSING: "true"
       IPTV_SYNC_ONLY_SPORTS: "true"
+      IPTV_SYNC_REACTIVATE_CHANNELS: "Arryadia TNT,Arryadia S/D"
 
     steps:
       - name: Checkout repository

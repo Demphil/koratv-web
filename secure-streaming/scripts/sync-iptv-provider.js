@@ -382,7 +382,6 @@ async function readExistingChannels(supabase) {
     const { data, error } = await supabase
       .from("channels")
       .select("id,name,original_url,active")
-      .eq("active", true)
       .range(from, to);
 
     if (error) throw error;
@@ -392,7 +391,7 @@ async function readExistingChannels(supabase) {
   return channels;
 }
 
-function buildUpdatePayload(existingChannels, matched) {
+export function buildUpdatePayload(existingChannels, matched) {
   const byName = new Map(matched.map((item) => [item.name, item]));
   const updates = [];
   const unchanged = [];
@@ -407,7 +406,7 @@ function buildUpdatePayload(existingChannels, matched) {
 
     const qualityVariants = buildQualityVariants(match);
 
-    if (match.original_url === channel.original_url && !qualityVariants.length) {
+    if (match.original_url === channel.original_url && !qualityVariants.length && channel.active === true) {
       unchanged.push(channel.name);
       continue;
     }
@@ -433,6 +432,8 @@ export async function syncIptvProvider(options = {}) {
   const masterProbeTimeoutMs = Number(options.masterProbeTimeoutMs || env("IPTV_MASTER_PROBE_TIMEOUT_MS", 8000));
   const masterProbeConcurrency = Number(options.masterProbeConcurrency || env("IPTV_MASTER_PROBE_CONCURRENCY", 4));
   const candidatesPerChannel = Number(options.candidatesPerChannel || env("IPTV_SYNC_CANDIDATES_PER_CHANNEL", 8));
+  const reactivateChannels = new Set(String(options.reactivateChannels ?? env("IPTV_SYNC_REACTIVATE_CHANNELS", ""))
+    .split(",").map((name) => name.trim()).filter(Boolean));
   const validateStreams = String(options.validateStreams ?? env("IPTV_VALIDATE_STREAMS", "true")) !== "false";
   const detectMasterQualities = String(options.detectMasterQualities ?? env("IPTV_SYNC_MASTER_QUALITIES", "true")) !== "false";
   const deactivateMissing = String(options.deactivateMissing ?? env("IPTV_SYNC_DEACTIVATE_MISSING", "false")) === "true";
@@ -474,7 +475,9 @@ export async function syncIptvProvider(options = {}) {
 
   const providerEntries = rewriteProviderEntryOrigins(parseM3uText(m3uText), providerOrigin(provider.url));
   const entries = sportsOnly ? providerEntries.filter(isSportsProviderEntry) : providerEntries;
-  const targetChannels = sportsOnly ? existingChannels.filter(isSportsChannel) : existingChannels;
+  const targetChannels = existingChannels.filter((channel) =>
+    (!sportsOnly || isSportsChannel(channel)) && (channel.active === true || reactivateChannels.has(channel.name))
+  );
   const streamNames = targetChannels.map((channel) => channel.name);
   const rawMatched = matchChannels(streamNames, entries, { candidatesPerChannel });
   const workingMatched = await chooseWorkingProviderLinks(rawMatched, {

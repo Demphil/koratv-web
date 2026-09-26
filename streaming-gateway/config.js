@@ -6,6 +6,13 @@ function sourceForOrigin(origin, { koratvOrigins, frajaOrigins }) {
   return '';
 }
 
+export function sourceForMatchId(matchId) {
+  const id = String(matchId || '');
+  if (id.startsWith('kooora_')) return 'kooora';
+  if (id.startsWith('api-football_')) return 'api-football';
+  return '';
+}
+
 export function loadConfig(env = process.env) {
   const secret = env.JWT_SECRET || '';
   const hmacSecret = env.HMAC_SECRET || '';
@@ -40,7 +47,7 @@ export function loadConfig(env = process.env) {
     }
     return url.origin;
   };
-  const koooraSources = ['kooora', 'metascrape'];
+  const koooraSources = ['kooora', 'metascrape', 'kooora-today-matches'];
   const apiFootballSources = ['api-football'];
   const getKoooraMatches = createMatchesReader(env, koooraSources);
   const getApiFootballMatches = createMatchesReader(env, apiFootballSources);
@@ -68,8 +75,8 @@ export function loadConfig(env = process.env) {
     upstreamOrigins: new Set((env.UPSTREAM_ORIGINS || '').split(',').filter(Boolean).map(upstreamOrigin)),
     sourceForOrigin: (origin) => sourceForOrigin(origin, { koratvOrigins, frajaOrigins }),
     getMatches: getApiFootballMatches,
-    getMatchesForOrigin: async (origin) => {
-      const source = sourceForOrigin(origin, { koratvOrigins, frajaOrigins });
+    getMatchesForOrigin: async (origin, matchId = '') => {
+      const source = sourceForMatchId(matchId) || sourceForOrigin(origin, { koratvOrigins, frajaOrigins });
       if (source === 'kooora') return getKoooraMatches();
       if (source === 'api-football') return getApiFootballMatches();
       return [...await getApiFootballMatches(), ...await getKoooraMatches()];

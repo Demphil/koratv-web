@@ -43,3 +43,33 @@ test('allows only requested women and African competition scope', () => {
     awayTeam: 'منتخب تونس للسيدات'
   }), true);
 });
+
+test('allows Botafogo first-team aliases but rejects similarly named lower-division clubs', () => {
+  assert.equal(isAllowedMatch({
+    league: 'Brazilian Serie A',
+    leagueCountry: 'Brazil',
+    homeTeam: 'Botafogo',
+    awayTeam: 'Flamengo'
+  }), true);
+
+  assert.equal(isAllowedMatch({
+    league: 'Brazilian Serie A',
+    leagueCountry: 'Brazil',
+    homeTeam: 'Botafogo FR',
+    awayTeam: 'Flamengo'
+  }), true);
+
+  assert.equal(isAllowedMatch({
+    league: 'Brazilian Serie C',
+    leagueCountry: 'Brazil',
+    homeTeam: 'Botafogo PB',
+    awayTeam: 'Maringá FC'
+  }), false);
+
+  assert.equal(isAllowedMatch({
+    league: 'Brazilian Serie C',
+    leagueCountry: 'Brazil',
+    homeTeam: 'Botafogo-SP',
+    awayTeam: 'Maringá FC'
+  }), false);
+});

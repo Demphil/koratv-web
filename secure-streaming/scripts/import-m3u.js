@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { findChannelNameMatch } from "../../shared/channel-name-match.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -126,7 +127,16 @@ function channelRule(name) {
     return { required: ["bein", "sport"], preferred: ["global", "hd"] };
   }
   if (normalized.includes("arryadia") || normalized.includes("الرياضيه") || normalized.includes("المغربيه")) {
-    return { required: ["arryadia"], preferred: ["tnt", "hd"] };
+    const requestedVariant = /\btnt\b/i.test(name)
+      ? "tnt"
+      : /\bs\s*\/\s*d\b|\bsd\b/i.test(name)
+        ? "sd"
+        : "";
+    return {
+      required: ["arryadia"],
+      preferred: requestedVariant ? [requestedVariant, "hd"] : ["tnt", "hd"],
+      channelVariant: requestedVariant
+    };
   }
   if (normalized.includes("on sport plus") || normalized.includes("اون سبورت بلس") || normalized.includes("on time sport 2") || normalized.includes("اون سبورت 2")) {
     return { required: ["on", "sport", "plus"], preferred: ["hd"] };
@@ -166,6 +176,8 @@ function scoreEntry(entry, rule) {
   const text = entry.search;
   const raw = `${entry.rawName || entry.name} ${entry.group || ""}`.toLowerCase();
   if (!rule.required.every((token) => text.includes(token))) return -1;
+  if (rule.channelVariant === "tnt" && !/\btnt\b/i.test(raw)) return -1;
+  if (rule.channelVariant === "sd" && !/(?:\bs\s*\/\s*d\b|\bsd\b)/i.test(raw)) return -1;
   let score = rule.required.length * 10;
   for (const token of rule.preferred || []) {
     if (text.includes(token)) score += 3;
@@ -231,6 +243,10 @@ export function matchChannels(streamNames, m3uEntries, options = {}) {
       const candidates = [];
       for (const entry of exact.get(name) || []) pushUniqueEntry(candidates, entry);
       for (const entry of normalized.get(normalizeName(name)) || []) pushUniqueEntry(candidates, entry);
+      const matchedProviderName = findChannelNameMatch(name, m3uEntries.map((entry) => entry.name));
+      if (matchedProviderName) {
+        for (const entry of exact.get(matchedProviderName) || []) pushUniqueEntry(candidates, entry);
+      }
       for (const entry of findByRuleCandidates(name, m3uEntries, Math.max(candidatesPerChannel, 8))) {
         pushUniqueEntry(candidates, entry);
       }

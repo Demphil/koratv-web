@@ -98,7 +98,7 @@ function isAllowedApiFootballLeague(value, country = '') {
 
 const ALLOWED_TEAM_PATTERNS = [
   /inter\s*miami|inter\s*miami\s*cf|انتر\s*ميامي|إنتر\s*ميامي/i,
-  /botafogo|botafogo\s*fr|بوتافوغو|بوتافوجو|بوتافوقو/i,
+  /^(?:botafogo(?:\s+(?:fr|rj|de\s+futebol\s+e\s+regatas))?|بوتافوغو|بوتافوجو|بوتافوقو)$/i,
 ];
 
 const NATIONAL_TEAM_EXCEPTIONS = [

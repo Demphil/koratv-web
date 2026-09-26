@@ -24,6 +24,7 @@ jobs:
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          ARRIYADIA_UPSTREAM_ORIGINS: ${{ secrets.ARRYADIA_UPSTREAM_ORIGINS }}
         with:
           host: ${{ secrets.VPS_IP }}
           username: ${{ secrets.VPS_USERNAME }}
@@ -31,7 +32,7 @@ jobs:
           port: 22
           timeout: 30s
           command_timeout: 12m
-          envs: API_FOOTBALL_KEY
+          envs: API_FOOTBALL_KEY,ARRYADIA_UPSTREAM_ORIGINS
           script: |
             set -euo pipefail
 
@@ -67,6 +68,12 @@ jobs:
             rm -rf node_modules
             npm ci --omit=dev --no-audit --fund=false
             node scripts/setup-env.js
+            if [ -n "${ARRYADIA_UPSTREAM_ORIGINS:-}" ]; then
+              IFS=',' read -r -a arryadia_origins <<< "$ARRYADIA_UPSTREAM_ORIGINS"
+              for upstream_origin in "${arryadia_origins[@]}"; do
+                node scripts/add-upstream-origin.js "$upstream_origin"
+              done
+            fi
             node --env-file=.env --input-type=module -e "import { loadConfig } from './config.js'; loadConfig(); console.log('Gateway configuration is valid')"
             npm test
             npm run check:supabase
