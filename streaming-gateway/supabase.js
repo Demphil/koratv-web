@@ -116,12 +116,21 @@ async function findMatch(client, table, matchId) {
 }
 
 async function findChannel(client, channelName) {
+  const normalizeChannelName = (value) => String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^a-z0-9\p{L}]+/giu, '')
+    .toLowerCase();
+  const selectColumns = 'id,name,original_url,quality_variants,active';
   const withQualities = await client.from('channels')
-    .select('id,name,original_url,quality_variants,active')
+    .select(selectColumns)
     .eq('name', channelName)
     .eq('active', true)
     .maybeSingle();
-  if (!withQualities.error) return withQualities.data;
+  if (!withQualities.error && withQualities.data) return withQualities.data;
   if (!/quality_variants|column .* does not exist|schema cache/i.test(withQualities.error.message || '')) {
     throw new Error(`Channel lookup unavailable (${withQualities.error.code || 'network'})`);
   }
@@ -131,7 +140,24 @@ async function findChannel(client, channelName) {
     .eq('active', true)
     .maybeSingle();
   if (withoutQualities.error) throw new Error(`Channel lookup unavailable (${withoutQualities.error.code || 'network'})`);
-  return withoutQualities.data ? { ...withoutQualities.data, quality_variants: [] } : null;
+  if (withoutQualities.data) return { ...withoutQualities.data, quality_variants: [] };
+
+  const allWithQualities = await client.from('channels')
+    .select(selectColumns)
+    .eq('active', true)
+    .limit(1000);
+  if (!allWithQualities.error) {
+    const wanted = normalizeChannelName(channelName);
+    return (allWithQualities.data || []).find((channel) => normalizeChannelName(channel.name) === wanted) || null;
+  }
+  const allWithoutQualities = await client.from('channels')
+    .select('id,name,original_url,active')
+    .eq('active', true)
+    .limit(1000);
+  if (allWithoutQualities.error) throw new Error(`Channel lookup unavailable (${allWithoutQualities.error.code || 'network'})`);
+  const wanted = normalizeChannelName(channelName);
+  const channel = (allWithoutQualities.data || []).find((item) => normalizeChannelName(item.name) === wanted);
+  return channel ? { ...channel, quality_variants: [] } : null;
 }
 
 function normalizeQualityVariants(channel) {
@@ -172,10 +198,10 @@ export function createPlaybackResolver(env) {
       return { is_streaming_active: false, reason: 'upcoming' };
     }
 
-    const channelName = String(match.channel || payload.channel || '').trim();
+    const channelName = String(match.channel || payload.channel || env.DEFAULT_LIVE_CHANNEL || 'beIN SPORTS HD 1').trim();
     if (!channelName) return { is_streaming_active: false, reason: 'channel_unavailable' };
 
-    const channel = await findChannel(client, channelName);
+    const channel = await findChannel(client, channelName) || await findChannel(client, env.DEFAULT_LIVE_CHANNEL || 'beIN SPORTS HD 1');
     if (!channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
     if (env.CHECK_PLAYBACK_SOURCE_HEALTH === 'true' && !(await isPlayableHlsSource(channel.original_url))) {
       return { is_streaming_active: false, reason: 'source_unavailable' };
