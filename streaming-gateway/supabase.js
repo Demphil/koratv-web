@@ -81,8 +81,9 @@ export function createMatchesReader(env) {
     const channelsByName = new Map((channelsResult.data || [])
       .filter((channel) => channel?.original_url)
       .map((channel) => [normalizeName(channel.name), channel.original_url]));
+    const defaultChannelName = normalizeName(env.DEFAULT_LIVE_CHANNEL || 'beIN SPORTS HD 1');
     const usedChannelNames = [...new Set((data || [])
-      .map((row) => normalizeName(row.channel || row.payload?.channel || ''))
+      .map((row) => normalizeName(row.channel || row.payload?.channel || env.DEFAULT_LIVE_CHANNEL || 'beIN SPORTS HD 1'))
       .filter((name) => channelsByName.has(name)))];
     const healthChecks = env.CHECK_MATCH_SOURCE_HEALTH === 'true'
       ? await mapWithConcurrency(usedChannelNames, Number(env.CHECK_SOURCE_HEALTH_CONCURRENCY || 2), async (name) => [name, await isPlayableHlsSource(channelsByName.get(name))])
@@ -93,7 +94,7 @@ export function createMatchesReader(env) {
     return Array.isArray(data)
       ? data.map((row) => {
           const payload = row.payload || {};
-          const channelName = row.channel || payload.channel || '';
+          const channelName = normalizeName(row.channel || payload.channel || defaultChannelName);
           return { ...row, source_ready: readyChannels.has(normalizeName(channelName)) };
         })
       : [];
