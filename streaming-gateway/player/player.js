@@ -235,6 +235,28 @@ function setImage(id, src) {
   }
 }
 
+function renderMatchApiMap(match) {
+  const goals = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player) : [];
+  const isLive = match.playbackState === 'live';
+  const isEnded = match.playbackState === 'ended';
+  const hasCards = cardTotal(match.yellowCards) > 0 || cardTotal(match.redCards) > 0;
+  const hasStats = Boolean(match.score && match.score !== 'VS') || hasCards || match.liveMinute != null;
+  const nodes = [
+    { key: 'fixtures', label: 'Fixtures', value: 'المباراة', tone: 'green', active: true },
+    { key: 'live', label: 'Live', value: isLive ? 'مباشر' : isEnded ? 'منتهية' : 'قريباً', tone: 'green', active: isLive || isEnded },
+    { key: 'events', label: 'Events', value: goals.length || hasCards ? 'أحداث' : 'بانتظار', tone: 'green', active: isLive || isEnded || goals.length || hasCards },
+    { key: 'statistics', label: 'Statistics', value: hasStats ? 'إحصائيات' : 'جاهزة', tone: 'blue', active: hasStats },
+    { key: 'players', label: 'Players', value: goals.length ? 'مسجلون' : 'لاعبون', tone: 'red', active: goals.length > 0 },
+    { key: 'teams', label: 'Teams', value: 'الفريقان', tone: 'cyan', active: true }
+  ];
+  return nodes.map((node) => `
+    <span class="match-api-node tone-${node.tone}${node.active ? ' is-active' : ''}" data-endpoint="${node.key}">
+      <b>${escapeHtml(node.label)}</b>
+      <small>${escapeHtml(node.value)}</small>
+    </span>
+  `).join('');
+}
+
 async function loadMatchPanel(matchId) {
   if (!matchId) return;
   try {
@@ -257,6 +279,8 @@ async function loadMatchPanel(matchId) {
     setText('match-red-cards', String(cardTotal(match.redCards)));
     setImage('match-home-logo', match.homeLogo);
     setImage('match-away-logo', match.awayLogo);
+    const map = document.getElementById('match-api-map');
+    if (map) map.innerHTML = renderMatchApiMap(match);
     const goals = document.getElementById('match-goals');
     const scorers = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 8) : [];
     goals.innerHTML = scorers.map((goal) => `<span>${escapeHtml(goal.minute ? `${goal.minute}' ` : '')}${escapeHtml(goal.player)}</span>`).join('');

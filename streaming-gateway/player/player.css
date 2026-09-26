@@ -511,6 +511,7 @@ body.tamper-lock .player-container {
 .match-panel-header,
 .match-panel-teams,
 .match-panel-stats,
+.match-api-map,
 .match-goals {
   display: flex;
   align-items: center;
@@ -598,6 +599,87 @@ body.tamper-lock .player-container {
 
 .card-dot.yellow { background: #ffd60a; }
 .card-dot.red { background: #e63946; }
+
+.match-api-map {
+  position: relative;
+  flex-wrap: nowrap;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 10px;
+  border-radius: 10px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.16)),
+    rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.match-api-node {
+  position: relative;
+  flex: 1 0 92px;
+  min-height: 50px;
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  padding: 8px 7px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+
+.match-api-node::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  inset-inline-end: -8px;
+  width: 8px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.match-api-node:last-child::after {
+  display: none;
+}
+
+.match-api-node b {
+  font-size: 0.68rem;
+  line-height: 1;
+  direction: ltr;
+}
+
+.match-api-node small {
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.match-api-node.is-active {
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.match-api-node.tone-green.is-active {
+  background: linear-gradient(145deg, rgba(64, 196, 122, 0.24), rgba(31, 117, 77, 0.18));
+  border-color: rgba(64, 196, 122, 0.36);
+}
+
+.match-api-node.tone-blue.is-active {
+  background: linear-gradient(145deg, rgba(93, 151, 224, 0.24), rgba(44, 58, 95, 0.2));
+  border-color: rgba(132, 180, 237, 0.34);
+}
+
+.match-api-node.tone-red.is-active {
+  background: linear-gradient(145deg, rgba(230, 57, 70, 0.28), rgba(128, 34, 80, 0.2));
+  border-color: rgba(255, 105, 118, 0.34);
+}
+
+.match-api-node.tone-cyan.is-active {
+  background: linear-gradient(145deg, rgba(69, 205, 214, 0.22), rgba(8, 87, 93, 0.18));
+  border-color: rgba(93, 227, 235, 0.32);
+}
 
 .match-goals {
   flex-wrap: wrap;
@@ -722,6 +804,21 @@ body.tamper-lock .player-container {
 
   .player-error-box {
     padding: 22px 16px;
+  }
+
+  .match-api-map {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+
+  .match-api-node {
+    min-width: 0;
+    flex-basis: auto;
+  }
+
+  .match-api-node:nth-child(3n)::after {
+    display: none;
   }
 
   .quality-control {
