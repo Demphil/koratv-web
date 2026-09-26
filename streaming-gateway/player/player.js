@@ -405,29 +405,45 @@ async function start() {
   showLoading('جاري تجهيز البث...', 'يتم إنشاء جلسة مشاهدة آمنة');
   if (!Hls.isSupported()) throw new Error('المتصفح لا يدعم تشغيل هذا البث. يرجى تحديثه أو استخدام متصفح حديث.');
   let session;
+  const readStoredSession = () => {
+    try { return JSON.parse(sessionStorage.getItem(sessionKey)); } catch { return null; }
+  };
+  const isUsableSession = (value, matchId = '') => Boolean(
+    value?.token
+    && value.expiresAt > Date.now() + 5000
+    && (!matchId || value.matchId === matchId)
+  );
   if (entry) {
-    try { sessionStorage.removeItem(sessionKey); } catch {}
     activeMatchId = decodeJwtPayload(entry).matchId || '';
     loadMatchPanel(activeMatchId);
-    const response = await withRetry(() => fetch(`${STREAM_API_ORIGIN}/api/redeem-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: entry }),
-      credentials: 'omit',
-      signal: AbortSignal.timeout(12000),
-    }).then((result) => {
-      if (!result.ok && ![401, 403, 429].includes(result.status)) throw new Error('redeem_retryable');
-      return result;
-    }), 'جاري فتح رابط المشاهدة');
-    if (!response.ok) throw new Error(response.status === 403
-      ? 'انتهت صلاحية رابط المشاهدة. افتح المباراة مجدداً من الموقع.'
-      : 'تعذر الاتصال بخادم المشاهدة. حاول فتح المباراة مرة أخرى.');
-    const data = await response.json();
-    if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
-    session = { token: data.token, qualities: data.qualities || [], matchId: activeMatchId, expiresAt: Date.now() + data.expiresIn * 1000 };
-    try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
+    const stored = readStoredSession();
+    if (isUsableSession(stored, activeMatchId)) {
+      session = stored;
+    } else {
+      const response = await withRetry(() => fetch(`${STREAM_API_ORIGIN}/api/redeem-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: entry }),
+        credentials: 'omit',
+        signal: AbortSignal.timeout(12000),
+      }).then((result) => {
+        if (!result.ok && ![401, 403, 429].includes(result.status)) throw new Error('redeem_retryable');
+        return result;
+      }), 'جاري فتح رابط المشاهدة');
+      if (!response.ok) {
+        if (isUsableSession(stored, activeMatchId)) session = stored;
+        else throw new Error(response.status === 403
+          ? 'انتهت صلاحية رابط المشاهدة. افتح المباراة مجدداً من الموقع.'
+          : 'تعذر الاتصال بخادم المشاهدة. حاول فتح المباراة مرة أخرى.');
+      } else {
+        const data = await response.json();
+        if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
+        session = { token: data.token, qualities: data.qualities || [], matchId: activeMatchId, expiresAt: Date.now() + data.expiresIn * 1000 };
+        try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
+      }
+    }
   } else {
-    try { session = JSON.parse(sessionStorage.getItem(sessionKey)); } catch {}
+    session = readStoredSession();
   }
   if (!session?.token || session.expiresAt <= Date.now()) throw new Error('انتهت جلسة المشاهدة. افتح المباراة من الموقع للمتابعة.');
   hlsSessionToken = session.token;
