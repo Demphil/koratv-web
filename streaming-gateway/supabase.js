@@ -131,7 +131,7 @@ async function findChannel(client, channelName) {
     .eq('active', true)
     .limit(1);
   if (!withQualities.error && withQualities.data?.[0]) return withQualities.data[0];
-  if (!/quality_variants|column .* does not exist|schema cache/i.test(withQualities.error.message || '')) {
+  if (withQualities.error && !/quality_variants|column .* does not exist|schema cache/i.test(withQualities.error.message || '')) {
     throw new Error(`Channel lookup unavailable (${withQualities.error.code || 'network'})`);
   }
   const withoutQualities = await client.from('channels')
