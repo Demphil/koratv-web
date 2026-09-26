@@ -129,8 +129,8 @@ async function findChannel(client, channelName) {
     .select(selectColumns)
     .eq('name', channelName)
     .eq('active', true)
-    .maybeSingle();
-  if (!withQualities.error && withQualities.data) return withQualities.data;
+    .limit(1);
+  if (!withQualities.error && withQualities.data?.[0]) return withQualities.data[0];
   if (!/quality_variants|column .* does not exist|schema cache/i.test(withQualities.error.message || '')) {
     throw new Error(`Channel lookup unavailable (${withQualities.error.code || 'network'})`);
   }
@@ -138,9 +138,9 @@ async function findChannel(client, channelName) {
     .select('id,name,original_url,active')
     .eq('name', channelName)
     .eq('active', true)
-    .maybeSingle();
+    .limit(1);
   if (withoutQualities.error) throw new Error(`Channel lookup unavailable (${withoutQualities.error.code || 'network'})`);
-  if (withoutQualities.data) return { ...withoutQualities.data, quality_variants: [] };
+  if (withoutQualities.data?.[0]) return { ...withoutQualities.data[0], quality_variants: [] };
 
   const allWithQualities = await client.from('channels')
     .select(selectColumns)
