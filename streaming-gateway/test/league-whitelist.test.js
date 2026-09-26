@@ -62,7 +62,7 @@ test('allows Botafogo first-team aliases but rejects similarly named lower-divis
   assert.equal(isAllowedMatch({
     league: 'Brazilian Serie C',
     leagueCountry: 'Brazil',
-    homeTeam: 'Botafogo PB',
+    homeTeam: 'Botafogo',
     awayTeam: 'Maringá FC'
   }), false);
 
@@ -72,4 +72,25 @@ test('allows Botafogo first-team aliases but rejects similarly named lower-divis
     homeTeam: 'Botafogo-SP',
     awayTeam: 'Maringá FC'
   }), false);
+});
+
+test('rejects partial-name false positives and out-of-scope divisions', () => {
+  for (const league of [
+    'Canadian Premier League',
+    'Premier League 2',
+    'U19 Bundesliga',
+    'Friendlies Clubs',
+    'Botola 2',
+    'Africa Cup of Nations U20',
+    'Copa De La Liga',
+    'Liga Premier Serie A'
+  ]) {
+    assert.equal(isAllowedMatch({ league, leagueCountry: 'World', homeTeam: 'Example FC', awayTeam: 'Another FC' }), false, league);
+  }
+
+  assert.equal(isAllowedMatch({ league: 'Botola Pro', leagueCountry: 'Morocco', homeTeam: 'Wydad AC', awayTeam: 'FUS Rabat' }), true);
+  assert.equal(isAllowedMatch({ league: 'UEFA Nations League', homeTeam: 'England', awayTeam: 'Spain' }), true);
+  assert.equal(isAllowedMatch({ league: 'International Friendlies', homeTeam: 'USA', awayTeam: 'Peru' }), true);
+  assert.equal(isAllowedMatch({ league: 'Friendlies', homeTeam: 'Hungary U19', awayTeam: 'Bulgaria U19' }), false);
+  assert.equal(isAllowedMatch({ league: 'AFC Asian Cup U20', homeTeam: 'Japan U20', awayTeam: 'Korea U20' }), true);
 });

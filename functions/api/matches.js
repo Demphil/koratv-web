@@ -1,3 +1,5 @@
+import { isAllowedMatch } from '../../shared/league-whitelist.mjs';
+
 function json(body, status, origin = '*') {
   return new Response(JSON.stringify(body), {
     status,
@@ -53,6 +55,7 @@ function toFrontendMatch(row) {
     score: payload.score || 'VS',
     league: row.league || payload.league || '',
     channel: row.channel || payload.channel || '',
+    leagueCountry: payload.leagueCountry || payload.country || '',
     commentator: payload.commentator || '',
     streams: Array.isArray(payload.streams) ? payload.streams : [],
     isLive: Boolean(payload.isLive),
@@ -110,6 +113,12 @@ export async function onRequestGet({ request, env }) {
     .filter((match) => match.homeTeam && match.awayTeam && match.scheduledAt)
     .filter((match) => String(match.homeTeam).trim() !== String(match.awayTeam).trim())
     .filter((match) => String(match.homeTeam).trim().toLocaleLowerCase('ar') !== String(match.awayTeam).trim().toLocaleLowerCase('ar'))
+    .filter((match) => isAllowedMatch({
+      league: match.league,
+      leagueCountry: match.leagueCountry,
+      homeTeam: match.homeTeam,
+      awayTeam: match.awayTeam
+    }))
     .filter((match) => {
       const key = `${String(match.homeTeam).trim().normalize('NFKC').toLocaleLowerCase('ar')}|${String(match.awayTeam).trim().normalize('NFKC').toLocaleLowerCase('ar')}|${String(match.scheduledAt).slice(0, 10)}`;
       if (seen.has(key)) return false;
