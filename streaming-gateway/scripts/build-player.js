@@ -8,7 +8,7 @@ if (existsSync('.env')) {
 }
 
 const require = createRequire(import.meta.url);
-const api = new URL(process.env.PUBLIC_API_ORIGIN || 'https://stream-api.koratv.click');
+const api = new URL(process.env.PLAYER_API_ORIGIN || process.env.PUBLIC_API_ORIGIN || 'https://stream-api.koratv.click');
 if (api.protocol !== 'https:') throw new Error('HTTPS required');
 const frameAncestors = (process.env.FRONTEND_ORIGINS || process.env.FRONTEND_ORIGIN || 'https://koratv.click')
   .split(',')
