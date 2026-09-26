@@ -1,5 +1,11 @@
 import { createMatchesReader, createPlaybackResolver } from './supabase.js';
 
+function sourceForOrigin(origin, { koratvOrigins, frajaOrigins }) {
+  if (koratvOrigins.has(origin)) return 'kooora';
+  if (frajaOrigins.has(origin)) return 'api-football';
+  return '';
+}
+
 export function loadConfig(env = process.env) {
   const secret = env.JWT_SECRET || '';
   const hmacSecret = env.HMAC_SECRET || '';
@@ -20,6 +26,8 @@ export function loadConfig(env = process.env) {
     .map((item) => item.trim())
     .filter(Boolean)
     .map((item) => publicOrigin(name, item)));
+  const koratvOrigins = publicOrigins('KORATV_FRONTEND_ORIGINS', env.KORATV_FRONTEND_ORIGINS || 'https://koratv.click,https://www.koratv.click');
+  const frajaOrigins = publicOrigins('FRAJA_FRONTEND_ORIGINS', env.FRAJA_FRONTEND_ORIGINS || 'https://frajatv.fun,https://www.frajatv.fun,https://fraja.online');
   const upstreamOrigin = (value) => {
     let url;
     try {
@@ -32,12 +40,21 @@ export function loadConfig(env = process.env) {
     }
     return url.origin;
   };
+  const koooraSources = ['kooora', 'metascrape'];
+  const apiFootballSources = ['api-football'];
+  const getKoooraMatches = createMatchesReader(env, koooraSources);
+  const getApiFootballMatches = createMatchesReader(env, apiFootballSources);
+  const getKoooraPlayback = createPlaybackResolver(env, koooraSources);
+  const getApiFootballPlayback = createPlaybackResolver(env, apiFootballSources);
+
   return {
     secret,
     hmacSecret,
     enableAntiBot: String(env.ENABLE_ANTI_BOT || 'true').trim().toLowerCase() !== 'false',
     frontend: publicOrigin('FRONTEND_ORIGIN', env.FRONTEND_ORIGIN || 'https://koratv.click'),
     frontendOrigins: publicOrigins('FRONTEND_ORIGINS', env.FRONTEND_ORIGINS || env.FRONTEND_ORIGIN || 'https://frajatv.fun,https://www.frajatv.fun,https://fraja.online,https://koratv.click,https://www.koratv.click'),
+    koratvOrigins,
+    frajaOrigins,
     player: publicOrigin('PLAYER_ORIGIN', env.PLAYER_ORIGIN || 'https://fabor.sbs'),
     api: publicOrigin('PUBLIC_API_ORIGIN', env.PUBLIC_API_ORIGIN),
     relaxEntryIpBinding: env.RELAX_ENTRY_IP_BINDING === 'true',
@@ -49,7 +66,17 @@ export function loadConfig(env = process.env) {
     streamClosesAfterMinutes: Number(env.STREAM_CLOSES_AFTER_MINUTES || 150),
     upstreamUserAgent: env.IPTV_UPSTREAM_USER_AGENT || 'VLC/3.0.20 LibVLC/3.0.20',
     upstreamOrigins: new Set((env.UPSTREAM_ORIGINS || '').split(',').filter(Boolean).map(upstreamOrigin)),
-    getMatches: createMatchesReader(env),
-    getPlayback: createPlaybackResolver(env)
+    sourceForOrigin: (origin) => sourceForOrigin(origin, { koratvOrigins, frajaOrigins }),
+    getMatches: getApiFootballMatches,
+    getMatchesForOrigin: async (origin) => {
+      const source = sourceForOrigin(origin, { koratvOrigins, frajaOrigins });
+      if (source === 'kooora') return getKoooraMatches();
+      if (source === 'api-football') return getApiFootballMatches();
+      return [...await getApiFootballMatches(), ...await getKoooraMatches()];
+    },
+    getPlayback: getApiFootballPlayback,
+    getPlaybackForSource: (source, matchId) => source === 'kooora'
+      ? getKoooraPlayback(matchId)
+      : getApiFootballPlayback(matchId)
   };
 }

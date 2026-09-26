@@ -80,7 +80,7 @@ async function mapWithConcurrency(items, limit, worker) {
   return output;
 }
 
-export function createMatchesReader(env) {
+export function createMatchesReader(env, sourceFilter = null) {
   const client = createServerClient(env);
   const normalizeName = (value) => String(value || '')
     .normalize('NFKD')
@@ -91,13 +91,17 @@ export function createMatchesReader(env) {
     .replace(/[^a-z0-9\p{L}]+/giu, '')
     .toLowerCase();
   return async () => {
-    const [{ data, error }, channelsResult] = await Promise.all([
-      client
+    let matchesQuery = client
       .from(env.SUPABASE_MATCHES_TABLE || 'matches')
-      .select('id,match_id,home_team,away_team,league,kickoff_time,channel,payload,active,updated_at')
+      .select('id,match_id,home_team,away_team,league,kickoff_time,channel,source,payload,active,updated_at')
       .eq('active', true)
       .order('kickoff_time', { ascending: true, nullsFirst: false })
-        .limit(500),
+      .limit(500);
+    if (Array.isArray(sourceFilter) && sourceFilter.length) matchesQuery = matchesQuery.in('source', sourceFilter);
+    else if (sourceFilter) matchesQuery = matchesQuery.eq('source', sourceFilter);
+
+    const [{ data, error }, channelsResult] = await Promise.all([
+      matchesQuery,
       client
         .from('channels')
         .select('name,original_url,active')
@@ -133,12 +137,17 @@ function isEndedStatus(payload = {}) {
   return /result|finished|ended|full.?time|انته/.test(value);
 }
 
-async function findMatch(client, table, matchId) {
-  const columns = 'id,match_id,kickoff_time,channel,payload,active';
-  const byMatchId = await client.from(table).select(columns).eq('match_id', matchId).maybeSingle();
+async function findMatch(client, table, matchId, sourceFilter = null) {
+  const columns = 'id,match_id,kickoff_time,channel,source,payload,active';
+  const applySourceFilter = (query) => {
+    if (Array.isArray(sourceFilter) && sourceFilter.length) return query.in('source', sourceFilter);
+    if (sourceFilter) return query.eq('source', sourceFilter);
+    return query;
+  };
+  const byMatchId = await applySourceFilter(client.from(table).select(columns).eq('match_id', matchId)).maybeSingle();
   if (byMatchId.error) throw new Error(`Match lookup unavailable (${byMatchId.error.code || 'network'})`);
   if (byMatchId.data) return byMatchId.data;
-  const byId = await client.from(table).select(columns).eq('id', matchId).maybeSingle();
+  const byId = await applySourceFilter(client.from(table).select(columns).eq('id', matchId)).maybeSingle();
   if (byId.error) throw new Error(`Match lookup unavailable (${byId.error.code || 'network'})`);
   return byId.data;
 }
@@ -200,7 +209,7 @@ function normalizeQualityVariants(channel) {
     .sort((a, b) => b.height - a.height);
 }
 
-export function createPlaybackResolver(env) {
+export function createPlaybackResolver(env, sourceFilter = null) {
   const client = createServerClient(env);
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
   const opensBeforeMs = Number(env.STREAM_OPENS_BEFORE_MINUTES || 20) * 60_000;
@@ -211,7 +220,7 @@ export function createPlaybackResolver(env) {
       return { is_streaming_active: false, reason: 'invalid_match' };
     }
 
-    const match = await findMatch(client, table, matchId.trim());
+    const match = await findMatch(client, table, matchId.trim(), sourceFilter);
     if (!match || match.active !== true) return { is_streaming_active: false, reason: 'match_unavailable' };
 
     const payload = match.payload || {};

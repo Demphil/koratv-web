@@ -313,14 +313,16 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   };
   app.get('/api/config', async (req, res) => {
     try {
-      const playback = await config.getPlayback(String(req.query.matchId || ''));
+      const source = config.sourceForOrigin(originFromHeader(req.headers.origin));
+      const playback = await config.getPlaybackForSource(source, String(req.query.matchId || ''));
       res.json({ is_streaming_active: playback.is_streaming_active, reason: playback.reason || null });
     }
     catch { res.status(503).json({ is_streaming_active: false }); }
   });
   app.get('/api/matches', async (req, res) => {
     try {
-      const matches = dedupeNormalizedMatches((await config.getMatches())
+      const origin = originFromHeader(req.headers.origin) || originFromHeader(req.headers.referer);
+      const matches = dedupeNormalizedMatches((await config.getMatchesForOrigin(origin))
         .map((row) => normalizeMatch(row, config))
         .filter((match) => match.homeTeam && match.awayTeam && match.scheduledAt)
         .filter((match) => normalizeMatchName(match.homeTeam) !== normalizeMatchName(match.awayTeam)));
@@ -341,7 +343,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       const matchId = String(req.query.matchId || '').trim();
       if (!matchId || matchId.length > 160) return res.sendStatus(400);
-      const match = (await config.getMatches())
+      const origin = originFromHeader(req.headers.origin) || originFromHeader(req.headers.referer);
+      const match = (await config.getMatchesForOrigin(origin))
         .map((row) => normalizeMatch(row, config))
         .find((item) => (item.matchId === matchId || item.match_id === matchId) && allowedMatch(item));
       if (!match) return res.sendStatus(404);
@@ -353,13 +356,14 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   app.post('/api/generate-token', async (req, res) => {
     try {
       requireOrigin(req, config.frontendOrigins || config.frontend);
-      const playback = await config.getPlayback(String(req.body.matchId || ''));
+      const source = config.sourceForOrigin(originFromHeader(req.headers.origin));
+      const playback = await config.getPlaybackForSource(source, String(req.body.matchId || ''));
       if (!playback.is_streaming_active) return res.status(409).json({ error: playback.reason || 'stream_unavailable' });
       const rateKey = `stream-rate:${ipHash(req)}:${Math.floor(Date.now() / 60000)}`;
       const count = await redis.incr(rateKey);
       if (count === 1) await redis.expire(rateKey, 60);
       if (count > 20) return res.sendStatus(429);
-      const token = sign({ ip: ipHash(req), channel: playback.channel_id, matchId: playback.match_id }, 'player-entry');
+      const token = sign({ ip: ipHash(req), channel: playback.channel_id, matchId: playback.match_id, source }, 'player-entry');
       res.json({ token, expiresIn: entryTtl });
     } catch { res.sendStatus(403); }
   });
@@ -368,14 +372,14 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       requireOrigin(req, config.player);
       const claims = verify(req.body.token, req, 'player-entry');
-      const playback = await config.getPlayback(claims.matchId);
+      const playback = await config.getPlaybackForSource(claims.source, claims.matchId);
       if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
       const result = await redis.set(`stream-used:${claims.jti}`, '1', { NX: true, EX: entryTtl });
       if (result !== 'OK') return res.sendStatus(403);
       const sourceId = randomUUID();
       await redis.set(`stream-source:${sourceId}`, playback.stream_url, { EX: config.sessionTtl });
       res.json({
-        token: sign({ ip: claims.ip, channel: claims.channel, matchId: claims.matchId, sourceId }, 'hls-session', config.sessionTtl),
+        token: sign({ ip: claims.ip, channel: claims.channel, matchId: claims.matchId, source: claims.source, sourceId }, 'hls-session', config.sessionTtl),
         expiresIn: config.sessionTtl,
         qualities: publicQualities(playback)
       });
@@ -394,7 +398,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       let playback = null;
       let candidateSources = null;
       if (req.path === '/api/stream.m3u8') {
-        playback = await config.getPlayback(claims.matchId);
+        playback = await config.getPlaybackForSource(claims.source, claims.matchId);
         if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
         candidateSources = streamCandidates(playback, req.query.quality);
         if (!candidateSources.length) return res.sendStatus(403);

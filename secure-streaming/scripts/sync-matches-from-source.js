@@ -191,9 +191,11 @@ async function collectApiFootballRows() {
       if (!isAllowedMatch({ league, homeTeam, awayTeam })) continue;
 
       const status = apiFootballStatus(fixture?.fixture?.status);
-      const matchId = matchSlug(homeTeam, awayTeam);
+      const baseMatchId = matchSlug(homeTeam, awayTeam);
+      const date = String(kickoff).slice(0, 10);
+      const matchId = `api-football_${date}_${baseMatchId}`;
       const row = {
-        id: `${String(kickoff).slice(0, 10)}_${matchId}`,
+        id: matchId,
         match_id: matchId,
         home_team: homeTeam,
         away_team: awayTeam,
@@ -283,10 +285,11 @@ function parseMatches(html, dayOffset) {
     const league = infoItems[infoItems.length - 1] || "League";
     if (!isAllowedMatch({ league, homeTeam, awayTeam })) return;
     const commentator = infoItems[1] || "";
-    const matchId = matchSlug(homeTeam, awayTeam);
+    const baseMatchId = matchSlug(homeTeam, awayTeam);
+    const matchId = `kooora_${date}_${baseMatchId}`;
 
     rows.push({
-      id: `${date}_${matchId}`,
+      id: matchId,
       match_id: matchId,
       home_team: homeTeam,
       away_team: awayTeam,
@@ -548,12 +551,13 @@ function parseKoooraMatches(html) {
       const preferredChannel = normalizeKoooraChannel(
         channelNames.find((name) => /beIN Sports Mena/i.test(name)) || channelNames[0]
       );
-      const matchId = matchSlug(homeTeam, awayTeam);
       const date = String(kickoff).slice(0, 10);
+      const baseMatchId = matchSlug(homeTeam, awayTeam);
+      const matchId = `kooora_${date}_${baseMatchId}`;
       const events = normalizeMatchEvents(match);
 
       rows.push({
-        id: `${date}_${matchId}`,
+        id: matchId,
         match_id: matchId,
         home_team: homeTeam,
         away_team: awayTeam,

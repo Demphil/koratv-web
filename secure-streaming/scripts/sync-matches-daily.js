@@ -5,6 +5,10 @@ import { collectMatchRowsFromSource, upsertMatchRows } from "./sync-matches-from
 
 const dryRun = process.argv.includes("--dry-run");
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
+const matchSourceProvider = String(process.env.MATCH_SOURCE_PROVIDER || "").trim().toLowerCase();
+const cleanupSources = matchSourceProvider === "api-football"
+  ? ["api-football"]
+  : ["kooora", "metascrape"];
 
 function log(event, details = {}) {
   console.log(JSON.stringify({
@@ -15,16 +19,22 @@ function log(event, details = {}) {
   }));
 }
 
-async function deleteRows(supabase, { table, idColumn = "id", sentinel = "__koratv_keep_none__" }) {
+async function deleteRows(supabase, { table, idColumn = "id", sentinel = "__koratv_keep_none__", sources = null }) {
   if (dryRun) {
     log("daily_matches_cleanup_skipped_dry_run", { table });
     return { table, deleted: 0, dryRun: true };
   }
 
-  const { error, count } = await supabase
+  let query = supabase
     .from(table)
     .delete({ count: "exact" })
     .neq(idColumn, sentinel);
+
+  if (Array.isArray(sources) && sources.length) {
+    query = query.in("source", sources);
+  }
+
+  const { error, count } = await query;
 
   if (error) {
     if (/does not exist|schema cache/i.test(error.message || "")) {
@@ -34,7 +44,7 @@ async function deleteRows(supabase, { table, idColumn = "id", sentinel = "__kora
     throw error;
   }
 
-  log("daily_matches_cleanup_table_done", { table, deleted: count || 0 });
+  log("daily_matches_cleanup_table_done", { table, deleted: count || 0, sources });
   return { table, deleted: count || 0 };
 }
 
@@ -51,7 +61,7 @@ export async function syncMatchesDaily() {
   const cleanup = [];
   cleanup.push(await deleteRows(supabase, { table: "channel_language_alternatives", idColumn: "id", sentinel: -1 }));
   cleanup.push(await deleteRows(supabase, { table: "live_matches", idColumn: "id" }));
-  cleanup.push(await deleteRows(supabase, { table: matchesTable, idColumn: "id" }));
+  cleanup.push(await deleteRows(supabase, { table: matchesTable, idColumn: "id", sources: cleanupSources }));
 
   let matches;
   if (dryRun) {
