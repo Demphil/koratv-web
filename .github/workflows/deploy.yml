@@ -24,7 +24,7 @@ jobs:
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-          ARRIYADIA_UPSTREAM_ORIGINS: ${{ secrets.ARRYADIA_UPSTREAM_ORIGINS }}
+          ARRYADIA_UPSTREAM_ORIGINS: ${{ secrets.ARRYADIA_UPSTREAM_ORIGINS }}
         with:
           host: ${{ secrets.VPS_IP }}
           username: ${{ secrets.VPS_USERNAME }}
