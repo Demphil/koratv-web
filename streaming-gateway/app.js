@@ -185,7 +185,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   const sign = (claims, audience, expiresIn = entryTtl) => jwt.sign(claims, config.secret, { algorithm: 'HS256', issuer, audience, expiresIn, jwtid: randomUUID() });
   const verify = (token, req, audience) => {
     const claims = jwt.verify(token, config.secret, { algorithms: ['HS256'], issuer, audience });
-    if (claims.ip !== ipHash(req) || !claims.channel || !claims.matchId) throw new Error('Forbidden');
+    const allowEntryIpMismatch = audience === 'player-entry' && config.relaxEntryIpBinding === true;
+    if ((!allowEntryIpMismatch && claims.ip !== ipHash(req)) || !claims.channel || !claims.matchId) throw new Error('Forbidden');
     return claims;
   };
   const requestToken = (req) => {
