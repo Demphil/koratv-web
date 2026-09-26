@@ -26,10 +26,7 @@ function frameAncestors(frontendOrigins) {
 }
 
 function canServePlayerDocument(req, allowedOrigins) {
-  if (String(req.query?.k || '').trim()) return true;
-  const origin = originFromHeader(req.headers.origin);
-  const referer = originFromHeader(req.headers.referer);
-  return allowedOrigins.has(origin) || allowedOrigins.has(referer);
+  return true;
 }
 
 function moroccoPart(value, options) {

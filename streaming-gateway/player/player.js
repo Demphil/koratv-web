@@ -27,6 +27,7 @@ let sessionExpiresAt = 0;
 let selectedManualHeight = 0;
 let reconnectAttempt = 0;
 let lastReadyAt = 0;
+let currentMatchInfo = null;
 const sessionKey = 'koratv-playback-session';
 const MAX_RECONNECT_ATTEMPTS = 3;
 const MAX_MEDIA_RECOVERIES = 2;
@@ -272,13 +273,95 @@ function renderMatchApiMap(match) {
   `).join('');
 }
 
+function teamInitials(value) {
+  return cleanText(value, 'TV').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+}
+
+function renderPitch(match) {
+  const homeLogo = match.homeLogo ? `<img src="${escapeHtml(match.homeLogo)}" alt="">` : `<span>${escapeHtml(teamInitials(match.homeTeam))}</span>`;
+  const awayLogo = match.awayLogo ? `<img src="${escapeHtml(match.awayLogo)}" alt="">` : `<span>${escapeHtml(teamInitials(match.awayTeam))}</span>`;
+  return `
+    <div class="lineup-pitch" aria-label="ملعب التشكيلة">
+      <div class="pitch-line half"></div>
+      <div class="pitch-circle"></div>
+      <div class="lineup-team home">
+        <div class="lineup-badge">${homeLogo}</div>
+        <strong>${escapeHtml(cleanText(match.homeTeam, 'الفريق الأول'))}</strong>
+        <span>4-3-3</span>
+      </div>
+      <div class="lineup-team away">
+        <div class="lineup-badge">${awayLogo}</div>
+        <strong>${escapeHtml(cleanText(match.awayTeam, 'الفريق الثاني'))}</strong>
+        <span>4-2-3-1</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderMatchDetail(endpoint, match) {
+  if (!match) return '<span>جاري تحميل بيانات المباراة...</span>';
+  const goals = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 8) : [];
+  const score = cleanScore(match.score);
+  if (endpoint === 'teams') {
+    return `
+      <strong>التشكيلة والفرق</strong>
+      ${renderPitch(match)}
+      <div class="detail-note">تُعرض أسماء اللاعبين فور وصول التشكيلة الرسمية من مزود البيانات.</div>
+    `;
+  }
+  if (endpoint === 'players') {
+    return `
+      <strong>اللاعبون المؤثرون</strong>
+      <div class="player-strip">
+        ${goals.length ? goals.map((goal) => `<span><b>${escapeHtml(teamInitials(goal.player))}</b>${escapeHtml(goal.player)}${goal.minute ? `<small>${escapeHtml(goal.minute)}'</small>` : ''}</span>`).join('') : '<em>لم تصل أسماء اللاعبين أو الهدافين بعد.</em>'}
+      </div>
+    `;
+  }
+  if (endpoint === 'statistics') {
+    return `
+      <strong>إحصائيات المباراة</strong>
+      <div class="detail-stats-grid">
+        <span><b>${escapeHtml(score !== 'VS' ? score : '0 - 0')}</b><small>النتيجة</small></span>
+        <span><b>${escapeHtml(String(cardTotal(match.yellowCards)))}</b><small>بطاقات صفراء</small></span>
+        <span><b>${escapeHtml(String(cardTotal(match.redCards)))}</b><small>بطاقات حمراء</small></span>
+      </div>
+    `;
+  }
+  if (endpoint === 'events') {
+    return `
+      <strong>أحداث المباراة</strong>
+      <div class="event-timeline">
+        ${goals.length ? goals.map((goal) => `<span><i>${escapeHtml(goal.minute ? `${goal.minute}'` : 'GOAL')}</i>${escapeHtml(goal.player)}</span>`).join('') : '<em>لا توجد أحداث مسجلة حالياً.</em>'}
+      </div>
+    `;
+  }
+  if (endpoint === 'live') {
+    return `
+      <strong>المتابعة الحية</strong>
+      <div class="detail-stats-grid">
+        <span><b>${escapeHtml(match.playbackState === 'live' ? 'مباشر' : match.playbackState === 'ended' ? 'انتهت' : 'قريباً')}</b><small>الحالة</small></span>
+        <span><b>${escapeHtml(match.liveMinute != null ? `${match.liveMinute}'` : cleanText(match.time, '--'))}</b><small>الدقيقة</small></span>
+        <span><b>${escapeHtml(score !== 'VS' ? score : '0 - 0')}</b><small>النتيجة</small></span>
+      </div>
+    `;
+  }
+  return `
+    <strong>بيانات المباراة</strong>
+    <div class="fixture-summary">
+      <span>${escapeHtml(cleanText(match.league, 'بطولة غير محددة'))}</span>
+      <b>${escapeHtml(cleanText(match.homeTeam))} ضد ${escapeHtml(cleanText(match.awayTeam))}</b>
+      <small>${escapeHtml(cleanText(match.time, 'توقيت غير محدد'))}</small>
+    </div>
+  `;
+}
+
 function activateMatchApiNode(node) {
   const map = node.closest('.match-api-map');
   if (!map) return;
   map.querySelectorAll('.match-api-node').forEach((item) => item.classList.toggle('is-selected', item === node));
   const detail = document.getElementById('match-api-detail');
   if (!detail) return;
-  detail.innerHTML = `<strong>${escapeHtml(node.querySelector('b')?.textContent || '')}</strong><span>${escapeHtml(node.dataset.detail || '')}</span>`;
+  detail.innerHTML = renderMatchDetail(node.dataset.endpoint || 'fixtures', currentMatchInfo);
 }
 
 async function loadMatchPanel(matchId) {
@@ -291,6 +374,7 @@ async function loadMatchPanel(matchId) {
     if (!response.ok) return;
     const { match } = await response.json();
     if (!match) return;
+    currentMatchInfo = match;
     const panel = document.getElementById('match-panel');
     panel.hidden = false;
     setText('match-league', match.league || 'Koratv.click');
