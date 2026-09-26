@@ -225,6 +225,13 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       : originFromHeader(req.headers.referer);
     if (!allowedOrigins.has(requestOrigin)) throw new Error('Forbidden');
   };
+  const rejectUnexpectedOrigin = (req, expected) => {
+    const allowedOrigins = expected instanceof Set ? expected : new Set([expected]);
+    const requestOrigin = req.headers.origin
+      ? originFromHeader(req.headers.origin)
+      : originFromHeader(req.headers.referer);
+    if (requestOrigin && !allowedOrigins.has(requestOrigin)) throw new Error('Forbidden');
+  };
   const key = createHash('sha256').update(config.secret).update('resource-urls').digest();
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const upstreamDelay = (attempt) => Math.min(5000, 600 * (2 ** Math.max(0, attempt - 1)));
@@ -410,7 +417,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     let claims;
     let sessionToken = '';
     try {
-      requireOrigin(req, config.player);
+      rejectUnexpectedOrigin(req, config.player);
       sessionToken = requestToken(req);
       claims = verify(sessionToken, req, 'hls-session');
       if (!claims.sourceId) return res.sendStatus(403);

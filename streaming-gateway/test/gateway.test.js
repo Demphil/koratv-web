@@ -110,6 +110,14 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal((await request(`/api/stream.m3u8?token=${entry.token}`, config.player)).status, 403);
   assert.equal((await request('/api/stream.m3u8?token=invalid', config.player)).status, 403);
   assert.equal((await request(`/api/stream.m3u8?token=${session.token}`, config.player, null, '203.0.113.2')).status, 403);
+  const noReferrerStream = await fetch(`${base}/api/stream.m3u8?quality=720p`, {
+    headers: { Authorization: `Bearer ${session.token}`, 'User-Agent': 'Browser test', 'X-Forwarded-For': '203.0.113.1' }
+  });
+  assert.equal(noReferrerStream.status, 200);
+  const foreignOriginStream = await fetch(`${base}/api/stream.m3u8?quality=720p`, {
+    headers: { Origin: 'https://bad.example', Authorization: `Bearer ${session.token}`, 'User-Agent': 'Browser test', 'X-Forwarded-For': '203.0.113.1' }
+  });
+  assert.equal(foreignOriginStream.status, 403);
   const browserStyleStream = await fetch(`${base}/api/stream.m3u8?quality=720p`, {
     headers: { Referer: `${config.player}/739184.html`, Authorization: `Bearer ${session.token}`, 'User-Agent': 'Browser test', 'X-Forwarded-For': '203.0.113.1' }
   });
