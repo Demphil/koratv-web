@@ -56,7 +56,7 @@ function matchPlaybackState(row, config) {
 function clampLiveMinute(row) {
   const payload = row.payload || {};
   const explicit = Number(payload.minute ?? payload.liveMinute ?? payload.matchMinute);
-  if (Number.isFinite(explicit) && explicit >= 0) return Math.min(130, Math.max(0, Math.round(explicit)));
+  if (Number.isFinite(explicit)) return explicit > 0 ? Math.min(130, Math.round(explicit)) : null;
 
   const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
   const kickoff = new Date(scheduledAt);
