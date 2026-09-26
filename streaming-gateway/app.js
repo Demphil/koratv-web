@@ -372,7 +372,6 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   });
   app.post('/api/generate-token', async (req, res) => {
     try {
-      requireOrigin(req, new Set([...(config.frontendOrigins || new Set([config.frontend])), config.player]));
       const source = config.sourceForOrigin(originFromHeader(req.headers.origin));
       const playback = await config.getPlaybackForSource(source, String(req.body.matchId || ''));
       if (!playback.is_streaming_active) return res.status(409).json({ error: playback.reason || 'stream_unavailable' });
