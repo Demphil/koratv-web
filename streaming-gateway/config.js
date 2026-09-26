@@ -75,8 +75,11 @@ export function loadConfig(env = process.env) {
       return [...await getApiFootballMatches(), ...await getKoooraMatches()];
     },
     getPlayback: getApiFootballPlayback,
-    getPlaybackForSource: (source, matchId) => source === 'kooora'
-      ? getKoooraPlayback(matchId)
-      : getApiFootballPlayback(matchId)
+    getPlaybackForSource: async (source, matchId) => {
+      if (source === 'kooora' || String(matchId).startsWith('kooora_')) return getKoooraPlayback(matchId);
+      if (source === 'api-football' || String(matchId).startsWith('api-football_')) return getApiFootballPlayback(matchId);
+      const apiPlayback = await getApiFootballPlayback(matchId);
+      return apiPlayback?.is_streaming_active ? apiPlayback : getKoooraPlayback(matchId);
+    }
   };
 }
