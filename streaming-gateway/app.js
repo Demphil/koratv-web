@@ -278,10 +278,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     cipher.setAuthTag(data.subarray(12, 28));
     return Buffer.concat([cipher.update(data.subarray(28)), cipher.final()]).toString('utf8');
   };
-  const allowedUrl = (value, runtimeOrigins = new Set()) => {
+  const allowedUrl = (value, runtimeOrigins = new Set(), options = {}) => {
     const url = new URL(value);
     const blockedHost = /^(?:localhost|0\.0\.0\.0|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|169\.254(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|\[?::1\]?)$/i;
-    const approved = config.upstreamOrigins.has(url.origin) || runtimeOrigins.has(url.origin);
+    const approved = options.sealed === true || config.upstreamOrigins.has(url.origin) || runtimeOrigins.has(url.origin);
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || blockedHost.test(url.hostname) || !approved) throw new Error('Unapproved upstream');
     return url;
   };
@@ -414,7 +414,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       for (const sourceHref of rootUrls) {
         const rootUrl = new URL(sourceHref);
         runtimeOrigins = new Set([rootUrl.origin]);
-        source = allowedUrl(req.path === '/api/stream.m3u8' ? sourceHref : unseal(req.query.resource, claims.jti), runtimeOrigins);
+        source = req.path === '/api/stream.m3u8'
+          ? allowedUrl(sourceHref, runtimeOrigins)
+          : allowedUrl(unseal(req.query.resource, claims.jti), runtimeOrigins, { sealed: true });
         upstream = await fetchUpstream(source, { headers, redirect: 'follow' });
         if (upstream.ok) {
           if (req.path === '/api/stream.m3u8' && sourceHref !== rootSource) {
