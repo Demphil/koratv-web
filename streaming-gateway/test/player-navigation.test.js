@@ -22,6 +22,19 @@ test('standalone player does not depend on sidebar visibility or viewport size',
   assert.equal(vm.runInNewContext(`${source.slice(start, end)}; embedIntegrityOk()`, { window }), true);
 });
 
+test('HLS accepts the player and resource API origins but rejects other hosts', () => {
+  const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
+  const start = source.indexOf('function isAllowedStreamApiUrl(');
+  const end = source.indexOf('\nfunction hlsOptions()', start);
+  const allowed = new Set(['https://fabor.sbs', 'https://stream-api.koratv.click']);
+  const isAllowed = (url) => vm.runInNewContext(`${source.slice(start, end)}; isAllowedStreamApiUrl(url)`, {
+    STREAM_API_ORIGINS: allowed, URL, url,
+  });
+  assert.equal(isAllowed('https://fabor.sbs/api/stream.m3u8'), true);
+  assert.equal(isAllowed('https://stream-api.koratv.click/api/resource?resource=x'), true);
+  assert.equal(isAllowed('https://untrusted.example/api/resource'), false);
+});
+
 test('match opens a tab before token fetch and preserves the original page', async () => {
   const source = readFileSync(new URL('../../assets/js/matches.js', import.meta.url), 'utf8');
   const start = source.indexOf('async function openSecurePlayer(');

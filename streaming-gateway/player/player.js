@@ -1,4 +1,4 @@
-/* global Hls, Plyr, STREAM_API_ORIGIN */
+/* global Hls, Plyr, STREAM_API_ORIGIN, STREAM_API_ORIGINS */
 const video = document.getElementById('video');
 const status = document.getElementById('status');
 const playerContainer = document.getElementById('player-container');
@@ -500,6 +500,10 @@ async function start() {
   }, sessionExpiresAt - Date.now());
 }
 
+function isAllowedStreamApiUrl(url) {
+  return STREAM_API_ORIGINS.has(new URL(url).origin);
+}
+
 function hlsOptions() {
   return {
     enableWorker: true,
@@ -533,7 +537,7 @@ function hlsOptions() {
     fragLoadingRetryDelay: 500,
     fragLoadingMaxRetryTimeout: 3000,
     xhrSetup(xhr, url) {
-      if (new URL(url).origin !== new URL(STREAM_API_ORIGIN).origin) throw new Error('Unexpected media origin');
+      if (!isAllowedStreamApiUrl(url)) throw new Error('Unexpected media origin');
       xhr.setRequestHeader('Authorization', `Bearer ${hlsSessionToken}`);
     }
   };

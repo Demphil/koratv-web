@@ -10,6 +10,9 @@ if (existsSync('.env')) {
 const require = createRequire(import.meta.url);
 const api = new URL(process.env.PLAYER_API_ORIGIN || process.env.PUBLIC_API_ORIGIN || 'https://stream-api.koratv.click');
 if (api.protocol !== 'https:') throw new Error('HTTPS required');
+const resourceApi = new URL(process.env.PUBLIC_API_ORIGIN || api.origin);
+if (resourceApi.protocol !== 'https:') throw new Error('HTTPS required');
+const apiOrigins = [...new Set([api.origin, resourceApi.origin])];
 const frameAncestors = (process.env.FRONTEND_ORIGINS || process.env.FRONTEND_ORIGIN || 'https://koratv.click')
   .split(',')
   .map((origin) => origin.trim())
@@ -23,7 +26,7 @@ await cp(require.resolve('hls.js/dist/hls.min.js'), 'dist/hls.min.js');
 for (const asset of ['plyr.js', 'plyr.css', 'plyr.svg']) {
   await cp(join(dirname(require.resolve('plyr')), asset), `dist/${asset}`);
 }
-await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\n`);
+await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\nconst STREAM_API_ORIGINS = new Set(${JSON.stringify(apiOrigins)});\n`);
 await writeFile('dist/headers.txt', [
   'Set these HTTP response headers on the player host:',
   `Content-Security-Policy: default-src 'none'; script-src 'self' https: 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; media-src blob:; connect-src https:; worker-src blob:; frame-src https:; frame-ancestors 'self' ${frameAncestors}; base-uri 'none'; form-action 'none'`,
