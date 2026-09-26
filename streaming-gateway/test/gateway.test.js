@@ -10,9 +10,11 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     secret: 'test-only-secret-with-at-least-32-bytes',
     hmacSecret: 'test-only-separate-hmac-secret-with-32-bytes',
     frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example.com',
+    frontendOrigins: new Set(['https://koratv.click']),
     trustedProxies: ['loopback'], sessionTtl: 7200,
     upstreamOrigins: new Set(['https://media.example.com']),
-    getPlayback: async () => ({
+    sourceForOrigin: () => 'kooora',
+    getPlaybackForSource: async () => ({
       is_streaming_active: true,
       match_id: 'match-1',
       channel_id: 'demo',
@@ -23,7 +25,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
         { label: '720p', height: 720, url: 'https://media.example.com/720/master.m3u8' }
       ]
     }),
-    getMatches: async () => [{
+    getMatchesForOrigin: async () => [{
       id: 'match-1', match_id: 'match-1', home_team: 'Home', away_team: 'Away',
       league: 'الدوري الإسباني', kickoff_time: liveKickoff, channel: 'demo',
       payload: {
@@ -72,7 +74,8 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   assert.equal((await request('/healthz', config.player)).status, 200);
-  assert.equal((await fetch(base + '/739184.html', { headers: { 'User-Agent': 'Browser test' } })).status, 403);
+  // The player document must survive a normal browser reload; stream APIs stay token protected below.
+  assert.equal((await fetch(base + '/739184.html', { headers: { 'User-Agent': 'Browser test' } })).status, 200);
   assert.equal((await fetch(base + '/739184.html', { headers: { Referer: `${config.frontend}/`, 'User-Agent': 'Browser test' } })).status, 200);
   assert.equal((await request('/api/matches', config.frontend, null, '203.0.113.1', { 'User-Agent': 'Googlebot/2.1' })).status, 200);
   assert.equal((await request('/api/matches', config.frontend, null, '203.0.113.1', { 'User-Agent': 'UnknownBot/1.0' })).status, 403);
@@ -122,7 +125,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal((await request(segment.pathname + segment.search, config.player, null, '203.0.113.1')).status, 200);
   assert.equal((await request(segment.pathname + segment.search, config.player, null, '203.0.113.1', { Authorization: `Bearer ${session.token}` })).status, 200);
   assert.ok(fetchedPaths.includes('/redirected/live/segment.ts'));
-  config.getPlayback = async () => ({ is_streaming_active: false, reason: 'ended' });
+  config.getPlaybackForSource = async () => ({ is_streaming_active: false, reason: 'ended' });
   assert.equal((await request(`/api/stream.m3u8?token=${session.token}`, config.player)).status, 403);
   assert.equal((await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).status, 409);
 });
