@@ -220,7 +220,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   const playerDocumentCsp = `default-src 'none'; ${playerSources}; frame-ancestors ${playerFrameAncestors}; base-uri 'none'; form-action 'none'`;
   const requireOrigin = (req, expected) => {
     const allowedOrigins = expected instanceof Set ? expected : new Set([expected]);
-    if (!allowedOrigins.has(req.headers.origin)) throw new Error('Forbidden');
+    const requestOrigin = req.headers.origin
+      ? originFromHeader(req.headers.origin)
+      : originFromHeader(req.headers.referer);
+    if (!allowedOrigins.has(requestOrigin)) throw new Error('Forbidden');
   };
   const key = createHash('sha256').update(config.secret).update('resource-urls').digest();
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
