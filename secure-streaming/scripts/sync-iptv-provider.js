@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { env, matchChannels, parseM3uText } from "./import-m3u.js";
 
 const DEFAULT_TIMEOUT_MS = 90000;
-const SPORTS_INCLUDE_RE = /\b(sport|sports|bein|ssc|arryadia|alkass|الكاس|الكأس|الرياضيه|الرياضية|on\s*time|on\s*sport|ad\s*sport|thmanyah|ثمانيه|ثمانية|starzplay|shahid|mbc\s*action|ksa\s*sport)\b/i;
+const SPORTS_INCLUDE_RE = /(?:\b(?:sport|sports|bein|ssc|arryadia|alkass|on\s*time|on\s*sport|ad\s*sport|thmanyah|starzplay|shahid|mbc\s*action|ksa\s*sport)\b|الكاس|الكأس|الرياضيه|الرياضية|رياضة|رياضيه|ثمانيه|ثمانية|أبو\s*ظبي|ابو\s*ظبي|ابوظبي)/i;
 const NON_SPORTS_RE = /\b(vod|movie|movies|film|films|cinema|series|serial|مسلسل|مسلسلات|افلام|أفلام|فيلم|kids|documentary|documentaries|music|news|playlist)\b/i;
 
 const { loadEnvConfig } = nextEnv;
