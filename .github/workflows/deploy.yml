@@ -75,6 +75,7 @@ jobs:
               done
             fi
             node --env-file=.env --input-type=module -e "import { loadConfig } from './config.js'; loadConfig(); console.log('Gateway configuration is valid')"
+            node --env-file=.env scripts/probe-arryadia-upstreams.js
             npm test
             npm run check:supabase
             npm run build:player
