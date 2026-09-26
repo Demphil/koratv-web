@@ -53,11 +53,31 @@ function rewriteProviderUrlOrigin(url, origin) {
   }
 }
 
+function canonicalizeXtreamHlsUrl(sourceUrl) {
+  const raw = String(sourceUrl || "").trim();
+  if (!raw) return raw;
+
+  try {
+    const url = new URL(raw);
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length !== 3 || parts[0].toLowerCase() === "live") return raw;
+
+    const streamId = parts[2].replace(/\.(?:ts|m3u8)$/i, "");
+    if (!streamId) return raw;
+
+    url.pathname = `/live/${parts[0]}/${parts[1]}/${streamId}.m3u8`;
+    url.search = "";
+    return url.href;
+  } catch {
+    return raw;
+  }
+}
+
 function rewriteProviderEntryOrigins(entries, origin) {
   if (!origin) return entries;
   return entries.map((entry) => ({
     ...entry,
-    url: rewriteProviderUrlOrigin(entry.url, origin)
+    url: canonicalizeXtreamHlsUrl(rewriteProviderUrlOrigin(entry.url, origin))
   }));
 }
 
@@ -197,7 +217,7 @@ function buildQualityVariants(item) {
       byLabel.set(quality.label, {
         label: quality.label,
         height: quality.height,
-        url: candidate.original_url,
+        url: canonicalizeXtreamHlsUrl(candidate.original_url),
         sourceName: candidate.source_name || item.source_name || "",
         rank: quality.rank
       });
@@ -307,10 +327,11 @@ async function chooseWorkingProviderLinks(matched, { timeoutMs, concurrency, ena
   const checked = await mapWithConcurrency(matched, concurrency, async (item) => {
     const candidates = item.candidates?.length ? item.candidates : [item];
     for (const candidate of candidates) {
-      if (await isWorkingHlsUrl(candidate.original_url, timeoutMs)) {
+      const sourceUrl = canonicalizeXtreamHlsUrl(candidate.original_url);
+      if (await isWorkingHlsUrl(sourceUrl, timeoutMs)) {
         return {
           ...item,
-          original_url: candidate.original_url,
+          original_url: sourceUrl,
           source_name: candidate.source_name || item.source_name,
           checked_candidates: candidates.indexOf(candidate) + 1
         };
@@ -329,8 +350,9 @@ async function enrichMasterQualityVariants(matched, { timeoutMs, concurrency, en
 
     for (const candidate of candidates) {
       try {
-        const text = await fetchWithTimeout(candidate.original_url, timeoutMs);
-        const variants = parseMasterPlaylistVariants(text, candidate.original_url);
+        const sourceUrl = canonicalizeXtreamHlsUrl(candidate.original_url);
+        const text = await fetchWithTimeout(sourceUrl, timeoutMs);
+        const variants = parseMasterPlaylistVariants(text, sourceUrl);
         for (const variant of variants) {
           const current = byLabel.get(variant.label);
           if (!current || Number(variant.rank || 0) > Number(current.rank || 0)) {

@@ -12,8 +12,28 @@ function createServerClient(env) {
 
 const sourceHealthCache = new Map();
 
+function canonicalizeXtreamHlsUrl(sourceUrl) {
+  const raw = String(sourceUrl || '').trim();
+  if (!raw) return raw;
+
+  try {
+    const url = new URL(raw);
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length !== 3 || parts[0].toLowerCase() === 'live') return raw;
+
+    const streamId = parts[2].replace(/\.(?:ts|m3u8)$/i, '');
+    if (!streamId) return raw;
+
+    url.pathname = `/live/${parts[0]}/${parts[1]}/${streamId}.m3u8`;
+    url.search = '';
+    return url.href;
+  } catch {
+    return raw;
+  }
+}
+
 async function isPlayableHlsSource(sourceUrl) {
-  const url = String(sourceUrl || '').trim();
+  const url = canonicalizeXtreamHlsUrl(sourceUrl);
   if (!url) return false;
   const cached = sourceHealthCache.get(url);
   if (cached && cached.expiresAt > Date.now()) return cached.ok;
@@ -174,7 +194,7 @@ function normalizeQualityVariants(channel) {
     .map((variant) => ({
       label: String(variant?.label || '').trim(),
       height: Number(variant?.height || 0),
-      url: String(variant?.url || '').trim()
+      url: canonicalizeXtreamHlsUrl(variant?.url)
     }))
     .filter((variant) => variant.label && variant.url && !seen.has(variant.label) && seen.add(variant.label))
     .sort((a, b) => b.height - a.height);
@@ -211,7 +231,8 @@ export function createPlaybackResolver(env) {
 
     const channel = await findChannel(client, channelName) || await findChannel(client, env.DEFAULT_LIVE_CHANNEL || 'beIN SPORTS HD 1');
     if (!channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
-    if (env.CHECK_PLAYBACK_SOURCE_HEALTH === 'true' && !(await isPlayableHlsSource(channel.original_url))) {
+    const streamUrl = canonicalizeXtreamHlsUrl(channel.original_url);
+    if (env.CHECK_PLAYBACK_SOURCE_HEALTH === 'true' && !(await isPlayableHlsSource(streamUrl))) {
       return { is_streaming_active: false, reason: 'source_unavailable' };
     }
     const qualityVariants = normalizeQualityVariants(channel);
@@ -220,7 +241,7 @@ export function createPlaybackResolver(env) {
       is_streaming_active: true,
       match_id: match.match_id || match.id,
       channel_id: channel.name,
-      stream_url: channel.original_url,
+      stream_url: streamUrl,
       qualities: qualityVariants.map(({ label, height }) => ({ label, height })),
       quality_sources: qualityVariants,
     };
