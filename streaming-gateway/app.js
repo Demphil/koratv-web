@@ -462,7 +462,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         ? matches.filter((match) => moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === today)
         : day === 'tomorrow'
           ? matches.filter((match) => moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === tomorrow)
-          : matches;
+          : matches.filter((match) => [today, tomorrow].includes(moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' })));
       res.json({ matches: filtered.filter(allowedMatch) });
     } catch {
       res.status(503).json({ error: 'Match service is unavailable' });

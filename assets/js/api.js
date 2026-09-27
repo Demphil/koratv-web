@@ -161,7 +161,7 @@ export async function getTodayMatches(options = {}) {
     const matches = await getStagingMatches(options);
     return matches.filter((match) => {
       const day = getMoroccoDay(match.scheduledAt);
-      return day === 'today' || (day === 'yesterday' && match.playbackState === 'ended');
+      return day === 'today';
     });
   } catch (error) {
     console.error(`Today matches fetch failed: ${error.message}`);
@@ -327,7 +327,7 @@ export function parseMatches(html, sourceBaseUrl = '', sourceTimeZone = 'Africa/
         }
       }
 
-      // القنوات تأتي من Supabase بعد حلها عبر Gemini، لا من ملف ثابت قديم.
+      // Broadcasters are synchronized from the exact Kooora fixture.
       const finalChannel = 'تحدد لاحقاً';
 
       const homeLogo = extractImageUrl(homeTeamEl?.querySelector('img'), sourceBaseUrl);

@@ -10,13 +10,15 @@ function getLocalChannel(name) {
   return items.find((item) => item.active && item.name === name) || null;
 }
 
-function getLocalAlternatives(name) {
+function getLocalAlternatives(name, matchId) {
   const localFile = process.env.LOCAL_CHANNEL_ALTERNATIVES_JSON;
   if (!localFile) return [];
   try {
     const filePath = path.join(process.cwd(), "runtime", path.basename(localFile));
     const items = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return items.filter((item) => item.active !== false && item.base_channel_name === name);
+    return items.filter((item) => item.active !== false && item.base_channel_name === name
+      && item.match_id === matchId && item.source === 'kooora'
+      && Date.parse(item.updated_at) > Date.now() - 24 * 60 * 60_000);
   } catch {
     return [];
   }
@@ -39,8 +41,9 @@ export async function getActiveChannelByName(name) {
 }
 
 export async function getChannelLanguageAlternatives(name, matchId = "") {
+  if (!matchId) return [];
   const decodedName = decodeURIComponent(name);
-  const localAlternatives = getLocalAlternatives(decodedName);
+  const localAlternatives = getLocalAlternatives(decodedName, matchId);
   if (localAlternatives.length) return localAlternatives;
 
   try {
@@ -50,20 +53,15 @@ export async function getChannelLanguageAlternatives(name, matchId = "") {
         .from("channel_language_alternatives")
         .select("language,channel_name,active")
         .eq("match_id", matchId)
+        .eq("source", "kooora")
+        .gte("updated_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
         .eq("active", true);
 
       if (error) throw error;
       if (data?.length) return data;
     }
 
-    const { data, error } = await supabase
-      .from("channel_language_alternatives")
-      .select("language,channel_name,active")
-      .eq("base_channel_name", decodedName)
-      .eq("active", true);
-
-    if (error) throw error;
-    return data || [];
+    return [];
   } catch {
     return [];
   }

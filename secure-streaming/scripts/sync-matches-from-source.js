@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
 import { isAllowedMatch, normalizeTeamName } from "../../shared/league-whitelist.mjs";
 import { reconcileBroadcasts, mergeRefreshedMatch } from "../../shared/match-broadcasts.mjs";
+import { pruneMatchData } from './prune-match-data.js';
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
@@ -767,12 +768,7 @@ export async function upsertMatchRows(rows) {
 
   const written = await persistMatchSnapshots(supabase, finalRowsForUpsert, withExisting.versions);
   console.log(`Stored ${written}/${finalRowsForUpsert.length} match snapshots; concurrent newer snapshots preserved.`);
-  if (written > 0) {
-    const { error } = await supabase.from(matchesTable).update({ active: false })
-      .eq('active', true).in('source', ['kooora', 'kooora-today-matches', 'metascrape', 'api-football'])
-      .lt('kickoff_time', new Date(Date.now() - 72 * 60 * 60_000).toISOString());
-    if (error) console.warn(`Old match archival deferred (${error.code || 'network'})`);
-  }
+  await pruneMatchData(supabase, matchesTable);
 
   return { parsed: rows.length, upserted: written, koooraFallbackChannels: 0, enriched: null };
 }
@@ -780,7 +776,7 @@ export async function upsertMatchRows(rows) {
 export async function syncMatchesFromSource({ dryRunMode = dryRun } = {}) {
   const uniqueRows = await collectMatchRowsFromSource();
 
-  if (dryRunMode || !uniqueRows.length) {
+  if (dryRunMode) {
     for (const row of uniqueRows.slice(0, 10)) {
       console.log(`[dry-run] ${row.home_team} vs ${row.away_team} channel=${row.channel || "trusted_source_required"}`);
     }

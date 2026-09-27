@@ -436,7 +436,7 @@ async function loadAndRenderMatches(options = {}) {
 
   allMatches.forEach(match => {
       const day = getMoroccoDay(match.scheduledAt, new Date());
-      if (day === 'today' || (day === 'yesterday' && match.playbackState === 'ended')) trueTodayMatches.push(match);
+      if (day === 'today') trueTodayMatches.push(match);
       else if (day === 'tomorrow') trueTomorrowMatches.push(match);
   });
 

@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
+test('session recovery never selects an arbitrary live match', () => {
+  const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /recoverLiveSession|find\(\(item\) => item\.isLive/);
+  assert.match(source, /createSessionForMatch\(session\.matchId\)/);
+});
+
+test('today lists never admit yesterday matches', () => {
+  for (const file of ['../../assets/js/api.js', '../../assets/js/matches.js']) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /day === 'yesterday' && match\.playbackState/);
+  }
+});
+
 test('playback ticket preserves Arabic match identifiers', () => {
   const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
   const start = source.indexOf('function decodeJwtPayload(');

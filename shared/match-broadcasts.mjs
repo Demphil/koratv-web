@@ -131,8 +131,25 @@ export function mergeRefreshedMatch(existing, incoming, now = Date.now()) {
 
 export function broadcastChannelCandidates(row) {
   const snapshot = row.payload?.broadcast;
-  const names = snapshot ? snapshot.channels : [row.channel || row.payload?.channel, ...(row.payload?.channels || row.payload?.sourceChannels || [])];
+  if (snapshot?.source !== 'kooora') return [];
+  const names = snapshot.channels;
   return [...new Set((names || []).filter((name) => typeof name === 'string' && name.trim()).map(normalizeBroadcastChannel))];
+}
+
+export function obsoleteMatchRows(existing, fresh, now = Date.now()) {
+  const family = (row) => String(row.source).startsWith('kooora') ? 'kooora' : row.source;
+  const managed = new Set(['kooora', 'metascrape', 'api-football']);
+  return existing.filter((row) => {
+    if (!managed.has(family(row))) return false;
+    if (Date.parse(row.kickoff_time) < now - 24 * 60 * 60_000
+      || Date.parse(row.updated_at) < now - 24 * 60 * 60_000) return true;
+    return fresh.some((replacement) => replacement.match_id !== row.match_id
+      && family(replacement) === family(row)
+      && replacement.payload?.broadcast?.source === 'kooora'
+      && (Date.parse(replacement.updated_at) > Date.parse(row.updated_at)
+        || (replacement.updated_at === row.updated_at && replacement.match_id < row.match_id))
+      && sameFixture(row, replacement));
+  });
 }
 
 export function deduplicateSourceEvents(rows) {

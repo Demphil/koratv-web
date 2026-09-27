@@ -455,21 +455,6 @@ async function start() {
     if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
     return { token: data.token, qualities: data.qualities || [], channelName: data.channelName || ticket.channelName || '', matchId, expiresAt: Date.now() + data.expiresIn * 1000 };
   };
-  const recoverLiveSession = async () => {
-    const response = await fetch(`${STREAM_API_ORIGIN}/api/matches?day=today`, {
-      credentials: 'omit',
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!response.ok) throw new Error('افتح المباراة من الموقع للمتابعة.');
-    const data = await response.json();
-    const match = (data.matches || []).find((item) => item.isLive && item.sourceReady)
-      || (data.matches || []).find((item) => item.isLive)
-      || (data.matches || []).find((item) => item.sourceReady);
-    if (!match?.matchId) throw new Error('لا توجد مباراة ببث جاهز الآن. افتح المباراة من الموقع للمتابعة.');
-    activeMatchId = match.matchId;
-    loadMatchPanel(activeMatchId);
-    return createSessionForMatch(activeMatchId);
-  };
   if (entry) {
     activeMatchId = decodeJwtPayload(entry).matchId || '';
     loadMatchPanel(activeMatchId);
@@ -502,7 +487,8 @@ async function start() {
   } else {
     session = readStoredSession();
     if (!isUsableSession(session)) {
-      session = await recoverLiveSession();
+      if (!session?.matchId) throw new Error('افتح المباراة المطلوبة من الموقع للمتابعة.');
+      session = await createSessionForMatch(session.matchId);
       try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
     }
   }

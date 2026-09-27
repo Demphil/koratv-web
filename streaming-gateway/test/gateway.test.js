@@ -63,7 +63,13 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
         venue: 'Test Stadium', referee: 'Test Referee'
       },
       source_ready: true, active: true, updated_at: '2026-09-20T10:00:00Z'
-    }];
+    }, ...[-1, 2].map((offset) => ({
+      id: `out-of-window-${offset}`, match_id: `out-of-window-${offset}`,
+      home_team: `Old home ${offset}`, away_team: `Old away ${offset}`,
+      league: 'الدوري الإسباني',
+      kickoff_time: new Date(Date.now() + offset * 86400000).toISOString(),
+      payload: { isFinished: true }, active: true,
+    }))];
     },
   };
   const redis = {

@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { reconcileBroadcasts, mergeRefreshedMatch, broadcastChannelCandidates, sameFixture, deduplicateSourceEvents } from '../../shared/match-broadcasts.mjs';
+import { reconcileBroadcasts, mergeRefreshedMatch, broadcastChannelCandidates, sameFixture, deduplicateSourceEvents, obsoleteMatchRows } from '../../shared/match-broadcasts.mjs';
 import { persistMatchSnapshots } from '../scripts/sync-matches-from-source.js';
 import { findChannelNameMatch } from '../../shared/channel-name-match.mjs';
 import { matchChannels, parseM3uText } from '../scripts/import-m3u.js';
 import { liveCatalogToM3u } from '../scripts/sync-iptv-provider.js';
+import { enrichMatchChannels } from '../scripts/enrich-match-language-channels.js';
+import { resolveBroadcastChannelsWithGemini, resolveBroadcastChannelsBatchWithGemini } from '../src/lib/geminiChannelResolver.js';
 
 const kickoff_time = '2026-09-27T13:00:00Z';
 const api = { match_id: 'api-1', source: 'api-football', home_team: 'Lithuania', away_team: 'Azerbaijan',
@@ -12,6 +14,31 @@ const api = { match_id: 'api-1', source: 'api-football', home_team: 'Lithuania',
 const kooora = { match_id: 'kooora-1', source: 'kooora', home_team: 'ليتوانيا', away_team: 'أذربيجان',
   kickoff_time, payload: { sourceMatchId: 'event-1', channels: ['beIN Sports Mena 2', 'CBC Sport'] } };
 const checkedAt = '2026-09-27T14:00:00Z';
+
+test('Gemini is disabled and unverified legacy assignments cannot open a stream', async () => {
+  assert.equal((await enrichMatchChannels()).disabled, true);
+  await assert.rejects(resolveBroadcastChannelsWithGemini(api), /disabled/);
+  await assert.rejects(resolveBroadcastChannelsBatchWithGemini([api]), /disabled/);
+  assert.deepEqual(broadcastChannelCandidates({ channel: 'beIN SPORTS HD 4', payload: { channelResolvedBy: 'gemini' } }), []);
+  assert.deepEqual(broadcastChannelCandidates({ channel: 'beIN SPORTS HD 4', source: 'api-football' }), []);
+});
+
+test('retention expires 24-hour data and removes only replaced same-source fixtures', () => {
+  const now = Date.parse(checkedAt);
+  const [fresh] = reconcileBroadcasts([{ ...kooora, updated_at: checkedAt }], { checkedAt });
+  const legacy = { ...kooora, match_id: 'legacy', updated_at: '2026-09-27T13:00:00Z' };
+  const apiCopy = { ...api, updated_at: checkedAt };
+  const other = { ...legacy, match_id: 'other', away_team: 'Albania' };
+  const expired = { ...legacy, match_id: 'expired', kickoff_time: '2026-09-26T13:59:59Z' };
+  const stale = { ...legacy, match_id: 'stale', kickoff_time: '2026-09-28T13:00:00Z', updated_at: '2026-09-26T13:59:59Z' };
+  const manual = { ...expired, match_id: 'manual', source: 'manual' };
+  assert.deepEqual(obsoleteMatchRows([fresh, legacy, apiCopy, other, expired, stale, manual], [fresh], now)
+    .map(row => row.match_id), ['legacy', 'expired', 'stale']);
+  const newer = { ...legacy, updated_at: '2026-09-27T14:01:00Z' };
+  assert.deepEqual(obsoleteMatchRows([newer], [fresh], now), []);
+  const equal = { ...fresh, match_id: 'z-duplicate' };
+  assert.equal(obsoleteMatchRows([fresh, equal], [fresh, equal], now).length, 1);
+});
 
 test('live provider catalog validates inventory without opening scarce playback connections', () => {
   const endpoint = new URL('https://provider.example/get.php?username=user&password=pass');

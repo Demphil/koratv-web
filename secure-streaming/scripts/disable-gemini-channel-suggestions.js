@@ -17,7 +17,7 @@ async function main() {
 
   const { data: matches, error: matchesReadError } = await supabase
     .from("matches")
-    .select("id,match_id,channel,payload")
+    .select("id,match_id,channel,payload,updated_at")
     .eq("payload->>channelResolvedBy", "gemini");
 
   if (matchesReadError) throw matchesReadError;
@@ -45,8 +45,13 @@ async function main() {
   }
 
   for (const row of matches || []) {
+    if (row.payload?.broadcast?.source === 'kooora') continue;
     const payload = {
       ...(row.payload || {}),
+      channel: null,
+      channels: [],
+      sourceChannels: [],
+      broadcast: { source: null, checkedAt: now, channels: [], state: 'trusted_source_required' },
       channelResolvedBy: "manual_review_required",
       channelClearedAt: now
     };
@@ -58,7 +63,8 @@ async function main() {
         payload,
         updated_at: now
       })
-      .eq("id", row.id);
+      .eq("id", row.id)
+      .eq("updated_at", row.updated_at);
 
     if (error) throw error;
   }

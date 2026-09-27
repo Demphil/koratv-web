@@ -64,6 +64,9 @@ jobs:
             node --env-file=.env --input-type=module -e "if (!['API_FOOTBALL_KEY','APIFOOTBALL_KEY','FOOTBALL_API_KEY','RAPIDAPI_KEY'].some((name) => process.env[name])) throw new Error('API-Football key is missing from secure-streaming/.env'); console.log('API-Football sync configuration is present')"
             npm test
 
+            node scripts/disable-gemini-channel-suggestions.js
+            MATCH_SOURCE_PROVIDER=both npm run sync:matches
+
             cd "$APP_DIR"
             rm -rf node_modules
             npm ci --omit=dev --no-audit --fund=false

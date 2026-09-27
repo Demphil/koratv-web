@@ -36,7 +36,7 @@ test('unassigned fixtures never inherit the global default channel', async () =>
   }
 });
 
-test('Kooora legacy channel aliases resolve to the exact active IPTV channel', async () => {
+test('verified Kooora channel aliases resolve to the exact active IPTV channel', async () => {
   const originalFetch = globalThis.fetch;
   const fixture = {
     id: '2026-09-26_wydad_tamara_vs_wydad_riyadi',
@@ -48,7 +48,7 @@ test('Kooora legacy channel aliases resolve to the exact active IPTV channel', a
     active: true,
     kickoff_time: new Date(Date.now() - 2 * 60_000).toISOString(),
     channel: 'Arryadia HD 3',
-    payload: { isLive: true, status: 'LIVE' }
+    payload: { isLive: true, status: 'LIVE', broadcast: { source: 'kooora', channels: ['Arryadia HD 3'] } }
   };
   const channel = {
     id: 3,

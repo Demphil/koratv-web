@@ -52,7 +52,7 @@ test('match identifiers pin player metadata to their originating feed', () => {
   assert.equal(sourceForMatchId('legacy-match-id'), '');
 });
 
-test('Kooora feed includes its legacy today-match source', async () => {
+test('Kooora feed excludes retired duplicate-producing sources', async () => {
   const originalFetch = globalThis.fetch;
   let matchSourceFilter = '';
   globalThis.fetch = async (input) => {
@@ -62,7 +62,7 @@ test('Kooora feed includes its legacy today-match source', async () => {
   };
   try {
     await loadConfig(valid).getMatchesForOrigin('https://koratv.click');
-    assert.match(matchSourceFilter, /kooora-today-matches/);
+    assert.equal(matchSourceFilter, 'in.(kooora)');
   } finally {
     globalThis.fetch = originalFetch;
   }

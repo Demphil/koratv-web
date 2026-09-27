@@ -47,7 +47,7 @@ export function loadConfig(env = process.env) {
     }
     return url.origin;
   };
-  const koooraSources = ['kooora', 'metascrape', 'kooora-today-matches'];
+  const koooraSources = ['kooora'];
   const apiFootballSources = ['api-football'];
   const getKoooraMatches = createMatchesReader(env, koooraSources);
   const getApiFootballMatches = createMatchesReader(env, apiFootballSources);
