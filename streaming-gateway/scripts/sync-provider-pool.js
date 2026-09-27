@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { mkdir, readFile, writeFile, rename, chmod, access } from 'node:fs/promises';
-import { matchChannels } from '../../secure-streaming/scripts/import-m3u.js';
+import { matchChannels, normalizeName } from '../../secure-streaming/scripts/import-m3u.js';
 import { createHash } from 'node:crypto';
 
 const dir = process.env.PROVIDER_POOL_DIR || '/etc/koratv';
@@ -36,7 +36,8 @@ const ids = new Set(categories.filter(c => sport.test(c.category_name)).map(c =>
 const streams = await api(origin, 'get_live_streams');
 const entries = streams.filter(s => ids.has(String(s.category_id)) || sport.test(s.name)).filter(s => /^\d+$/.test(String(s.stream_id)))
   .map(s => ({ name: s.name, rawName: s.name, group: categories.find(c => String(c.category_id) === String(s.category_id))?.category_name || '',
-    url: new URL(`/live/${encodeURIComponent(credentials.username)}/${encodeURIComponent(credentials.password)}/${s.stream_id}.m3u8`, origin).href }));
+    url: new URL(`/live/${encodeURIComponent(credentials.username)}/${encodeURIComponent(credentials.password)}/${s.stream_id}.m3u8`, origin).href }))
+  .map(entry => ({ ...entry, search: normalizeName(`${entry.name} ${entry.group}`) }));
 const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
   process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 const { data: channels, error } = await client.from('channels').select('name,original_url').eq('active', true).limit(1000);
