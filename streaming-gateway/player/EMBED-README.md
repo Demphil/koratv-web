@@ -6,8 +6,12 @@ Its URL uses `/watch.html?match=<match-id>`, never the original viewer's IP-boun
 short-lived entry ticket. Each embedded visitor gets a separately authorized
 session for that exact match. Reloads retain that match identity.
 
-HTTP(S) sites may embed the player. This applies to the player document and its
-nested sandboxed ad frame only. API CORS, token origin checks, rate limits,
+HTTP(S) sites and local HTML files opened with `file://` may embed the player.
+Public player documents and their nested sandboxed ad frames intentionally omit
+`frame-ancestors` and `X-Frame-Options`: an HTTP(S)-only ancestor allowlist blocks
+local files with opaque origins before the player can even load. Do not add
+these headers back on the public player host or its reverse proxy.
+API CORS, token origin checks, rate limits,
 IP/session validation and account capacity restrictions remain unchanged.
 
 Embedding terms: preserve the complete player, branding and controlled ads.

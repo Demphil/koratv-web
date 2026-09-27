@@ -25,11 +25,6 @@ function originFromHeader(value) {
   }
 }
 
-function frameAncestors(frontendOrigins) {
-  // Public cross-origin embeds; API/token origin checks remain separate and strict.
-  return 'https: http:';
-}
-
 function canServePlayerDocument(req, allowedOrigins) {
   return true;
 }
@@ -316,8 +311,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   };
   const frontendOrigins = config.frontendOrigins || new Set([config.frontend]);
   const tokenOrigins = new Set([...frontendOrigins, config.player]);
-  const playerFrameAncestors = frameAncestors(frontendOrigins);
-  const playerDocumentCsp = `default-src 'none'; ${playerSources}; frame-ancestors ${playerFrameAncestors}; base-uri 'none'; form-action 'none'`;
+  // Public player documents also support opaque file:// parents. API origin checks stay strict.
+  const playerDocumentCsp = `default-src 'none'; ${playerSources}; base-uri 'none'; form-action 'none'`;
   const requireOrigin = (req, expected) => {
     const allowedOrigins = expected instanceof Set ? expected : new Set([expected]);
     const requestOrigin = req.headers.origin

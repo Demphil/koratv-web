@@ -479,6 +479,15 @@ body.tamper-lock .player-container {
 
 .plyr__video-wrapper { height: 100%; }
 .plyr__controls { gap: 4px; z-index: 3; }
+.player-live-button {
+  display: inline-flex !important; align-items: center; gap: 7px;
+  margin-inline-end: auto; white-space: nowrap; font: 700 13px/1.5 Arial, sans-serif;
+}
+.player-live-button::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%; background: #ed354b;
+  flex: 0 0 8px;
+}
+.player-live-button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .plyr__menu__container { border: 1px solid #55515d; }
 .plyr__menu__container [role="menu"] { direction: ltr; }
 .player-container:fullscreen { border-radius: 0; margin: 0; }
@@ -496,7 +505,7 @@ body.tamper-lock .player-container {
   .player-error-box a, .player-error-box button { padding: 7px; margin-top: 8px; }
   .error-symbol { width: 22px; height: 22px; margin-bottom: 4px; }
   .plyr__controls { gap: 0; padding: 6px !important; }
-  .plyr__controls .plyr__volume input { display: none; }
+  .plyr__controls .plyr__volume { min-width: 65px; max-width: 100px; }
   .plyr__time--duration { display: none; }
   .broadcast-decoy {
     top: auto;

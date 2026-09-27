@@ -703,20 +703,43 @@ function setupQualityControl() {
     return;
   }
   player = new Plyr(video, {
-    controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
-    settings: ['quality'], hideControls: true, resetOnEnd: false,
+    controls: ['play-large', 'play', 'mute', 'volume', 'fullscreen'],
+    settings: [], hideControls: true, resetOnEnd: false,
+    keyboard: { focused: false, global: false },
     iconUrl: './plyr.svg', storage: { enabled: false },
     fullscreen: { enabled: true, container: '#player-container', iosNative: false },
     quality: { default: 0, options, forced: true, onChange: changeQuality },
     i18n: { play: 'تشغيل', pause: 'إيقاف مؤقت', mute: 'كتم الصوت', unmute: 'تفعيل الصوت', volume: 'الصوت', settings: 'الإعدادات', quality: 'الجودة', enterFullscreen: 'ملء الشاشة', exitFullscreen: 'تصغير الشاشة', qualityLabel: { 0: 'تلقائي' } },
   });
+  const liveButton = document.createElement('button');
+  liveButton.type = 'button';
+  liveButton.className = 'plyr__control player-live-button';
+  liveButton.textContent = 'مباشر';
+  liveButton.title = 'العودة إلى البث المباشر';
+  liveButton.setAttribute('aria-label', liveButton.title);
+  liveButton.addEventListener('click', returnToLive);
+  player.elements.controls?.querySelector('[data-plyr="play"]')?.after(liveButton);
+}
+
+function returnToLive() {
+  const ranges = video.seekable;
+  if (!ranges.length) return;
+  const start = ranges.start(ranges.length - 1);
+  const end = ranges.end(ranges.length - 1);
+  const sync = hls?.liveSyncPosition;
+  // Never jump to an unavailable edge or a gap in the seekable window.
+  const target = Number.isFinite(sync) ? sync : end - 1;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+  video.currentTime = Math.max(start, Math.min(target, Math.max(start, end - 0.1)));
+  video.play().catch(() => {});
 }
 
 function updateQualityMenu(options) {
   player.config.quality.options = options;
   player.options.quality = options;
   const settings = player.elements.settings;
-  const list = settings.panels.quality.querySelector('[role="menu"]');
+  const list = settings?.panels?.quality?.querySelector('[role="menu"]');
+  if (!list) return;
   list.replaceChildren();
   for (const height of options) {
     const button = document.createElement('button');

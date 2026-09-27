@@ -59,7 +59,8 @@ server {
     root /var/www/koratv-player;
     access_log off;
 
-add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src blob:; frame-src 'self'; frame-ancestors https: http:; base-uri 'none'; form-action 'none'" always;
+# Public embeds include file:// parents; do not add frame-ancestors or X-Frame-Options here.
+add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src blob:; frame-src 'self'; base-uri 'none'; form-action 'none'" always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
     add_header X-Content-Type-Options nosniff always;
     add_header Cache-Control no-store always;
@@ -79,7 +80,7 @@ add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style
 
     # Untrusted ads cannot navigate, access storage, open tabs, or escape this frame.
     location = /ad-frame.html {
-        add_header Content-Security-Policy "sandbox allow-scripts; default-src 'none'; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; img-src 'self' https: data:; connect-src https:; frame-src https:; base-uri 'none'; form-action 'none'; frame-ancestors https: http:" always;
+        add_header Content-Security-Policy "sandbox allow-scripts; default-src 'none'; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; img-src 'self' https: data:; connect-src https:; frame-src https:; base-uri 'none'; form-action 'none'" always;
         add_header Referrer-Policy no-referrer always;
         add_header X-Content-Type-Options nosniff always;
         add_header Cache-Control no-store always;

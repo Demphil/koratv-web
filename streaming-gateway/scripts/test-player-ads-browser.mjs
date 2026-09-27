@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { join, extname, resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -40,7 +41,7 @@ try {
   await context.route('**/*', async (route) => {
     const url = route.request().url();
     if (url.includes('/api/generate-token')) generatedMatches.push(route.request().postDataJSON()?.matchId);
-    if (url.startsWith(base) || url.startsWith(base.replace('127.0.0.1', 'localhost'))) return route.continue();
+    if (url.startsWith(base) || url.startsWith(base.replace('127.0.0.1', 'localhost')) || url === pathToFileURL(join(root, 'qa/local-embed.html')).href) return route.continue();
     if (url === 'https://ads.example.test/probe.js') {
       return route.fulfill({ contentType: 'text/javascript', body: `
         const result = {};
@@ -55,7 +56,7 @@ try {
     return route.abort();
   });
   const page = await context.newPage();
-  await page.addInitScript(() => {
+  await context.addInitScript(() => {
     window.adProbe = null;
     window.addEventListener('message', (event) => { if (event.data?.type === 'sandbox-probe') window.adProbe = event.data.result; });
   });
@@ -78,6 +79,8 @@ try {
     document.getElementById('status').hidden = true;
   });
   await startVideo();
+  assert.equal(await page.locator('.plyr__progress, .plyr__time, [data-plyr="seek"], [data-plyr="settings"]').count(), 0);
+  assert.equal(await page.locator('.player-live-button').count(), 1);
   await page.locator('.ad-click-shield').waitFor();
   const originalUrl = page.url();
   const popupPromise = context.waitForEvent('page');
@@ -88,12 +91,27 @@ try {
   assert.equal(page.url(), originalUrl);
   assert.equal(await page.locator('.ad-click-shield').count(), 0);
   await popup.close();
+  await page.locator('.plyr').hover();
+  await page.locator('.player-live-button').click();
   await page.waitForFunction(() => window.adProbe !== null, null, { timeout: 20000 });
   assert.ok(Date.now() - start >= 14500, 'display scripts must wait 15 seconds');
   assert.deepEqual(await page.evaluate(() => window.adProbe), { top: true, replace: true, dom: true, popup: true });
   assert.equal(page.url(), originalUrl);
   const artifacts = resolve('dist/qa'); await mkdir(artifacts, { recursive: true });
   async function geometry(label) {
+    await page.bringToFront();
+    await page.locator('.player-live-button').focus();
+    await page.evaluate(() => player.toggleControls(true));
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('.player-live-button').isVisible(), true);
+    const controlsFit = await page.locator('.plyr__controls').evaluate((controls) => {
+      const box = controls.getBoundingClientRect();
+      return [...controls.children].filter((el) => el.getBoundingClientRect().width > 0).every((el) => {
+        const rect = el.getBoundingClientRect();
+        return rect.left >= box.left - 1 && rect.right <= box.right + 1;
+      });
+    });
+    assert.equal(controlsFit, true, `${label}: live controls must fit`);
     const result = await page.evaluate(() => {
       const host = document.getElementById('video-picture-overlay').getBoundingClientRect();
       const brand = document.querySelector('.picture-brand').getBoundingClientRect();
@@ -156,6 +174,29 @@ try {
   assert.equal(await embedded.evaluate(() => {
     try { return !!document.querySelector('iframe').contentWindow.document; } catch { return false; }
   }), false, 'cross-origin host cannot edit player DOM');
+  const localFixture = join(artifacts, 'local-embed.html');
+  await writeFile(localFixture, `<!doctype html><html><meta charset="utf-8"><iframe src="${base}/watch.html?match=fixture-match" width="900" height="700" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe></html>`);
+  const localPage = await context.newPage();
+  const localErrors = [];
+  localPage.on('console', (message) => { if (/frame-ancestors|Refused to frame/i.test(message.text())) localErrors.push(message.text()); });
+  const localBefore = generatedMatches.length;
+  await localPage.goto(pathToFileURL(localFixture).href);
+  const localChild = localPage.frameLocator('iframe');
+  await localChild.locator('#embed-button').click();
+  assert.match(await localChild.locator('#embed-code').inputValue(), /watch\.html\?match=fixture-match/);
+  await localChild.locator('.embed-modal-close').click();
+  await localPage.waitForTimeout(100);
+  assert.ok(generatedMatches.length > localBefore, 'file parent must let the player authorize its own session');
+  assert.equal(await localPage.evaluate(() => {
+    try { return !!document.querySelector('iframe').contentWindow.document; } catch { return false; }
+  }), false, 'local file parent cannot edit the remote player DOM');
+  await localChild.locator('.ad-slot iframe').first().waitFor({ timeout: 20000 });
+  const frame = localPage.frames().find((item) => item.url().includes('/watch.html'));
+  await frame.waitForFunction(() => !!window.adProbe, null, { timeout: 10000 });
+  assert.deepEqual(await frame.evaluate(() => window.adProbe), { top: true, replace: true, dom: true, popup: true });
+  assert.deepEqual(localErrors, [], 'local embed and nested ad frame must not violate ancestor CSP');
+  await localPage.screenshot({ path: join(artifacts, 'local-file-embed.png') });
+  console.log('PASS: file:// parent loads player and nested sandbox ads; authorization stays in the player origin');
   console.log('PASS: isolated ad navigation, no opener, 15s delay, cooldown, responsive video anchors');
 } finally {
   await browser?.close();

@@ -17,7 +17,15 @@ test('public embed URLs carry match identity, never the current viewer ticket', 
 
 test('public frames are allowed without relaxing the token issuer origin boundary', () => {
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
-  assert.match(app, /return 'https: http:';/);
+  const playerPolicy = app.match(/const playerDocumentCsp = `([^`]+)`/)[1];
+  assert.doesNotMatch(playerPolicy, /frame-ancestors/);
+  for (const file of ['nginx.conf.example', 'nginx.http-player.conf.example', 'nginx.oracle.conf.example']) {
+    const nginx = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+    const policies = [...nginx.matchAll(/add_header Content-Security-Policy "([^"]+)"/g)];
+    assert.ok(policies.length >= 2);
+    for (const [, policy] of policies) assert.doesNotMatch(policy, /frame-ancestors/);
+    assert.doesNotMatch(nginx, /add_header\s+X-Frame-Options/i);
+  }
   assert.match(app, /requireOrigin\(req, tokenOrigins\)/);
   const player = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
   assert.match(player, /createSessionForMatch\(embeddedMatchId\)/);
