@@ -8,7 +8,7 @@ Production runs exactly one `koratv-gateway` process. Do not increase PM2 instan
 - HTTP 403 cools down that account for 30 seconds. Failover only uses a free compatible account. It never steals the other live account as a failover action.
 - Capacity returns 503 and `Retry-After: 3`; reassignment returns 409. The player retries the same match, never an unrelated match.
 - One fixed upstream URL per account/channel, one HLS rendition (720p preferred). Alternate DNS names are not extra accounts.
-- Trial B stops being eligible at its provider-reported expiry. Renew the `IPTV_PROVIDER_B_JSON` GitHub secret and deploy to replace it.
+- Trial B stops being eligible at its provider-reported expiry, or after 24 hours from its first activation when the provider omits expiry. Repeated deployments do not extend this fallback deadline. Renew the `IPTV_PROVIDER_B_JSON` GitHub secret and deploy to replace it.
 - Imported sports catalog and credentials stay in `/etc/koratv/provider-catalog.json` (0600), outside Git and the web root.
 
 ## Manual broadcast override
@@ -29,7 +29,7 @@ Edit with `sudo nano /etc/koratv/manual-broadcast-override.json`:
 }
 ```
 
-Use the exact `matchId` returned by `/api/matches` and an existing canonical channel name. For the same match on both sites, add both Kooora and API-Football IDs if overriding both. The file is read every 5 seconds, with the last valid JSON kept if an edit is incomplete. No restart is needed. Expired/disabled entries are ignored. Empty `matches` removes all manual assignments. Do not put credentials or stream URLs in this file. The override changes the channel only, not API-Football details or competition filtering. Existing signed sessions whose channel changed must reopen the match.
+Use the exact `matchId` returned by `/api/matches` and an existing canonical channel name. For the same match on both sites, add both Kooora and API-Football IDs if overriding both. The file is read every 5 seconds, with the last valid JSON kept if an edit is incomplete. Allow up to 8 seconds including the playback resolver cache. No restart is needed. Expired/disabled entries are ignored. Empty `matches` removes all manual assignments. Do not put credentials or stream URLs in this file. The override changes the channel only, not API-Football details or competition filtering. Existing signed sessions whose channel changed must reopen the match.
 
 Priority definitions: `/opt/koratv/koratv-web/streaming-gateway/priority-matrix.json` (version-controlled; deploy changes).
 
