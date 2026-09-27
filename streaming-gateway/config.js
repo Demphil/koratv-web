@@ -1,5 +1,6 @@
 import { createMatchesReader, createPlaybackResolver } from './supabase.js';
 import { attachApiFootballDetails } from '../shared/match-details.mjs';
+import { createProviderCatalog } from './provider-catalog.js';
 
 function sourceForOrigin(origin, { koratvOrigins, frajaOrigins }) {
   if (koratvOrigins.has(origin)) return 'kooora';
@@ -50,13 +51,27 @@ export function loadConfig(env = process.env) {
   };
   const koooraSources = ['kooora'];
   const apiFootballSources = ['api-football'];
-  const getKoooraMatches = createMatchesReader(env, koooraSources);
-  const getApiFootballMatches = createMatchesReader(env, apiFootballSources);
-  const getKoooraPlayback = createPlaybackResolver(env, koooraSources);
-  const getApiFootballPlayback = createPlaybackResolver(env, apiFootballSources);
+  const providerPoolEnabled = env.PROVIDER_POOL_ENABLED === 'true';
+  const catalog = providerPoolEnabled ? createProviderCatalog(env) : null;
+  const getKoooraMatches = createMatchesReader(env, koooraSources, catalog);
+  const getApiFootballMatches = createMatchesReader(env, apiFootballSources, catalog);
+  const cachedResolver = resolver => {
+    const cache = new Map();
+    return matchId => {
+      const entry = cache.get(matchId);
+      if (entry && entry.until > Date.now()) return entry.promise;
+      if (cache.size >= 500) cache.delete(cache.keys().next().value);
+      const promise = resolver(matchId).catch(error => { cache.delete(matchId); throw error; });
+      cache.set(matchId, { promise, until: Date.now() + 3000 });
+      return promise;
+    };
+  };
+  const getKoooraPlayback = cachedResolver(createPlaybackResolver(env, koooraSources, catalog));
+  const getApiFootballPlayback = cachedResolver(createPlaybackResolver(env, apiFootballSources, catalog));
 
   return {
     secret,
+    providerPoolEnabled,
     hmacSecret,
     enableAntiBot: String(env.ENABLE_ANTI_BOT || 'true').trim().toLowerCase() !== 'false',
     frontend: publicOrigin('FRONTEND_ORIGIN', env.FRONTEND_ORIGIN || 'https://koratv.click'),

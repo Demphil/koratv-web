@@ -16,6 +16,8 @@ let hlsSessionToken = "";
 let activeMatchId = "";
 let currentQuality = "";
 let availableQualities = [];
+let singleQuality = false;
+let poolHeartbeatTimer;
 let player;
 let loadTimer;
 let retryTimer;
@@ -475,7 +477,7 @@ async function start() {
     if (!response.ok) throw new Error('تعذر فتح جلسة المشاهدة.');
     const data = await response.json();
     if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
-    return { token: data.token, qualities: data.qualities || [], channelName: data.channelName || ticket.channelName || '', matchId, expiresAt: Date.now() + data.expiresIn * 1000 };
+    return { token: data.token, singleQuality: data.singleQuality === true, qualities: data.qualities || [], channelName: data.channelName || ticket.channelName || '', matchId, expiresAt: Date.now() + data.expiresIn * 1000 };
   };
   if (entry) {
     activeMatchId = decodeJwtPayload(entry).matchId || '';
@@ -502,7 +504,7 @@ async function start() {
       } else {
         const data = await response.json();
         if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
-        session = { token: data.token, qualities: data.qualities || [], channelName: data.channelName || '', matchId: activeMatchId, expiresAt: Date.now() + data.expiresIn * 1000 };
+        session = { token: data.token, singleQuality: data.singleQuality === true, qualities: data.qualities || [], channelName: data.channelName || '', matchId: activeMatchId, expiresAt: Date.now() + data.expiresIn * 1000 };
         try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
       }
     }
@@ -519,6 +521,12 @@ async function start() {
   activeMatchId = session.matchId;
   sessionExpiresAt = session.expiresAt;
   availableQualities = Array.isArray(session.qualities) ? session.qualities : [];
+  singleQuality = session.singleQuality === true;
+  clearInterval(poolHeartbeatTimer);
+  if (singleQuality) poolHeartbeatTimer = setInterval(() => {
+    if (!hlsSessionToken || video.paused || sessionExpiresAt <= Date.now()) return;
+    fetch(`${STREAM_API_ORIGIN}/api/pool-heartbeat`, { headers: { Authorization: `Bearer ${hlsSessionToken}` }, cache: 'no-store', signal: AbortSignal.timeout(4000) }).catch(() => {});
+  }, 5000);
   updateChannelLabel(session.channelName);
   loadMatchPanel(activeMatchId);
   matchTimer = setInterval(() => { if (!document.hidden) loadMatchPanel(activeMatchId); }, 15000);
@@ -579,10 +587,17 @@ function connectStream(attempt = 0) {
   reconnectAttempt = attempt;
   networkRetries = 0;
   mediaRetries = 0;
-  showLoading(attempt ? 'البث غير متوفر حالياً - جاري المحاولة...' : 'جاري الاتصال بالبث...', attempt ? `إعادة المحاولة ${attempt}/${MAX_RECONNECT_ATTEMPTS}` : 'نختار أفضل جودة متاحة');
+  showLoading(attempt ? 'البث غير متوفر حالياً - جاري المحاولة...' : 'جاري الاتصال بالبث...', attempt ? `إعادة المحاولة ${attempt}/${MAX_RECONNECT_ATTEMPTS}` : 'جاري تحميل القناة');
   armLoadTimeout();
   hls = new Hls(hlsOptions());
   hls.on(Hls.Events.ERROR, (_, data) => {
+    if ([409, 503].includes(data.response?.code)) {
+      clearTimeout(loadTimer); clearTimeout(retryTimer);
+      hls.stopLoad();
+      showLoading('جاري انتظار خط بث متاح', 'تتم إعادة المحاولة تلقائياً للمباراة نفسها');
+      retryTimer = setTimeout(() => connectStream(0), 3000);
+      return;
+    }
     if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
       scheduleStallRecovery();
       return;
@@ -684,7 +699,7 @@ function streamUrlForQuality(quality) {
 function setupQualityControl() {
   const heights = [...new Set((hls?.levels || []).map((level) => level.height).filter((height) => height > 0))].sort((a, b) => b - a);
   const providerHeights = availableQualities.map((quality) => Number(quality.height)).filter((height) => height > 0);
-  const options = [0, ...new Set([...heights, ...providerHeights].sort((a, b) => b - a))];
+  const options = singleQuality ? [0] : [0, ...new Set([...heights, ...providerHeights].sort((a, b) => b - a))];
   if (player) {
     updateQualityMenu(options);
     return;
@@ -920,6 +935,7 @@ video.addEventListener('waiting', () => { monitorQualityStall(); armLoadTimeout(
 video.addEventListener('stalled', () => { monitorQualityStall(); armLoadTimeout(); scheduleStallRecovery(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) loadMatchPanel(activeMatchId); });
 window.addEventListener('pagehide', () => {
+  clearInterval(poolHeartbeatTimer);
   clearTimeout(expiryTimer); clearTimeout(loadTimer); clearTimeout(retryTimer); clearTimeout(stallRecoveryTimer);
   clearInterval(matchTimer); hls?.destroy();
 });

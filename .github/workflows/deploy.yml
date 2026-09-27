@@ -25,6 +25,7 @@ jobs:
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           ARRYADIA_UPSTREAM_ORIGINS: ${{ secrets.ARRYADIA_UPSTREAM_ORIGINS }}
+          IPTV_PROVIDER_B_JSON: ${{ secrets.IPTV_PROVIDER_B_JSON }}
         with:
           host: ${{ secrets.VPS_IP }}
           username: ${{ secrets.VPS_USERNAME }}
@@ -32,7 +33,7 @@ jobs:
           port: 22
           timeout: 30s
           command_timeout: 12m
-          envs: API_FOOTBALL_KEY,ARRYADIA_UPSTREAM_ORIGINS
+          envs: API_FOOTBALL_KEY,ARRYADIA_UPSTREAM_ORIGINS,IPTV_PROVIDER_B_JSON
           script: |
             set -euo pipefail
 
@@ -71,6 +72,9 @@ jobs:
             rm -rf node_modules
             npm ci --omit=dev --no-audit --fund=false
             node scripts/setup-env.js
+            if [ -n "${IPTV_PROVIDER_B_JSON:-}" ]; then
+              node --env-file=.env scripts/sync-provider-pool.js
+            fi
             if [ -n "${ARRYADIA_UPSTREAM_ORIGINS:-}" ]; then
               IFS=',' read -r -a arryadia_origins <<< "$ARRYADIA_UPSTREAM_ORIGINS"
               for upstream_origin in "${arryadia_origins[@]}"; do
@@ -78,7 +82,9 @@ jobs:
               done
             fi
             node --env-file=.env --input-type=module -e "import { loadConfig } from './config.js'; loadConfig(); console.log('Gateway configuration is valid')"
-            node --env-file=.env scripts/probe-arryadia-upstreams.js
+            if ! grep -q '^PROVIDER_POOL_ENABLED=true$' .env; then
+              node --env-file=.env scripts/probe-arryadia-upstreams.js
+            fi
             npm test
             npm run check:supabase
             npm run build:player

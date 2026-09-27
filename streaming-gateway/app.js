@@ -7,6 +7,8 @@ import { pipeline } from 'node:stream/promises';
 import { createClientIpResolver } from './client-ip.js';
 import { antiBotMiddleware } from './anti-bot.js';
 import { HlsResourceCache } from './hls-resource-cache.js';
+import { ProviderPool, PoolError } from './provider-pool.js';
+import { singleQualityManifest } from './single-quality.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
 
 const issuer = 'koratv-gateway';
@@ -264,6 +266,8 @@ function allowedMatch(match) {
 
 export function createApp({ config, redis, fetchImpl = fetch }) {
   const app = express();
+  const providerPool = config.providerPoolEnabled ? new ProviderPool() : null;
+  app.locals.providerPool = providerPool;
   const hlsCache = new HlsResourceCache({
     maxBytes: Math.max(4, Number(process.env.HLS_CACHE_MAX_MB || 32)) * 1024 * 1024,
     maxEntryBytes: Math.max(1, Number(process.env.HLS_CACHE_MAX_ENTRY_MB || 6)) * 1024 * 1024,
@@ -333,40 +337,48 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       try {
         const upstream = await fetchImpl(source, {
           ...options,
-          signal: AbortSignal.timeout(attempt === 1 ? 10000 : 16000)
+          signal: AbortSignal.any([AbortSignal.timeout(attempt === 1 ? 10000 : 16000), ...(options.signal ? [options.signal] : [])])
         });
         if (upstream.ok || !retryableStatus(upstream.status) || attempt === attempts) return upstream;
         await upstream.body?.cancel();
         console.warn('[stream-proxy] retrying upstream request', {
           attempt,
           status: upstream.status,
-          source: `${source.origin}${source.pathname}`
+          source: source.origin
         });
       } catch (error) {
+        if (options.signal?.aborted) throw new PoolError('pool_reassigned', 409);
         lastError = error;
         if (attempt === attempts) throw error;
         console.warn('[stream-proxy] upstream request failed, retrying', {
           attempt,
           message: error?.message || String(error),
-          source: `${source.origin}${source.pathname}`
+          source: source.origin
         });
       }
       await wait(upstreamDelay(attempt));
     }
     throw lastError || new Error('upstream_fetch_failed');
   };
-  const fetchCachedUpstream = (source, options, version = '') => {
+  const fetchLeasedUpstream = (source, options, lease) => lease ? providerPool.run(lease, async signal => {
+    const response = await fetchUpstream(source, { ...options, signal });
+    const bytes = await response.arrayBuffer();
+    const buffered = new Response(bytes, { status: response.status, headers: response.headers });
+    Object.defineProperty(buffered, 'url', { value: response.url });
+    return buffered;
+  }) : fetchUpstream(source, options);
+  const fetchCachedUpstream = (source, options, version = '', lease = null) => {
     const kind = hlsResourceKind(source);
     const cache = kind && !options.headers?.Range && options.method !== 'HEAD';
-    if (!cache) return fetchUpstream(source, options);
-    const key = `${kind}:${source.href}${kind === 'segment' && version ? `:${version}` : ''}`;
-    return hlsCache.load(key, { ttlMs: cacheTtl(kind) }, () => fetchUpstream(source, options));
+    if (!cache) return fetchLeasedUpstream(source, options, lease);
+    const key = `${lease ? `${lease.id}:` : ''}${kind}:${source.href}${kind === 'segment' && version ? `:${version}` : ''}`;
+    return hlsCache.load(key, { ttlMs: cacheTtl(kind) }, () => fetchLeasedUpstream(source, options, lease));
   };
 
   app.get('/healthz', async (req, res) => {
     try {
       await redis.ping();
-      res.json({ status: 'ok', hlsCache: hlsCache.stats() });
+      res.json({ status: 'ok', hlsCache: hlsCache.stats(), ...(providerPool ? { providerPool: providerPool.snapshot(), providerFailures: providerPool.failures } : {}) });
     } catch {
       res.status(503).json({ status: 'unavailable' });
     }
@@ -514,10 +526,25 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       res.json({
         token: sign({ ip: claims.ip, channel: claims.channel, matchId: claims.matchId, source: claims.source, sourceId }, 'hls-session', config.sessionTtl),
         expiresIn: config.sessionTtl,
-        qualities: publicQualities(playback),
+        qualities: providerPool ? [] : publicQualities(playback),
+        singleQuality: !!providerPool,
         channelName: claims.channel
       });
     } catch { res.sendStatus(403); }
+  });
+  app.get('/api/pool-heartbeat', async (req, res) => {
+    try {
+      rejectUnexpectedOrigin(req, config.player);
+      const claims = verify(requestToken(req), req, 'hls-session');
+      if (!providerPool) return res.json({ enabled: false });
+      const playback = await config.getPlaybackForSource(claims.source, claims.matchId);
+      if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
+      const lease = providerPool.acquire(playback, claims.jti);
+      res.json({ enabled: true, provider: lease.provider });
+    } catch (error) {
+      if (error instanceof PoolError) return res.status(error.status).set('Retry-After', '3').json({ error: error.code });
+      res.sendStatus(403);
+    }
   });
   app.get(['/api/stream.m3u8', '/api/resource'], async (req, res) => {
     let claims;
@@ -530,11 +557,13 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     } catch { return res.sendStatus(403); }
     try {
       let playback = null;
+      let lease = null;
       let candidateSources = null;
-      if (req.path === '/api/stream.m3u8') {
+      if (req.path === '/api/stream.m3u8' || providerPool) {
         playback = await config.getPlaybackForSource(claims.source, claims.matchId);
         if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
-        candidateSources = streamCandidates(playback, req.query.quality);
+        if (providerPool) lease = providerPool.acquire(playback, claims.jti);
+        candidateSources = lease ? [lease.url] : streamCandidates(playback, req.query.quality);
         if (!candidateSources.length) return res.sendStatus(403);
         await redis.set(`stream-source:${claims.sourceId}`, candidateSources[0], { EX: config.sessionTtl });
       }
@@ -558,20 +587,32 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         } else {
           const sealedResource = unseal(req.query.resource, claims.jti);
           const descriptor = typeof sealedResource === 'string' ? { url: sealedResource } : sealedResource;
+          if (lease && descriptor.leaseId !== lease.id) throw new PoolError('pool_reassigned', 409);
           source = allowedUrl(descriptor.url, runtimeOrigins, { sealed: true });
           cacheVersion = String(descriptor.version || '');
         }
         runtimeOrigins.add(source.origin);
-        upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, cacheVersion);
+        upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, cacheVersion, lease);
+        if (lease && upstream.status === 403) {
+          await upstream.body?.cancel();
+          providerPool.fail(lease);
+          const replacement = providerPool.acquire(playback, claims.jti);
+          if (req.path !== '/api/stream.m3u8') throw new PoolError('pool_reassigned', 409);
+          lease = replacement;
+          runtimeOrigins = new Set([new URL(lease.url).origin]);
+          source = allowedUrl(lease.url, runtimeOrigins);
+          upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, '', lease);
+          if (upstream.status === 403) { providerPool.fail(lease); throw new PoolError('pool_upstream_unavailable'); }
+        }
         if (upstream.ok) {
           if (req.path === '/api/stream.m3u8' && sourceHref !== rootSource) {
-            await redis.set(`stream-source:${claims.sourceId}`, sourceHref, { EX: config.sessionTtl });
+            await redis.set(`stream-source:${claims.sourceId}`, lease?.url || sourceHref, { EX: config.sessionTtl });
           }
           break;
         }
         console.error('[stream-proxy] upstream rejected request', {
           status: upstream.status,
-          source: `${source.origin}${source.pathname}`,
+          source: source.origin,
           type: upstream.headers.get('content-type') || ''
         });
         await upstream.body?.cancel();
@@ -586,10 +627,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           runtimeOrigins.add(new URL(upstream.url).origin);
         }
         const manifestUrl = allowedUrl(upstream.url || source.href, runtimeOrigins);
-        const text = await upstream.text();
+        const rawText = await upstream.text();
+        const text = providerPool ? singleQualityManifest(rawText) : rawText;
         if (!text.trimStart().startsWith('#EXTM3U')) {
           console.error('[stream-proxy] upstream response is not an HLS manifest', {
-            source: `${source.origin}${source.pathname}`,
+            source: source.origin,
             type
           });
           return res.sendStatus(502);
@@ -603,7 +645,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           const target = allowedUrl(new URL(uri, manifestUrl).href, runtimeOrigins);
           if (hlsResourceKind(target) === 'segment' && version) prefetch.push({ target, version });
           const url = new URL(`${config.api}/api/resource`);
-          url.searchParams.set('resource', seal({ url: target.href, version }, claims.jti));
+          url.searchParams.set('resource', seal({ url: target.href, version, ...(lease ? { leaseId: lease.id } : {}) }, claims.jti));
           url.searchParams.set('token', sessionToken);
           return url.href;
         };
@@ -620,9 +662,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         for (const { target, version } of prefetch.slice(-Math.max(1, Number(process.env.HLS_PREFETCH_SEGMENTS || 2)))) {
           const prefetchHeaders = { 'User-Agent': config.upstreamUserAgent, Accept: '*/*' };
           hlsCache.schedulePrefetch(
-            `segment:${target.href}:${version}`,
+            `${lease ? `${lease.id}:` : ''}segment:${target.href}:${version}`,
             { ttlMs: cacheTtl('segment') },
-            () => fetchUpstream(target, { headers: prefetchHeaders, redirect: 'follow' })
+            () => fetchLeasedUpstream(target, { headers: prefetchHeaders, redirect: 'follow' }, lease)
           );
         }
         return res.type('application/vnd.apple.mpegurl').send(manifest);
@@ -633,6 +675,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       res.status(upstream.status);
       await pipeline(Readable.fromWeb(upstream.body), res);
     } catch (error) {
+      if (error instanceof PoolError && !res.headersSent) return res.status(error.status).set('Retry-After', '3').json({ error: error.code });
       console.error('[stream-proxy] failed to proxy stream', {
         path: req.path,
         message: error?.message || String(error)

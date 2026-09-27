@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { findChannelNameMatch } from '../shared/channel-name-match.mjs';
 import { broadcastChannelCandidates, deduplicateSourceEvents } from '../shared/match-broadcasts.mjs';
+import { basePriority } from './priority.js';
 
 function createServerClient(env) {
   const url = env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL;
@@ -82,7 +83,7 @@ async function mapWithConcurrency(items, limit, worker) {
   return output;
 }
 
-export function createMatchesReader(env, sourceFilter = null) {
+export function createMatchesReader(env, sourceFilter = null, catalog = null) {
   const client = createServerClient(env);
   return async () => {
     let matchesQuery = client
@@ -112,12 +113,13 @@ export function createMatchesReader(env, sourceFilter = null) {
     };
     const resolvedRows = deduplicateSourceEvents(data || []).map((row) => ({
       row,
-      channel: broadcastChannelCandidates(row).map(resolveChannel).find(Boolean)
+      channel: (catalog?.override(row.match_id || row.id) ? [catalog.override(row.match_id || row.id)] : broadcastChannelCandidates(row))
+        .map(name => resolveChannel(name) || (catalog?.sources(name)?.B ? { name } : null)).find(Boolean)
     }));
     const usedChannelNames = [...new Set(resolvedRows
       .map(({ channel }) => channel?.name)
       .filter(Boolean))];
-    const healthChecks = env.CHECK_MATCH_SOURCE_HEALTH === 'true'
+    const healthChecks = !catalog && env.CHECK_MATCH_SOURCE_HEALTH === 'true'
       ? await mapWithConcurrency(usedChannelNames, Number(env.CHECK_SOURCE_HEALTH_CONCURRENCY || 2), async (name) => [name, await isPlayableHlsSource(availableChannels.find((channel) => channel.name === name)?.original_url)])
       : usedChannelNames.map((name) => [name, true]);
     const readyChannels = new Set(healthChecks
@@ -202,7 +204,7 @@ function normalizeQualityVariants(channel) {
     .sort((a, b) => b.height - a.height);
 }
 
-export function createPlaybackResolver(env, sourceFilter = null) {
+export function createPlaybackResolver(env, sourceFilter = null, catalog = null) {
   const client = createServerClient(env);
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
   const opensBeforeMs = Number(env.STREAM_OPENS_BEFORE_MINUTES || 20) * 60_000;
@@ -228,16 +230,21 @@ export function createPlaybackResolver(env, sourceFilter = null) {
       return { is_streaming_active: false, reason: 'upcoming' };
     }
 
-    const candidates = broadcastChannelCandidates(match);
+    const override = catalog?.override(match.match_id || match.id);
+    const candidates = override ? [override] : broadcastChannelCandidates(match);
     if (!candidates.length) return { is_streaming_active: false, reason: 'channel_unavailable' };
     let channel;
     for (const name of candidates) {
       channel = await findChannel(client, name);
+      if (!channel?.original_url && catalog?.sources(name)?.B) channel = { name, original_url: '', quality_variants: [] };
+      if (catalog?.sources(channel?.name)?.B) break;
       if (channel?.original_url) break;
     }
-    if (!channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
-    const streamUrl = canonicalizeXtreamHlsUrl(channel.original_url);
-    if (env.CHECK_PLAYBACK_SOURCE_HEALTH === 'true' && !(await isPlayableHlsSource(streamUrl))) {
+    if (!channel?.original_url && !catalog?.sources(channel?.name)?.B) return { is_streaming_active: false, reason: 'source_unavailable' };
+    const primaryUrl = canonicalizeXtreamHlsUrl(channel.original_url);
+    const providerSources = catalog?.sources(channel.name, primaryUrl);
+    const streamUrl = primaryUrl || providerSources?.B;
+    if (!catalog && env.CHECK_PLAYBACK_SOURCE_HEALTH === 'true' && !(await isPlayableHlsSource(streamUrl))) {
       return { is_streaming_active: false, reason: 'source_unavailable' };
     }
     const qualityVariants = normalizeQualityVariants(channel);
@@ -247,8 +254,11 @@ export function createPlaybackResolver(env, sourceFilter = null) {
       match_id: match.match_id || match.id,
       channel_id: channel.name,
       stream_url: streamUrl,
-      qualities: qualityVariants.map(({ label, height }) => ({ label, height })),
-      quality_sources: qualityVariants,
+      qualities: catalog ? [] : qualityVariants.map(({ label, height }) => ({ label, height })),
+      quality_sources: catalog ? [] : qualityVariants,
+      ...(catalog ? { provider_sources: providerSources,
+        pool_key: `${String(match.kickoff_time).slice(0, 10)}:${payload.broadcast?.sourceMatchId || payload.sourceMatchId || match.match_id}`,
+        priority_score: basePriority(match, channel.name), single_quality: true } : {}),
     };
   };
 }

@@ -1,0 +1,60 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createApp } from '../app.js';
+
+test('pool gateway coalesces viewers, ignores quality overrides, fences old resources, and preserves the second account on 403', async t => {
+  const store = new Map(); const calls = [];
+  let rejectA = false;
+  const config = {
+    providerPoolEnabled: true, enableAntiBot: false,
+    secret: 'test-pool-secret-longer-than-32-characters', hmacSecret: 'test-pool-hmac-independent-longer-than-32',
+    frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example',
+    frontendOrigins: new Set(['https://koratv.click']), upstreamOrigins: new Set(), trustedProxies: [],
+    sessionTtl: 300, sourceForOrigin: () => 'kooora', upstreamUserAgent: 'test',
+    getPlaybackForSource: async (_, id) => ({ is_streaming_active: true, match_id: id, pool_key: id, channel_id: id,
+      priority_score: id === 'low' ? 10 : 100, stream_url: `https://a.example/${id}/main.m3u8`,
+      provider_sources: { A: `https://a.example/${id}/main.m3u8`, B: `https://b.example/${id}/main.m3u8` },
+      qualities: [{ label: '1080p', height: 1080 }], quality_sources: [{ label: '1080p', url: 'https://other.example/bad.m3u8' }] }),
+  };
+  const redis = { ping: async () => 'PONG', incr: async () => 1, expire: async () => 1,
+    set: async (key, value, options = {}) => { if (options.NX && store.has(key)) return null; store.set(key, value); return 'OK'; },
+    get: async key => store.get(key) };
+  const app = createApp({ config, redis, fetchImpl: async url => {
+    calls.push(url.href);
+    if (rejectA && url.hostname === 'a.example') return new Response('', { status: 403 });
+    const response = new Response(url.pathname.endsWith('.m3u8') ? '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:6,\none.ts\n' : new Uint8Array([71,0,1]),
+      { headers: { 'Content-Type': url.pathname.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t' } });
+    Object.defineProperty(response, 'url', { value: url.href }); return response;
+  } });
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => { app.locals.providerPool.close(); server.closeAllConnections(); server.close(); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const request = (path, token, body) => fetch(base + path, { method: body ? 'POST' : 'GET', headers: {
+    Origin: config.player, 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const session = async id => {
+    const ticket = await (await request('/api/generate-token', '', { matchId: id })).json();
+    const response = await (await request('/api/redeem-token', '', { token: ticket.token })).json();
+    assert.deepEqual(response.qualities, []); assert.equal(response.singleQuality, true); return response.token;
+  };
+  const a1 = await session('a'), a2 = await session('a'), b = await session('b'), low = await session('low');
+  const roots = await Promise.all([request('/api/stream.m3u8?quality=1080p', a1), request('/api/stream.m3u8?quality=720p', a2)]);
+  assert.deepEqual(roots.map(r => r.status), [200, 200]);
+  assert.equal(calls.filter(url => url.endsWith('/a/main.m3u8')).length, 1);
+  const resource = new URL((await roots[0].text()).split('\n').find(line => line.startsWith('https:')));
+  assert.equal((await request(resource.pathname + resource.search, a1)).status, 200);
+  assert.equal((await request('/api/stream.m3u8', b)).status, 200);
+  assert.equal((await request('/api/stream.m3u8', low)).status, 503);
+  assert.equal(calls.some(url => /other.example|\/low\//.test(url)), false);
+  const aLease = [...app.locals.providerPool.leases.values()].find(lease => lease.key === 'a');
+  rejectA = true; app.locals.providerPool.fail(aLease);
+  assert.equal((await request(resource.pathname + resource.search, a1)).status, 503);
+  assert.equal((await request('/api/stream.m3u8', b)).status, 200);
+  assert.equal(app.locals.providerPool.snapshot().find(row => row.provider === 'B').channel, 'b');
+  app.locals.providerPool.revoke('B');
+  app.locals.providerPool.demands.clear(); app.locals.providerPool.blocked.clear();
+  const fresh = await session('fresh');
+  assert.equal((await request('/api/stream.m3u8', fresh)).status, 200);
+  assert.ok(calls.includes('https://a.example/fresh/main.m3u8'));
+  assert.ok(calls.includes('https://b.example/fresh/main.m3u8'));
+  assert.equal(app.locals.providerPool.snapshot()[0].provider, 'B');
+});

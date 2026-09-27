@@ -93,6 +93,7 @@ async function isWorkingHlsUrl(url, timeoutMs = 8000) {
 }
 
 async function auditChannelLinks(limit = Number(process.env.MANUAL_REFRESH_AUDIT_LIMIT || 80)) {
+  if (process.env.PROVIDER_POOL_ENABLED === 'true') return { tested: 0, skipped: true, reason: 'provider_pool_owns_connections' };
   if (dryRun) {
     const result = { tested: 0, working: 0, failed: 0, skipped: true };
     log("channel_link_audit_skipped_dry_run", result);

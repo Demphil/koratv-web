@@ -461,8 +461,9 @@ export async function syncIptvProvider(options = {}) {
   const candidatesPerChannel = Number(options.candidatesPerChannel || env("IPTV_SYNC_CANDIDATES_PER_CHANNEL", 8));
   const reactivateChannels = new Set(String(options.reactivateChannels ?? env("IPTV_SYNC_REACTIVATE_CHANNELS", ""))
     .split(",").map((name) => name.trim()).filter(Boolean));
-  const validateStreams = String(options.validateStreams ?? env("IPTV_VALIDATE_STREAMS", "true")) !== "false";
-  const detectMasterQualities = String(options.detectMasterQualities ?? env("IPTV_SYNC_MASTER_QUALITIES", "true")) !== "false";
+  const pooled = env("PROVIDER_POOL_ENABLED") === "true";
+  const validateStreams = !pooled && String(options.validateStreams ?? env("IPTV_VALIDATE_STREAMS", "false")) !== "false";
+  const detectMasterQualities = !pooled && String(options.detectMasterQualities ?? env("IPTV_SYNC_MASTER_QUALITIES", "false")) !== "false";
   const deactivateMissing = String(options.deactivateMissing ?? env("IPTV_SYNC_DEACTIVATE_MISSING", "false")) === "true";
   const sportsOnly = String(options.sportsOnly ?? env("IPTV_SYNC_ONLY_SPORTS", "true")) !== "false";
 
