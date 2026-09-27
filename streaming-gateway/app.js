@@ -26,7 +26,8 @@ function originFromHeader(value) {
 }
 
 function frameAncestors(frontendOrigins) {
-  return ["'self'", ...frontendOrigins].join(' ');
+  // Public cross-origin embeds; API/token origin checks remain separate and strict.
+  return 'https: http:';
 }
 
 function canServePlayerDocument(req, allowedOrigins) {

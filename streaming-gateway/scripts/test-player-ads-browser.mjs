@@ -14,6 +14,10 @@ config.click.providers = [{ name: 'fixture', enabled: true, url: 'https://ads.ex
 config.display = [{ enabled: true, slot: 'footer', height: 120, script_url: 'https://ads.example.test/probe.js' }];
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname;
+  if (path === '/embed-fixture') {
+    res.writeHead(200, { 'Content-Type': 'text/html' }).end(`<iframe src="http://127.0.0.1:${server.address().port}/watch.html?match=fixture-match" width="900" height="700"></iframe>`);
+    return;
+  }
   const file = join(root, path === '/' ? '739184.html' : path);
   if (!file.startsWith(root + '\\') && file !== root && !file.startsWith(root + '/')) { res.writeHead(403).end(); return; }
   const mime = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.svg': 'image/svg+xml' };
@@ -32,9 +36,11 @@ let browser;
 try {
   browser = await chromium.launch({ headless: true, channel: 'chrome' });
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 }, hasTouch: true });
+  const generatedMatches = [];
   await context.route('**/*', async (route) => {
     const url = route.request().url();
-    if (url.startsWith(base)) return route.continue();
+    if (url.includes('/api/generate-token')) generatedMatches.push(route.request().postDataJSON()?.matchId);
+    if (url.startsWith(base) || url.startsWith(base.replace('127.0.0.1', 'localhost'))) return route.continue();
     if (url === 'https://ads.example.test/probe.js') {
       return route.fulfill({ contentType: 'text/javascript', body: `
         const result = {};
@@ -54,7 +60,7 @@ try {
     window.addEventListener('message', (event) => { if (event.data?.type === 'sandbox-probe') window.adProbe = event.data.result; });
   });
   const start = Date.now();
-  await page.goto(base + '/739184.html');
+  await page.goto(base + '/739184.html?match=fixture-match');
   assert.equal(await page.locator('.ad-slot iframe').count(), 0);
   const startVideo = async () => page.evaluate(async () => {
     const canvas = document.createElement('canvas'); canvas.width = 1280; canvas.height = 720;
@@ -107,9 +113,25 @@ try {
     await page.screenshot({ path: join(artifacts, `${label}.png`), fullPage: false });
     console.log(label, JSON.stringify(result));
   }
+  async function checkEmbedDialog(label) {
+    await page.locator('#embed-button').click();
+    assert.equal(await page.locator('#embed-modal').evaluate((el) => el.matches(':modal')), true);
+    assert.equal(await page.locator('#embed-code').evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === el;
+    }), true, 'embed dialog must be above video, including fullscreen');
+    const code = await page.locator('#embed-code').inputValue();
+    assert.match(code, /watch\.html\?match=fixture-match/);
+    assert.doesNotMatch(code, /[?&](k|token)=/);
+    await page.screenshot({ path: join(artifacts, `${label}-embed.png`) });
+    await page.locator('.embed-modal-close').click();
+    assert.equal(await page.locator('#embed-modal').evaluate((el) => el.open), false);
+  }
   await geometry('desktop');
+  await checkEmbedDialog('desktop');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(200); await geometry('mobile');
+  await checkEmbedDialog('mobile');
   await page.setViewportSize({ width: 844, height: 390 });
   await page.waitForTimeout(200);
   await page.bringToFront();
@@ -118,9 +140,22 @@ try {
   await page.locator('[data-plyr="fullscreen"]').click();
   await page.waitForFunction(() => !!document.fullscreenElement);
   await page.waitForTimeout(200); await geometry('fullscreen');
+  await checkEmbedDialog('fullscreen');
   await page.evaluate(() => document.exitFullscreen());
   await page.reload(); await startVideo(); await page.waitForTimeout(300);
   assert.equal(await page.locator('.ad-click-shield').count(), 0, 'reload respects cooldown');
+  const before = generatedMatches.length;
+  const embedded = await context.newPage();
+  await embedded.goto(base.replace('127.0.0.1', 'localhost') + '/embed-fixture');
+  const child = embedded.frameLocator('iframe');
+  await child.locator('#embed-button').waitFor();
+  await child.locator('#embed-button').click();
+  assert.match(await child.locator('#embed-code').inputValue(), /watch\.html\?match=fixture-match/);
+  assert.ok(generatedMatches.length > before, 'a new embedded visitor creates its own session');
+  assert.ok(generatedMatches.every((id) => id === 'fixture-match'));
+  assert.equal(await embedded.evaluate(() => {
+    try { return !!document.querySelector('iframe').contentWindow.document; } catch { return false; }
+  }), false, 'cross-origin host cannot edit player DOM');
   console.log('PASS: isolated ad navigation, no opener, 15s delay, cooldown, responsive video anchors');
 } finally {
   await browser?.close();

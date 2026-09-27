@@ -3,6 +3,27 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
+test('public embed URLs carry match identity, never the current viewer ticket', () => {
+  const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
+  const block = source.slice(source.indexOf('function embedSrc()'), source.indexOf('function openEmbedModal()'));
+  const code = vm.runInNewContext(`${block}; iframeCode()`, {
+    activeMatchId: 'kooora_المغرب_vs_فرنسا', embeddedMatchId: '', entry: 'private-token',
+    window: { location: { origin: 'https://fabor.sbs' } }, URL,
+  });
+  assert.match(code, /watch\.html\?match=/);
+  assert.doesNotMatch(code, /private-token|[?&]k=/);
+  assert.equal(new URL(code.match(/src="([^"]+)"/)[1]).searchParams.get('match'), 'kooora_المغرب_vs_فرنسا');
+});
+
+test('public frames are allowed without relaxing the token issuer origin boundary', () => {
+  const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  assert.match(app, /return 'https: http:';/);
+  assert.match(app, /requireOrigin\(req, tokenOrigins\)/);
+  const player = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
+  assert.match(player, /createSessionForMatch\(embeddedMatchId\)/);
+  assert.match(player, /isUsableSession\(stored, embeddedMatchId\)/);
+});
+
 test('session recovery never selects an arbitrary live match', () => {
   const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /recoverLiveSession|find\(\(item\) => item\.isLive/);

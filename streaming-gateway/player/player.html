@@ -20,22 +20,23 @@
         <video id="video" controls playsinline controlslist="nodownload noplaybackrate"></video>
         <button id="embed-button" class="embed-button player-tool-button" type="button" aria-label="كود التضمين">&lt;/&gt;</button>
         <button id="refresh-stream" class="refresh-stream player-tool-button" type="button" aria-label="تحديث البث">⟳</button>
-        <div id="video-picture-overlay" class="video-picture-overlay" aria-hidden="true">
+        <div id="video-picture-overlay" class="video-picture-overlay" data-integrity-protected="true" aria-hidden="true">
           <div class="picture-brand"><strong>KORA<span>TV</span></strong><small>KORATV.CLICK</small></div>
           <div class="picture-app-promo"><span class="app-icon">K<span>TV</span></span><span>تطبيق KoraTV <b>قريباً</b></span></div>
         </div>
         <div id="status" class="player-state" role="status">جاري تحميل البث...</div>
       </section>
 
-      <div id="embed-modal" class="embed-modal" hidden>
+      <dialog id="embed-modal" class="embed-modal" aria-labelledby="embed-modal-title" hidden>
         <div class="embed-modal-backdrop" data-close-embed></div>
         <section class="embed-modal-card" role="dialog" aria-modal="true" aria-labelledby="embed-modal-title">
           <button class="embed-modal-close" type="button" data-close-embed aria-label="إغلاق">×</button>
           <h3 id="embed-modal-title">كود التضمين</h3>
           <textarea id="embed-code" readonly spellcheck="false"></textarea>
           <button id="copy-embed-code" class="copy-embed-code" type="button">نسخ الكود</button>
+          <p class="embed-terms">يُسمح بالتضمين مع إبقاء الشعار والإعلانات، دون قصّ المشغل أو تغطيته أو تعديل محتواه.</p>
         </section>
-      </div>
+      </dialog>
 
       <section id="match-panel" class="match-panel" hidden>
         <div class="match-panel-header">

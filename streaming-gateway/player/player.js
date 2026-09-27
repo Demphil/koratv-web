@@ -9,7 +9,8 @@ const embedCode = document.getElementById('embed-code');
 const copyEmbedCode = document.getElementById('copy-embed-code');
 const params = new URL(location.href).searchParams;
 const entry = params.get('k') || params.get('token');
-history.replaceState(null, '', location.pathname);
+const embeddedMatchId = (params.get('match') || '').slice(0, 160);
+history.replaceState(null, '', location.pathname + (embeddedMatchId ? `?match=${encodeURIComponent(embeddedMatchId)}` : ''));
 let hls;
 let expiryTimer;
 let hlsSessionToken = "";
@@ -81,25 +82,32 @@ function randomEmbedHash(length = EMBED_HASH_LENGTH) {
 }
 
 function embedSrc() {
-  const url = new URL(`/${randomEmbedHash()}`, window.location.origin);
-  if (entry) url.searchParams.set('k', entry);
+  const matchId = activeMatchId || embeddedMatchId || decodeJwtPayload(entry || '').matchId;
+  if (!matchId) return '';
+  const url = new URL('/watch.html', window.location.origin);
+  url.searchParams.set('match', matchId);
   return url.href;
 }
 
 function iframeCode() {
   const src = embedSrc();
-  return `<iframe src="${src}" width="100%" height="520" style="border:0;overflow:hidden;background:#000" allow="autoplay; fullscreen; encrypted-media" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>`;
+  if (!src) return '';
+  return `<iframe src="${src}" title="KoraTV" width="100%" height="620" style="border:0;background:#000" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>`;
 }
 
 function openEmbedModal() {
   if (!embedModal || !embedCode) return;
-  embedCode.value = iframeCode();
+  const code = iframeCode();
+  embedCode.value = code || 'افتح مباراة أولاً للحصول على رابط التضمين الخاص بها.';
+  if (copyEmbedCode) copyEmbedCode.disabled = !code;
   embedModal.hidden = false;
+  if (!embedModal.open) embedModal.showModal();
   embedCode.focus();
   embedCode.select();
 }
 
 function closeEmbedModal() {
+  if (embedModal?.open) embedModal.close();
   if (embedModal) embedModal.hidden = true;
 }
 
@@ -464,7 +472,12 @@ async function start() {
     if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
     return { token: data.token, singleQuality: data.singleQuality === true, qualities: data.qualities || [], channelName: data.channelName || ticket.channelName || '', matchId, expiresAt: Date.now() + data.expiresIn * 1000 };
   };
-  if (entry) {
+  if (embeddedMatchId) {
+    activeMatchId = embeddedMatchId;
+    const stored = readStoredSession();
+    session = isUsableSession(stored, embeddedMatchId) ? stored : await createSessionForMatch(embeddedMatchId);
+    try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
+  } else if (entry) {
     activeMatchId = decodeJwtPayload(entry).matchId || '';
     loadMatchPanel(activeMatchId);
     const stored = readStoredSession();
@@ -904,6 +917,7 @@ document.addEventListener('keydown', (event) => {
 embedModal?.addEventListener('click', (event) => {
   if (event.target.closest('[data-close-embed]')) closeEmbedModal();
 });
+embedModal?.addEventListener('close', () => { embedModal.hidden = true; });
 copyEmbedCode?.addEventListener('click', async () => {
   if (!embedCode) return;
   embedCode.select();
