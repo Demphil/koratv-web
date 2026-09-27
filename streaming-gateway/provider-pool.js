@@ -5,11 +5,13 @@ export class PoolError extends Error {
   constructor(code = 'pool_capacity', status = 503) { super(code); this.code = code; this.status = status; }
 }
 
-// One process owns both upstream accounts. Every media fetch must hold a current lease.
+export const PROVIDER_IDS = ['A', 'B', 'C'];
+
+// One process owns the upstream accounts. Every media fetch must hold a current lease.
 export class ProviderPool {
   constructor({ now = Date.now, idleMs = priorityMatrix.idleReleaseMs, viewerMs = priorityMatrix.viewerWindowMs } = {}) {
     this.now = now; this.idleMs = idleMs; this.viewerMs = viewerMs;
-    this.demands = new Map(); this.leases = new Map(); this.blocked = new Map(); this.tails = new Map(); this.failures = { A: 0, B: 0 };
+    this.demands = new Map(); this.leases = new Map(); this.blocked = new Map(); this.tails = new Map(); this.failures = Object.fromEntries(PROVIDER_IDS.map(id => [id, 0]));
     this.timer = setInterval(() => this.rebalance(), 1000); this.timer.unref();
   }
   close() { clearInterval(this.timer); for (const lease of this.leases.values()) lease.controller.abort(); }
@@ -35,7 +37,7 @@ export class ProviderPool {
     const desired = new Map();
     for (const demand of ranked) {
       const current = [...this.leases.values()].find(lease => lease.key === demand.key)?.provider;
-      const available = ['A', 'B'].sort((a, b) => {
+      const available = [...PROVIDER_IDS].sort((a, b) => {
         const score = id => this.leases.has(id) ? this.score(this.demands.get(this.leases.get(id).key)) : -1;
         return score(a) - score(b);
       });
@@ -43,7 +45,7 @@ export class ProviderPool {
       const provider = providers.find(id => !desired.has(id) && demand.sources[id] && (this.blocked.get(id) || 0) <= now
         && (!(demand.failedUntil > now) || !this.leases.has(id) || this.leases.get(id).key === demand.key));
       if (provider) desired.set(provider, demand);
-      if (desired.size === 2) break;
+      if (desired.size === PROVIDER_IDS.length) break;
     }
     for (const [provider, lease] of this.leases) if (desired.get(provider)?.key !== lease.key) this.revoke(provider);
     for (const [provider, demand] of desired) if (!this.leases.has(provider)) {

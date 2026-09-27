@@ -24,8 +24,9 @@ export function createProviderCatalog(env = process.env) {
     },
     sources(channel, primaryUrl) {
       refresh(); const sources = primaryUrl ? { A: primaryUrl } : {};
-      const account = catalog.providers?.B;
-      if (account?.enabled && Date.parse(account.expiresAt) > Date.now() && catalog.channels?.[channel]?.B) sources.B = catalog.channels[channel].B;
+      for (const id of ['B', 'C']) {
+        if (catalog.providers?.[id]?.enabled && catalog.channels?.[channel]?.[id]) sources[id] = catalog.channels[channel][id];
+      }
       return sources;
     },
   };

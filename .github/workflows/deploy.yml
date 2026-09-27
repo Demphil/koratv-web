@@ -26,6 +26,7 @@ jobs:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           ARRYADIA_UPSTREAM_ORIGINS: ${{ secrets.ARRYADIA_UPSTREAM_ORIGINS }}
           IPTV_PROVIDER_B_JSON: ${{ secrets.IPTV_PROVIDER_B_JSON }}
+          IPTV_PROVIDER_C_JSON: ${{ secrets.IPTV_PROVIDER_C_JSON }}
         with:
           host: ${{ secrets.VPS_IP }}
           username: ${{ secrets.VPS_USERNAME }}
@@ -33,7 +34,7 @@ jobs:
           port: 22
           timeout: 30s
           command_timeout: 12m
-          envs: API_FOOTBALL_KEY,ARRYADIA_UPSTREAM_ORIGINS,IPTV_PROVIDER_B_JSON
+          envs: API_FOOTBALL_KEY,ARRYADIA_UPSTREAM_ORIGINS,IPTV_PROVIDER_B_JSON,IPTV_PROVIDER_C_JSON
           script: |
             set -euo pipefail
 
@@ -72,7 +73,7 @@ jobs:
             rm -rf node_modules
             npm ci --omit=dev --no-audit --fund=false
             node scripts/setup-env.js
-            if [ -n "${IPTV_PROVIDER_B_JSON:-}" ]; then
+            if [ -n "${IPTV_PROVIDER_B_JSON:-}${IPTV_PROVIDER_C_JSON:-}" ]; then
               node --env-file=.env scripts/sync-provider-pool.js
             fi
             if [ -n "${ARRYADIA_UPSTREAM_ORIGINS:-}" ]; then

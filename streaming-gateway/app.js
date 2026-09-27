@@ -593,7 +593,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         }
         runtimeOrigins.add(source.origin);
         upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, cacheVersion, lease);
-        if (lease && upstream.status === 403) {
+        if (lease && [401, 403].includes(upstream.status)) {
           await upstream.body?.cancel();
           providerPool.fail(lease);
           const replacement = providerPool.acquire(playback, claims.jti);
@@ -602,7 +602,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           runtimeOrigins = new Set([new URL(lease.url).origin]);
           source = allowedUrl(lease.url, runtimeOrigins);
           upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, '', lease);
-          if (upstream.status === 403) { providerPool.fail(lease); throw new PoolError('pool_upstream_unavailable'); }
+          if ([401, 403].includes(upstream.status)) { providerPool.fail(lease); throw new PoolError('pool_upstream_unavailable'); }
         }
         if (upstream.ok) {
           if (req.path === '/api/stream.m3u8' && sourceHref !== rootSource) {

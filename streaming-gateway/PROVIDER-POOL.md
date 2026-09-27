@@ -1,4 +1,4 @@
-# Two-account pool
+# Three-account pool
 
 Production runs exactly one `koratv-gateway` process. Do not increase PM2 instances: the in-memory scheduler, leases, singleflight cache and account queues belong to that process.
 
@@ -8,7 +8,7 @@ Production runs exactly one `koratv-gateway` process. Do not increase PM2 instan
 - HTTP 403 cools down that account for 30 seconds. Failover only uses a free compatible account. It never steals the other live account as a failover action.
 - Capacity returns 503 and `Retry-After: 3`; reassignment returns 409. The player retries the same match, never an unrelated match.
 - One fixed upstream URL per account/channel, one HLS rendition (720p preferred). Alternate DNS names are not extra accounts.
-- Trial B stops being eligible at its provider-reported expiry, or after 24 hours from its first activation when the provider omits expiry. Repeated deployments do not extend this fallback deadline. Renew the `IPTV_PROVIDER_B_JSON` GitHub secret and deploy to replace it.
+- Accounts A, B and C have no local expiry deadline. Provider authentication failures (401/403) trigger temporary cooldown and failover; expired signed viewer sessions and manual overrides remain protected separately. Update `IPTV_PROVIDER_B_JSON` or `IPTV_PROVIDER_C_JSON` and deploy to replace credentials.
 - Imported sports catalog and credentials stay in `/etc/koratv/provider-catalog.json` (0600), outside Git and the web root.
 
 ## Manual broadcast override
@@ -33,4 +33,4 @@ Use the exact `matchId` returned by `/api/matches` and an existing canonical cha
 
 Priority definitions: `/opt/koratv/koratv-web/streaming-gateway/priority-matrix.json` (version-controlled; deploy changes).
 
-The pool enforces two allowed upstream slots. It does not provide six simultaneous channels from two accounts or guarantee availability of a provider's content.
+The pool enforces three allowed upstream slots, one channel per account. It does not provide six simultaneous channels from three accounts or guarantee availability of a provider's content.

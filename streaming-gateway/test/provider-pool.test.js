@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { ProviderPool, PoolError } from '../provider-pool.js';
 import { basePriority } from '../priority.js';
 import { singleQualityManifest } from '../single-quality.js';
-import { selectProviderChannel } from '../provider-catalog.js';
+import { selectProviderChannel, createProviderCatalog } from '../provider-catalog.js';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const playback = (id, score = 100, sources = { A: `https://a.example/${id}.m3u8`, B: `https://b.example/${id}.m3u8` }) =>
   ({ match_id: id, pool_key: id, channel_id: id, priority_score: score, provider_sources: sources });
@@ -17,6 +20,29 @@ test('two accounts reserve stable distinct matches and reject a lower-score thir
   for (let i = 0; i < 10; i++) assert.throws(() => pool.acquire(playback('third', 10), 'v3'), PoolError);
   assert.ok(pool.valid(a)); assert.ok(pool.valid(b));
   assert.equal(pool.demands.get('third').viewers.size, 1);
+});
+
+test('three independent accounts hold three matches, reject a fourth, and preserve peers on failure', t => {
+  const { pool } = setup(t);
+  const match = id => playback(id, 100, Object.fromEntries(['A','B','C'].map(p => [p, `https://${p.toLowerCase()}.example/${id}.m3u8`])));
+  const leases = ['one','two','three'].map(id => pool.acquire(match(id), id));
+  assert.deepEqual(leases.map(l => l.provider), ['A','B','C']);
+  assert.throws(() => pool.acquire({ ...match('four'), priority_score: 10 }, 'four'), PoolError);
+  assert.ok(leases.every(l => pool.valid(l)));
+  pool.fail(leases[2]);
+  assert.ok(pool.valid(leases[0])); assert.ok(pool.valid(leases[1]));
+  assert.equal(pool.failures.C, 1);
+});
+
+test('provider catalog ignores legacy account expiry but retains manual override expiry', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provider-catalog-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const catalogPath = join(dir, 'catalog.json'), overridePath = join(dir, 'override.json');
+  writeFileSync(catalogPath, JSON.stringify({ providers: { B: { enabled: true, expiresAt: '2000-01-01T00:00:00Z' }, C: { enabled: true } }, channels: { sport: { B: 'https://b.example/live', C: 'https://c.example/live' } } }));
+  writeFileSync(overridePath, JSON.stringify({ matches: { old: { channel: 'sport', expiresAt: '2000-01-01T00:00:00Z' } } }));
+  const catalog = createProviderCatalog({ PROVIDER_CATALOG_PATH: catalogPath, MANUAL_BROADCAST_OVERRIDE_PATH: overridePath });
+  assert.deepEqual(catalog.sources('sport', 'https://a.example/live'), { A: 'https://a.example/live', B: 'https://b.example/live', C: 'https://c.example/live' });
+  assert.equal(catalog.override('old'), null);
 });
 
 test('viewer points count unique sessions, higher scores preempt only the weaker lease', t => {

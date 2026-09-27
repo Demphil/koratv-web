@@ -4,7 +4,7 @@ import { createApp } from '../app.js';
 
 test('pool gateway coalesces viewers, ignores quality overrides, fences old resources, and preserves the second account on 403', async t => {
   const store = new Map(); const calls = [];
-  let rejectA = false;
+  let rejectA = false, includeC = false;
   const config = {
     providerPoolEnabled: true, enableAntiBot: false,
     secret: 'test-pool-secret-longer-than-32-characters', hmacSecret: 'test-pool-hmac-independent-longer-than-32',
@@ -13,7 +13,7 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
     sessionTtl: 300, sourceForOrigin: () => 'kooora', upstreamUserAgent: 'test',
     getPlaybackForSource: async (_, id) => ({ is_streaming_active: true, match_id: id, pool_key: id, channel_id: id,
       priority_score: id === 'low' ? 10 : 100, stream_url: `https://a.example/${id}/main.m3u8`,
-      provider_sources: { A: `https://a.example/${id}/main.m3u8`, B: `https://b.example/${id}/main.m3u8` },
+      provider_sources: { A: `https://a.example/${id}/main.m3u8`, B: `https://b.example/${id}/main.m3u8`, ...(includeC ? { C: `https://c.example/${id}/main.m3u8` } : {}) },
       qualities: [{ label: '1080p', height: 1080 }], quality_sources: [{ label: '1080p', url: 'https://other.example/bad.m3u8' }] }),
   };
   const redis = { ping: async () => 'PONG', incr: async () => 1, expire: async () => 1,
@@ -57,4 +57,16 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
   assert.ok(calls.includes('https://a.example/fresh/main.m3u8'));
   assert.ok(calls.includes('https://b.example/fresh/main.m3u8'));
   assert.equal(app.locals.providerPool.snapshot()[0].provider, 'B');
+  for (const provider of ['A','B','C']) app.locals.providerPool.revoke(provider);
+  app.locals.providerPool.demands.clear(); app.locals.providerPool.blocked.clear();
+  rejectA = false; includeC = true;
+  const three = await Promise.all(['three-a','three-b','three-c'].map(session));
+  const responses = await Promise.all(three.map(token => request('/api/stream.m3u8', token)));
+  assert.deepEqual(responses.map(r => r.status), [200,200,200]);
+  assert.deepEqual(app.locals.providerPool.snapshot().map(row => row.provider).sort(), ['A','B','C']);
+  for (let i=0; i<responses.length; i++) {
+    const segment = new URL((await responses[i].text()).split('\n').find(line => line.startsWith('https:')));
+    assert.equal((await request(segment.pathname + segment.search, three[i])).status, 200);
+  }
+  assert.equal((await request('/api/stream.m3u8', low)).status, 503);
 });
