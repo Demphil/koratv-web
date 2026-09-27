@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../app.js';
+import { createHmac } from 'node:crypto';
 
 test('pool gateway coalesces viewers, ignores quality overrides, fences old resources, and preserves the second account on 403', async t => {
   const store = new Map(); const calls = [];
@@ -69,4 +70,15 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
     assert.equal((await request(segment.pathname + segment.search, three[i])).status, 200);
   }
   assert.equal((await request('/api/stream.m3u8', low)).status, 503);
+  for (const provider of ['A','B','C','D','E','F']) app.locals.providerPool.revoke(provider);
+  app.locals.providerPool.demands.clear(); app.locals.providerPool.blocked.clear();
+  config.providerChannels = () => Object.fromEntries([1,2,3,4,5,6].map(n => [`beIN SPORTS HD ${n}`,
+    Object.fromEntries(['A','B','C','D','E','F'].map(p => [p, `https://${p.toLowerCase()}.example/${n}/main.m3u8`]))]));
+  const admin = createHmac('sha256', config.hmacSecret).update('koratv-account-admin-v1').digest('hex');
+  assert.equal((await request('/internal/accounts-probe', '', {})).status, 404);
+  assert.equal((await fetch(base + '/internal/accounts-status', { headers: { Authorization: `Bearer ${admin}`, 'X-Forwarded-For': '203.0.113.5' } })).status, 404);
+  const six = await (await request('/internal/accounts-probe', admin, {})).json();
+  assert.equal(six.results.length, 6);
+  assert.equal(new Set(six.results.map(r => r.channel)).size, 6);
+  assert.ok(six.results.every(r => r.manifestStatus === 200 && r.segmentStatus === 200 && r.bytes > 0));
 });

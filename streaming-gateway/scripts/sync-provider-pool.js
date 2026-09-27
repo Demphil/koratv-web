@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { mkdir, readFile, writeFile, rename, chmod, access } from 'node:fs/promises';
 import { matchChannels, normalizeName } from '../../secure-streaming/scripts/import-m3u.js';
 import { selectProviderChannel } from '../provider-catalog.js';
+import { PROVIDER_IDS } from '../provider-pool.js';
 
 const dir = process.env.PROVIDER_POOL_DIR || '/etc/koratv';
 const api = async (credentials, origin, action) => {
@@ -21,8 +22,18 @@ let catalog = { providers: {}, channels: {} };
 try { catalog = JSON.parse(await readFile(`${dir}/provider-catalog.json`, 'utf8')); } catch {}
 catalog.providers ||= {}; catalog.channels ||= {};
 // Remove legacy account deadlines, including catalogs retained during a partial sync.
-for (const id of ['B', 'C']) if (catalog.providers[id]) {
-  catalog.providers[id] = { enabled: catalog.providers[id].enabled, maxConnections: 1 };
+for (const id of PROVIDER_IDS) if (catalog.providers[id]) {
+  const { expiresAt, firstActivatedAt, expirySource, ...retained } = catalog.providers[id];
+  catalog.providers[id] = retained;
+}
+for (const row of channels) if (row.original_url) {
+  catalog.channels[row.name] ||= {};
+  catalog.channels[row.name].A = row.original_url;
+}
+const primary = channels.find(row => row.original_url)?.original_url;
+if (primary) {
+  const url = new URL(primary), parts = url.pathname.split('/').filter(Boolean);
+  catalog.providers.A = { enabled: true, maxConnections: 1, id: 'Account_1_Primary', username: decodeURIComponent(parts[1]), server: url.origin, sourceUrl: primary };
 }
 const accountKeys = new Set();
 for (const value of [...channels.map(row => row.original_url), ...Object.values(catalog.channels).map(row => row.A)]) {
@@ -30,7 +41,7 @@ for (const value of [...channels.map(row => row.original_url), ...Object.values(
   const parts = new URL(value).pathname.split('/').filter(Boolean);
   if (parts[0] === 'live') accountKeys.add(`${decodeURIComponent(parts[1])}:${decodeURIComponent(parts[2])}`);
 }
-for (const id of ['B', 'C']) {
+for (const id of PROVIDER_IDS.slice(1)) {
   const input = process.env[`IPTV_PROVIDER_${id}_JSON`];
   if (!input) continue;
   const credentials = JSON.parse(input);
@@ -42,7 +53,11 @@ for (const id of ['B', 'C']) {
   for (const host of credentials.origins) {
     try { const result = await api(credentials, host); if (Number(result.user_info?.auth) === 1) { origin = new URL(host).origin; info = result; break; } } catch {}
   }
-  if (!info) throw new Error(`Provider ${id} authentication unavailable`);
+  if (!info) {
+    if (!catalog.providers[id]?.sourceUrl) throw new Error(`Provider ${id} authentication unavailable`);
+    console.log(`Provider ${id} catalog refresh unavailable; saved account retained for health monitoring`);
+    continue;
+  }
   if (Number(info.user_info.max_connections) < 1) throw new Error(`Provider ${id} has no permitted connections`);
   const categories = await api(credentials, origin, 'get_live_categories');
   const sport = /sport|bein|arryadia|arriadia|ssc|alkass|الرياض|رياضي|الكأس|الكاس/i;
@@ -62,7 +77,9 @@ for (const id of ['B', 'C']) {
     catalog.channels[name].sourceNames ||= {};
     catalog.channels[name].sourceNames[id] = chosen.source_name;
   }
-  catalog.providers[id] = { enabled: true, maxConnections: 1 };
+  catalog.providers[id] = { enabled: true, maxConnections: 1,
+    id: `Account_${PROVIDER_IDS.indexOf(id) + 1}_${credentials.username}`, username: credentials.username, server: origin,
+    sourceUrl: selected[0].chosen.original_url };
   console.log(JSON.stringify({ provider: id, max_connections: info.user_info.max_connections, active_cons: info.user_info.active_cons,
     sportsChannels: entries.length, matchedChannels: selected.length, mapped: selected.map(({name,chosen}) => ({channel:name,source:chosen.source_name})) }));
 }

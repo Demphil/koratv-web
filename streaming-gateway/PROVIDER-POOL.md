@@ -1,4 +1,4 @@
-# Three-account pool
+# Six-account pool
 
 Production runs exactly one `koratv-gateway` process. Do not increase PM2 instances: the in-memory scheduler, leases, singleflight cache and account queues belong to that process.
 
@@ -8,7 +8,7 @@ Production runs exactly one `koratv-gateway` process. Do not increase PM2 instan
 - HTTP 403 cools down that account for 30 seconds. Failover only uses a free compatible account. It never steals the other live account as a failover action.
 - Capacity returns 503 and `Retry-After: 3`; reassignment returns 409. The player retries the same match, never an unrelated match.
 - One fixed upstream URL per account/channel, one HLS rendition (720p preferred). Alternate DNS names are not extra accounts.
-- Accounts A, B and C have no local expiry deadline. Provider authentication failures (401/403) trigger temporary cooldown and failover; expired signed viewer sessions and manual overrides remain protected separately. Update `IPTV_PROVIDER_B_JSON` or `IPTV_PROVIDER_C_JSON` and deploy to replace credentials.
+- Accounts A through F have no local expiry deadline. Update the corresponding `IPTV_PROVIDER_B_JSON` through `IPTV_PROVIDER_F_JSON` secret and deploy to replace secondary credentials. Viewer token and manual override expiry remain separate.
 - Imported sports catalog and credentials stay in `/etc/koratv/provider-catalog.json` (0600), outside Git and the web root.
 
 ## Manual broadcast override
@@ -33,4 +33,14 @@ Use the exact `matchId` returned by `/api/matches` and an existing canonical cha
 
 Priority definitions: `/opt/koratv/koratv-web/streaming-gateway/priority-matrix.json` (version-controlled; deploy changes).
 
-The pool enforces three allowed upstream slots, one channel per account. It does not provide six simultaneous channels from three accounts or guarantee availability of a provider's content.
+The pool enforces six allowed upstream slots, one channel per independent account. Failover requires a free account that carries the same channel; six occupied slots leave no spare capacity.
+
+## Private account status
+
+Status is atomically written to `/etc/koratv/accounts-status.json` with mode 0600, updated within one second of media responses or allocation changes. Read it with `sudo cat /etc/koratv/accounts-status.json`.
+
+From `/opt/koratv/koratv-web/streaming-gateway`, run `node --env-file=.env scripts/accounts-status.js` for an immediate snapshot. Add `--probe` only to intentionally test six different channels through the running pool for about 30 seconds. Occupied leases are reused, never opened directly outside the account queue. Diagnostic viewers expire after 15 seconds of inactivity.
+
+The CLI uses loopback-only endpoints authenticated by a domain-separated HMAC credential. Forwarded requests and missing credentials are rejected; account usernames, passwords and server addresses are not added to the public health endpoint. Passwords and credentialed stream URLs never appear in the status file.
+
+Actual media 401 or provider metadata auth rejection/Expired/Disabled/Banned isolates the account as `STOPPED_EXPIRED`. A 403 causes a 30-second `COOLDOWN_403`; three failures without successful media increase cooldown to five minutes. Metadata is checked every minute without opening a media connection. A past provider expiry timestamp alone never disables an account. Metadata timeouts do not falsely mark a playing account expired. The file records the latest HTTP code, check time, channel, and reason; a temporary cooldown is not proof of expiry.

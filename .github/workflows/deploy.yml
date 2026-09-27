@@ -27,6 +27,9 @@ jobs:
           ARRYADIA_UPSTREAM_ORIGINS: ${{ secrets.ARRYADIA_UPSTREAM_ORIGINS }}
           IPTV_PROVIDER_B_JSON: ${{ secrets.IPTV_PROVIDER_B_JSON }}
           IPTV_PROVIDER_C_JSON: ${{ secrets.IPTV_PROVIDER_C_JSON }}
+          IPTV_PROVIDER_D_JSON: ${{ secrets.IPTV_PROVIDER_D_JSON }}
+          IPTV_PROVIDER_E_JSON: ${{ secrets.IPTV_PROVIDER_E_JSON }}
+          IPTV_PROVIDER_F_JSON: ${{ secrets.IPTV_PROVIDER_F_JSON }}
         with:
           host: ${{ secrets.VPS_IP }}
           username: ${{ secrets.VPS_USERNAME }}
@@ -34,7 +37,7 @@ jobs:
           port: 22
           timeout: 30s
           command_timeout: 12m
-          envs: API_FOOTBALL_KEY,ARRYADIA_UPSTREAM_ORIGINS,IPTV_PROVIDER_B_JSON,IPTV_PROVIDER_C_JSON
+          envs: API_FOOTBALL_KEY,ARRYADIA_UPSTREAM_ORIGINS,IPTV_PROVIDER_B_JSON,IPTV_PROVIDER_C_JSON,IPTV_PROVIDER_D_JSON,IPTV_PROVIDER_E_JSON,IPTV_PROVIDER_F_JSON
           script: |
             set -euo pipefail
 

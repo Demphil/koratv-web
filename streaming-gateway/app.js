@@ -1,13 +1,14 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { createHash, createHmac, randomUUID, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
+import { createHash, createHmac, randomUUID, randomBytes, createCipheriv, createDecipheriv, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createClientIpResolver } from './client-ip.js';
 import { antiBotMiddleware } from './anti-bot.js';
 import { HlsResourceCache } from './hls-resource-cache.js';
-import { ProviderPool, PoolError } from './provider-pool.js';
+import { ProviderPool, PoolError, PROVIDER_IDS } from './provider-pool.js';
+import { AccountHealth } from './account-health.js';
 import { singleQualityManifest } from './single-quality.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
 
@@ -266,7 +267,10 @@ function allowedMatch(match) {
 
 export function createApp({ config, redis, fetchImpl = fetch }) {
   const app = express();
-  const providerPool = config.providerPoolEnabled ? new ProviderPool() : null;
+  const accountHealth = config.providerPoolEnabled && config.providerAccounts ? new AccountHealth({ accounts: config.providerAccounts, path: config.accountsStatusPath, fetchImpl }) : null;
+  const providerPool = config.providerPoolEnabled ? new ProviderPool({ health: accountHealth }) : null;
+  accountHealth?.attach(providerPool);
+  app.locals.accountHealth = accountHealth;
   app.locals.providerPool = providerPool;
   const hlsCache = new HlsResourceCache({
     maxBytes: Math.max(4, Number(process.env.HLS_CACHE_MAX_MB || 32)) * 1024 * 1024,
@@ -362,6 +366,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   };
   const fetchLeasedUpstream = (source, options, lease) => lease ? providerPool.run(lease, async signal => {
     const response = await fetchUpstream(source, { ...options, signal });
+    if (providerPool.valid(lease)) accountHealth?.observe(lease.provider, response.status, hlsResourceKind(source) === 'segment');
     const bytes = await response.arrayBuffer();
     const buffered = new Response(bytes, { status: response.status, headers: response.headers });
     Object.defineProperty(buffered, 'url', { value: response.url });
@@ -374,6 +379,68 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     const key = `${lease ? `${lease.id}:` : ''}${kind}:${source.href}${kind === 'segment' && version ? `:${version}` : ''}`;
     return hlsCache.load(key, { ttlMs: cacheTtl(kind) }, () => fetchLeasedUpstream(source, options, lease));
   };
+
+  const accountAdmin = (req, res, next) => {
+    const expected = createHmac('sha256', config.hmacSecret).update('koratv-account-admin-v1').digest('hex');
+    const supplied = String(req.headers.authorization || '').replace(/^Bearer /, '');
+    const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+    if (!local || req.headers['x-forwarded-for'] || Buffer.byteLength(supplied) !== Buffer.byteLength(expected) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) return res.sendStatus(404);
+    next();
+  };
+  app.get('/internal/accounts-status', accountAdmin, (req, res) => res.json({ accounts: accountHealth?.snapshot() || [] }));
+  let probeRunning = false;
+  app.post('/internal/accounts-probe', accountAdmin, async (req, res) => {
+    if (!providerPool || !config.providerChannels || probeRunning) return res.sendStatus(409);
+    probeRunning = true;
+    try {
+      const channels = config.providerChannels();
+      const used = new Set([...providerPool.leases.values()].map(lease => providerPool.demands.get(lease.key)?.channel));
+      const jobs = PROVIDER_IDS.map(provider => {
+        const held = providerPool.leases.get(provider);
+        const demand = held && providerPool.demands.get(held.key);
+        const channel = demand?.channel || Object.keys(channels).sort().find(name => channels[name][provider] && !used.has(name) && /^beIN SPORTS HD [1-9]$/.test(name));
+        if (!channel) return { provider, error: 'no_distinct_channel_available' };
+        used.add(channel);
+        const source = held?.url || channels[channel][provider];
+        return { provider, channel, playback: { match_id: demand?.key || `diagnostic:${provider}:${channel}`, pool_key: demand?.key || `diagnostic:${provider}:${channel}`,
+          channel_id: channel, provider_sources: demand?.sources || { [provider]: source }, priority_score: demand?.base || 10 } };
+      });
+      const results = await Promise.all(jobs.map(async job => {
+        if (job.error) return job;
+        const result = { provider: job.provider, channel: job.channel };
+        try {
+          const lease = providerPool.acquire(job.playback, `internal-diagnostic-${job.provider}`);
+          if (lease.provider !== job.provider) return { ...result, error: 'lease_changed' };
+          let url = new URL(lease.url), playlist = '';
+          const headers = { 'User-Agent': config.upstreamUserAgent, Accept: '*/*' };
+          for (let depth = 0; depth < 4; depth++) {
+            const response = await fetchCachedUpstream(url, { headers, redirect: 'follow' }, '', lease);
+            result.manifestStatus = response.status;
+            if (!response.ok) {
+              await response.body?.cancel();
+              if ([401,403].includes(response.status)) providerPool.fail(lease, response.status);
+              return result;
+            }
+            playlist = singleQualityManifest(await response.text());
+            if (!playlist.trimStart().startsWith('#EXTM3U')) return { ...result, error: 'invalid_manifest' };
+            const uri = playlist.split(/\r?\n/).find(line => line && !line.startsWith('#'));
+            const base = response.url || url.href;
+            if (playlist.includes('#EXT-X-STREAM-INF:')) { url = new URL(uri, base); continue; }
+            const segment = playlist.split(/\r?\n/).filter(line => line && !line.startsWith('#')).at(-1);
+            if (!segment) return { ...result, error: 'empty_playlist' };
+            result.sequence = playlist.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1] || null;
+            const media = await fetchCachedUpstream(new URL(segment, base), { headers, redirect: 'follow' }, result.sequence || '', lease);
+            result.segmentStatus = media.status; result.bytes = (await media.arrayBuffer()).byteLength;
+            if ([401,403].includes(media.status)) providerPool.fail(lease, media.status);
+            return result;
+          }
+          return { ...result, error: 'playlist_depth' };
+        } catch (error) { return { ...result, error: error instanceof PoolError ? error.code : 'upstream_request_failed' }; }
+      }));
+      accountHealth?.persist();
+      res.json({ results, accounts: accountHealth?.snapshot() || [] });
+    } finally { probeRunning = false; }
+  });
 
   app.get('/healthz', async (req, res) => {
     try {
@@ -593,16 +660,18 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         }
         runtimeOrigins.add(source.origin);
         upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, cacheVersion, lease);
-        if (lease && [401, 403].includes(upstream.status)) {
+        const attemptedProviders = new Set();
+        while (lease && [401, 403].includes(upstream.status)) {
           await upstream.body?.cancel();
-          providerPool.fail(lease);
+          attemptedProviders.add(lease.provider);
+          providerPool.fail(lease, upstream.status);
+          if (attemptedProviders.size >= PROVIDER_IDS.length) throw new PoolError('pool_upstream_unavailable');
           const replacement = providerPool.acquire(playback, claims.jti);
           if (req.path !== '/api/stream.m3u8') throw new PoolError('pool_reassigned', 409);
           lease = replacement;
           runtimeOrigins = new Set([new URL(lease.url).origin]);
           source = allowedUrl(lease.url, runtimeOrigins);
           upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, '', lease);
-          if ([401, 403].includes(upstream.status)) { providerPool.fail(lease); throw new PoolError('pool_upstream_unavailable'); }
         }
         if (upstream.ok) {
           if (req.path === '/api/stream.m3u8' && sourceHref !== rootSource) {

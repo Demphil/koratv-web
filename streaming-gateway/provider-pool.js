@@ -5,16 +5,17 @@ export class PoolError extends Error {
   constructor(code = 'pool_capacity', status = 503) { super(code); this.code = code; this.status = status; }
 }
 
-export const PROVIDER_IDS = ['A', 'B', 'C'];
+export const PROVIDER_IDS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 // One process owns the upstream accounts. Every media fetch must hold a current lease.
 export class ProviderPool {
-  constructor({ now = Date.now, idleMs = priorityMatrix.idleReleaseMs, viewerMs = priorityMatrix.viewerWindowMs } = {}) {
+  constructor({ now = Date.now, idleMs = priorityMatrix.idleReleaseMs, viewerMs = priorityMatrix.viewerWindowMs, health = null } = {}) {
+    this.health = health;
     this.now = now; this.idleMs = idleMs; this.viewerMs = viewerMs;
     this.demands = new Map(); this.leases = new Map(); this.blocked = new Map(); this.tails = new Map(); this.failures = Object.fromEntries(PROVIDER_IDS.map(id => [id, 0]));
     this.timer = setInterval(() => this.rebalance(), 1000); this.timer.unref();
   }
-  close() { clearInterval(this.timer); for (const lease of this.leases.values()) lease.controller.abort(); }
+  close() { clearInterval(this.timer); this.health?.close(); for (const lease of this.leases.values()) lease.controller.abort(); }
   score(demand) { return demand.base + demand.viewers.size * priorityMatrix.viewerPoints; }
   valid(lease) { return this.leases.get(lease.provider) === lease && !lease.controller.signal.aborted; }
   revoke(provider) {
@@ -69,13 +70,18 @@ export class ProviderPool {
     if (!lease) throw new PoolError();
     return lease;
   }
-  fail(lease) {
+  quarantine(provider, until) {
+    const lease = this.leases.get(provider);
+    const demand = lease && this.demands.get(lease.key);
+    if (demand) { demand.failedUntil = until; demand.failedProvider = provider; }
+    this.blocked.set(provider, until);
+    this.revoke(provider); this.rebalance();
+  }
+  fail(lease, status = 403) {
     if (!this.valid(lease)) return;
     this.failures[lease.provider]++;
-    const demand = this.demands.get(lease.key);
-    if (demand) demand.failedUntil = this.now() + 30000;
-    this.blocked.set(lease.provider, this.now() + 30000);
-    this.revoke(lease.provider); this.rebalance();
+    const until = this.health?.failure(lease.provider, status) ?? this.now() + 30000;
+    this.quarantine(lease.provider, until);
   }
   async run(lease, operation) {
     const task = (this.tails.get(lease.provider) || Promise.resolve()).catch(() => {}).then(async () => {

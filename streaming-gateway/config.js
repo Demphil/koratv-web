@@ -72,6 +72,9 @@ export function loadConfig(env = process.env) {
   return {
     secret,
     providerPoolEnabled,
+    providerAccounts: catalog ? () => catalog.accounts() : null,
+    providerChannels: catalog ? () => catalog.channels() : null,
+    accountsStatusPath: env.ACCOUNTS_STATUS_PATH || '/etc/koratv/accounts-status.json',
     hmacSecret,
     enableAntiBot: String(env.ENABLE_ANTI_BOT || 'true').trim().toLowerCase() !== 'false',
     frontend: publicOrigin('FRONTEND_ORIGIN', env.FRONTEND_ORIGIN || 'https://koratv.click'),

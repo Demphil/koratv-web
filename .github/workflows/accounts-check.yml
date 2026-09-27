@@ -1,0 +1,35 @@
+name: Inspect IPTV account pool
+on:
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: Run six-channel pooled media check for 30 seconds
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: account-pool-diagnostics
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        env:
+          RUN_PROBE: ${{ inputs.probe }}
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: RUN_PROBE
+          command_timeout: 4m
+          script: |
+            set -eu
+            cd /opt/koratv/koratv-web/streaming-gateway
+            if [ "$RUN_PROBE" = true ]; then
+              node --env-file=.env scripts/accounts-status.js --probe
+            else
+              node --env-file=.env scripts/accounts-status.js
+            fi
