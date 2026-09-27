@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { mkdir, readFile, writeFile, rename, chmod, access } from 'node:fs/promises';
 import { matchChannels } from '../../secure-streaming/scripts/import-m3u.js';
+import { createHash } from 'node:crypto';
 
 const dir = process.env.PROVIDER_POOL_DIR || '/etc/koratv';
 const credentials = JSON.parse(process.env.IPTV_PROVIDER_B_JSON || '{}');
@@ -20,8 +21,14 @@ for (const host of origins) {
   try { const result = await api(host); if (Number(result.user_info?.auth) === 1) { origin = new URL(host).origin; info = result; break; } } catch {}
 }
 if (!info) throw new Error('Provider B authentication unavailable on configured origins');
-const expiresAt = Number(info.user_info.exp_date) * 1000;
-if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('Provider B has expired');
+if (String(info.user_info.status).toLowerCase() !== 'active') throw new Error('Provider B is not active');
+const fingerprint = createHash('sha256').update(`${credentials.username}:${credentials.password}`).digest('hex');
+let previous;
+try { previous = JSON.parse(await readFile(`${dir}/provider-catalog.json`, 'utf8')).providers?.B; } catch {}
+const providerExpiry = Number(info.user_info.exp_date) * 1000;
+const firstActivatedAt = previous?.fingerprint === fingerprint ? Date.parse(previous.firstActivatedAt) : Date.now();
+const expiresAt = providerExpiry > 0 ? providerExpiry : firstActivatedAt + 24 * 60 * 60_000;
+if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('Provider B trial window has expired');
 if (Number(info.user_info.max_connections) !== 1) throw new Error('Provider B connection policy differs from expected one-slot account');
 const categories = await api(origin, 'get_live_categories');
 const sport = /sport|bein|arryadia|arriadia|ssc|alkass|الرياض|رياضي|الكأس|الكاس/i;
@@ -41,7 +48,8 @@ for (const row of channels) {
 }
 const matched = matchChannels(channels.map(c => c.name), entries, { candidatesPerChannel: 30 });
 const qualityRank = candidate => /\b(?:4k|uhd|fhd|1080p)\b/i.test(candidate.source_name) ? 1 : /\b(?:hd|720p)\b/i.test(candidate.source_name) ? 0 : 2;
-const catalog = { updatedAt: new Date().toISOString(), providers: { B: { enabled: true, maxConnections: 1, expiresAt: new Date(expiresAt).toISOString() } }, channels: {} };
+const catalog = { updatedAt: new Date().toISOString(), providers: { B: { enabled: true, maxConnections: 1, expiresAt: new Date(expiresAt).toISOString(),
+  firstActivatedAt: new Date(firstActivatedAt).toISOString(), fingerprint, expirySource: providerExpiry > 0 ? 'provider' : '24-hour-trial-window' } }, channels: {} };
 for (const match of matched) {
   const chosen = [...match.candidates].sort((a, b) => qualityRank(a) - qualityRank(b) || a.source_name.localeCompare(b.source_name))[0];
   catalog.channels[match.name] = { B: chosen.original_url, sourceName: chosen.source_name };
