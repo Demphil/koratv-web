@@ -43,6 +43,21 @@ async function probe(url) {
   } catch (error) { return { ok: false, reason: error.name === 'TimeoutError' ? 'timeout' : 'network' }; }
 }
 
+async function hasPlaybackCapacity(source) {
+  try {
+    const credentials = account(source)?.split('/');
+    if (!credentials) return false;
+    const endpoint = new URL('/player_api.php', source);
+    endpoint.searchParams.set('username', decodeURIComponent(credentials[0]));
+    endpoint.searchParams.set('password', decodeURIComponent(credentials[1]));
+    const response = await fetch(endpoint, { signal: AbortSignal.timeout(8000) });
+    const info = (await response.json()).user_info;
+    if (!response.ok || Number(info?.auth) !== 1) return false;
+    const active = Number(info.active_cons), max = Number(info.max_connections);
+    return Number.isFinite(active) && Number.isFinite(max) && (max === 0 || active < max);
+  } catch { return false; }
+}
+
 const { data: channels, error: channelError } = await client.from('channels').select('id,name,active,original_url,quality_variants');
 if (channelError) throw new Error(`Channel lookup failed (${channelError.code})`);
 const { data: matches, error: matchError } = await client.from(process.env.SUPABASE_MATCHES_TABLE || 'matches')
@@ -61,6 +76,10 @@ for (const row of matches || []) {
 }
 
 for (const channel of channels.filter((item) => required.has(item.name) && item.original_url)) {
+  if (!(await hasPlaybackCapacity(channel.original_url))) {
+    console.log(JSON.stringify({ channel: channel.name, skipped: 'account_busy_or_capacity_unknown' }));
+    continue;
+  }
   const candidates = new Set([channel.original_url]);
   const identity = account(channel.original_url);
   // Provider hostname rotations retain the same Xtream account and stream ID.

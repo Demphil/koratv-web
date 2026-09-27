@@ -4,6 +4,7 @@ import { reconcileBroadcasts, mergeRefreshedMatch, broadcastChannelCandidates, s
 import { persistMatchSnapshots } from '../scripts/sync-matches-from-source.js';
 import { findChannelNameMatch } from '../../shared/channel-name-match.mjs';
 import { matchChannels, parseM3uText } from '../scripts/import-m3u.js';
+import { liveCatalogToM3u } from '../scripts/sync-iptv-provider.js';
 
 const kickoff_time = '2026-09-27T13:00:00Z';
 const api = { match_id: 'api-1', source: 'api-football', home_team: 'Lithuania', away_team: 'Azerbaijan',
@@ -11,6 +12,15 @@ const api = { match_id: 'api-1', source: 'api-football', home_team: 'Lithuania',
 const kooora = { match_id: 'kooora-1', source: 'kooora', home_team: 'ليتوانيا', away_team: 'أذربيجان',
   kickoff_time, payload: { sourceMatchId: 'event-1', channels: ['beIN Sports Mena 2', 'CBC Sport'] } };
 const checkedAt = '2026-09-27T14:00:00Z';
+
+test('live provider catalog validates inventory without opening scarce playback connections', () => {
+  const endpoint = new URL('https://provider.example/get.php?username=user&password=pass');
+  const text = liveCatalogToM3u([{ name: 'AR | BEIN SPORTS 02 HD', stream_id: 42 }], endpoint);
+  const [match] = matchChannels(['beIN SPORTS HD 2'], parseM3uText(text));
+  assert.equal(match.original_url, 'https://provider.example/live/user/pass/42.m3u8');
+  assert.throws(() => liveCatalogToM3u({ error: 'denied' }, endpoint));
+  assert.throws(() => liveCatalogToM3u([], endpoint));
+});
 
 test('joins exact bilingual opponents and kickoff, preserving API-Football details', () => {
   const rows = reconcileBroadcasts([api, kooora], { checkedAt });

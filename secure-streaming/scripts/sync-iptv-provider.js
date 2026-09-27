@@ -277,6 +277,16 @@ async function fetchProviderPlaylist(urls, timeoutMs) {
   const errors = [];
   for (const url of urls) {
     try {
+      const endpoint = new URL(url);
+      if (endpoint.searchParams.get('username') && endpoint.searchParams.get('password')) {
+        const catalog = new URL('/player_api.php', endpoint);
+        catalog.searchParams.set('username', endpoint.searchParams.get('username'));
+        catalog.searchParams.set('password', endpoint.searchParams.get('password'));
+        catalog.searchParams.set('action', 'get_live_streams');
+        const items = JSON.parse(await fetchWithTimeout(catalog, timeoutMs));
+        const text = liveCatalogToM3u(items, endpoint);
+        return { url, text, inventoryVerified: true };
+      }
       const text = await fetchWithTimeout(url, timeoutMs);
       return { url, text };
     } catch (error) {
@@ -284,6 +294,20 @@ async function fetchProviderPlaylist(urls, timeoutMs) {
     }
   }
   throw new Error(`All IPTV provider sources failed. ${errors.join(" | ")}`);
+}
+
+export function liveCatalogToM3u(items, endpoint) {
+  if (!Array.isArray(items) || !items.length) throw new Error('Provider live catalog is empty or invalid');
+  const username = encodeURIComponent(endpoint.searchParams.get('username'));
+  const password = encodeURIComponent(endpoint.searchParams.get('password'));
+  const lines = ['#EXTM3U'];
+  for (const item of items) {
+    if (!item.name || !/^\d+$/.test(String(item.stream_id))) continue;
+    const name = String(item.name).replace(/[\r\n]/g, ' ').trim();
+    lines.push(`#EXTINF:-1,${name}`, `${endpoint.origin}/live/${username}/${password}/${item.stream_id}.m3u8`);
+  }
+  if (lines.length === 1) throw new Error('Provider live catalog has no valid channel records');
+  return lines.join('\n');
 }
 
 async function mapWithConcurrency(items, limit, worker) {
@@ -503,14 +527,14 @@ export async function syncIptvProvider(options = {}) {
   const workingMatched = await chooseWorkingProviderLinks(rawMatched, {
     timeoutMs: probeTimeoutMs,
     concurrency: probeConcurrency,
-    enabled: validateStreams
+    enabled: validateStreams && !provider.inventoryVerified
   });
   const matched = await enrichMasterQualityVariants(workingMatched, {
     timeoutMs: masterProbeTimeoutMs,
     concurrency: masterProbeConcurrency,
-    enabled: detectMasterQualities
+    enabled: detectMasterQualities && !provider.inventoryVerified
   });
-  const verifiedMatches = validateStreams ? matched : matched.filter((match) =>
+  const verifiedMatches = validateStreams || provider.inventoryVerified ? matched : matched.filter((match) =>
     existingChannels.some((channel) => channel.name === match.name && channel.active === true));
   const { updates, unchanged, missing } = buildUpdatePayload(targetChannels, verifiedMatches);
 
@@ -528,7 +552,9 @@ export async function syncIptvProvider(options = {}) {
     deactivateMissing,
     validateStreams,
     detectMasterQualities,
-    candidatesPerChannel
+    candidatesPerChannel,
+    verification: provider.inventoryVerified ? 'provider_live_catalog' : 'stream_probe',
+    playbackVerified: !provider.inventoryVerified && validateStreams
   });
 
   if (!dryRun && updates.length > 0) {

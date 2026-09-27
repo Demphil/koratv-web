@@ -50,15 +50,3 @@ jobs:
         working-directory: secure-streaming
         run: npm run sync:iptv:links
 
-      - name: Verify and recover required channels from the playback server
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
-        with:
-          host: ${{ secrets.VPS_IP }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          command_timeout: 5m
-          script: |
-            set -eu
-            cd /opt/koratv/koratv-web/streaming-gateway
-            node --env-file=.env scripts/repair-broadcast-channels.js --apply
