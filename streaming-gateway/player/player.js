@@ -56,7 +56,7 @@ const INITIAL_LOAD_TIMEOUT_MS = 18000;
 const QUALITY_STALL_TIMEOUT_MS = 7000;
 const RETRY_BASE_DELAY_MS = 900;
 const EMBED_HASH_LENGTH = 12;
-const PROTECTED_SELECTOR = '[data-integrity-protected="true"], .broadcast-decoy, .player-brand-overlay, .ad-sidebar';
+const PROTECTED_SELECTOR = '[data-integrity-protected="true"]';
 const OVERLAY_SELECTOR = 'a[href], button, iframe, [onclick], [role="link"]';
 let tamperObserver;
 let tamperInterval;
@@ -119,19 +119,8 @@ async function withRetry(operation, label, retries = 3) {
 }
 
 function embedIntegrityOk() {
-  if (!isFramed()) return true;
-  const viewportOk = window.innerWidth >= 320 && window.innerHeight >= 420;
-  const ads = [...document.querySelectorAll('.ad-sidebar')];
-  const adsOk = ads.length >= 2 && ads.every((ad) => {
-    const style = getComputedStyle(ad);
-    const rect = ad.getBoundingClientRect();
-    return style.display !== 'none'
-      && style.visibility !== 'hidden'
-      && Number(style.opacity) > 0
-      && rect.width >= 90
-      && rect.height >= 80;
-  });
-  return viewportOk && adsOk;
+  // Optional ads and small embedded viewports must never interrupt playback.
+  return true;
 }
 
 function elementIsVisible(element) {
@@ -152,7 +141,7 @@ function protectedElementsOk() {
     const inlineOpacity = Number(element.style.opacity);
     if (element.hidden || element.getAttribute('aria-hidden') === 'true' && element.hasAttribute('hidden')) return false;
     if (element.style.display === 'none' || element.style.visibility === 'hidden') return false;
-    if (Number.isFinite(inlineOpacity) && inlineOpacity <= 0.05) return false;
+    if (element.style.opacity !== '' && Number.isFinite(inlineOpacity) && inlineOpacity <= 0.05) return false;
     if (style.display === 'none' || style.visibility === 'hidden') {
       return false;
     }
@@ -325,11 +314,7 @@ function arabicTeamLabel(match, side) {
 
 function updateChannelLabel(channelName) {
   const channel = cleanText(channelName);
-  const badge = document.getElementById('broadcast-channel-name');
   const label = document.getElementById('match-channel-name');
-  const overlay = document.querySelector('.broadcast-decoy');
-  if (badge) badge.textContent = channel || 'القناة غير محددة';
-  if (overlay) overlay.hidden = false;
   if (label) label.textContent = channel ? `القناة المرتبطة: ${channel}` : 'لم تُحدد قناة موثقة لهذه المباراة';
 }
 

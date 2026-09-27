@@ -14,7 +14,7 @@ import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mj
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
-const playerSources = "script-src 'self' https: 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; media-src blob:; connect-src https:; worker-src blob:; frame-src https:";
+const playerSources = "script-src 'self'; style-src 'self'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src blob:; frame-src 'self'";
 
 function originFromHeader(value) {
   if (!value) return '';

@@ -29,7 +29,7 @@ for (const asset of ['plyr.js', 'plyr.css', 'plyr.svg']) {
 await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\nconst STREAM_API_ORIGINS = new Set(${JSON.stringify(apiOrigins)});\n`);
 await writeFile('dist/headers.txt', [
   'Set these HTTP response headers on the player host:',
-  `Content-Security-Policy: default-src 'none'; script-src 'self' https: 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; media-src blob:; connect-src https:; worker-src blob:; frame-src https:; frame-ancestors 'self' ${frameAncestors}; base-uri 'none'; form-action 'none'`,
+  `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src blob:; frame-src 'self'; frame-ancestors 'self' ${frameAncestors}; base-uri 'none'; form-action 'none'`,
   'Referrer-Policy: strict-origin-when-cross-origin',
   'Cache-Control: no-store',
   'X-Content-Type-Options: nosniff',

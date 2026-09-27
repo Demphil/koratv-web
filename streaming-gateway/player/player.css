@@ -142,11 +142,6 @@ video {
   user-select: none;
 }
 
-.player-container .plyr--hide-controls ~ .broadcast-decoy,
-.player-container .plyr--hide-controls ~ .player-brand-overlay {
-  opacity: 0;
-  transform: translateY(8px);
-}
 
 .player-tool-button {
   position: absolute;
@@ -1161,8 +1156,8 @@ body.tamper-lock .player-container {
 
 @media (min-width: 992px) {
   .layout-wrapper {
-    flex-direction: row;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .ad-sidebar {
@@ -1227,4 +1222,61 @@ body.tamper-lock .player-container {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
   .match-panel, .match-panel:hover, .match-api-node:hover { transform: none; }
+}
+
+/* Branding coordinates are relative to the visible video, including letterboxing. */
+.player-heading {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 36px; padding: 4px 12px; margin-bottom: 8px;
+  background: #173e35; border-bottom: 2px solid #52cca0; border-radius: 6px;
+  color: #fff; font-size: 14px; letter-spacing: 0;
+}
+.morocco-flag { width: 24px; height: 16px; object-fit: cover; border-radius: 2px; }
+.heading-live { color: #9be7c7; font-size: 11px; }
+.video-picture-overlay {
+  position: absolute; inset: 0 auto auto 0; width: 100%; height: 100%;
+  z-index: 4; pointer-events: none; container-type: inline-size;
+}
+.picture-brand {
+  position: absolute; right: 3.5%; top: 6%; width: 18%; aspect-ratio: 3.2;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  background: #133e34; color: #fff; border: 1px solid #c8f6e3; border-radius: 5px;
+  box-shadow: 0 2px 7px #0008; direction: ltr; overflow: hidden;
+}
+.picture-brand strong { font: 900 clamp(10px, 3cqw, 40px)/1 Arial, sans-serif; white-space: nowrap; }
+.picture-brand strong span { color: #75e5b9; margin-left: 3px; }
+.picture-brand small { font: 700 clamp(5px, 0.7cqw, 10px)/1.3 Arial, sans-serif; }
+.picture-app-promo {
+  position: absolute; bottom: 13%; left: 25%; width: 50%;
+  display: flex; justify-content: center; align-items: center; gap: 8px;
+  color: #fff; text-shadow: 0 1px 4px #000; font-size: 14px; font-weight: 700;
+}
+.picture-app-promo b { color: #a4f4d4; margin-inline-start: 6px; }
+.app-icon {
+  display: inline-flex; flex-direction: column; justify-content: center; align-items: center;
+  flex: 0 0 30px; height: 34px; border: 1px solid #bcffe3; border-radius: 7px;
+  background: #164f3f; font: 900 20px/1 Arial, sans-serif; text-shadow: none;
+}
+.app-icon span { font-size: 9px; }
+.player-container .player-tool-button {
+  width: 36px; height: 28px; left: 10px; padding: 0; border-radius: 4px;
+  background: #111b1fe0; border-color: #ffffff38; box-shadow: none;
+}
+.player-container .embed-button { top: 10px; font-size: 12px; }
+.player-container .refresh-stream { top: 42px; font-size: 20px; }
+.ad-click-shield {
+  position: absolute; inset: 0 0 48px; z-index: 6; width: 100%;
+  border: 0; border-radius: 0; background: transparent; cursor: pointer;
+}
+.ad-click-shield:focus-visible { outline: 2px solid #75e5b9; outline-offset: -3px; }
+.ad-slot { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
+.ad-slot iframe { display: block; width: 100%; border: 0; background: transparent; }
+@media (max-width: 620px) {
+  .player-heading { min-height: 30px; font-size: 12px; }
+  .picture-app-promo { bottom: 22%; gap: 5px; left: 20%; width: 60%; font-size: 10px; }
+  .app-icon { flex-basis: 20px; height: 23px; border-radius: 4px; font-size: 14px; }
+  .app-icon span { font-size: 6px; }
+  .player-container .player-tool-button { width: 28px; height: 24px; left: 6px; }
+  .player-container .embed-button { top: 6px; }
+  .player-container .refresh-stream { top: 34px; }
 }
