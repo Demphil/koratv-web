@@ -6,6 +6,14 @@ import { join } from 'node:path';
 import { AccountHealth } from '../account-health.js';
 import { ProviderPool, PROVIDER_IDS, PoolError } from '../provider-pool.js';
 
+test('diagnostic heartbeats preserve slow in-flight leases without resurrecting revoked leases', t => {
+  let now = 0; const pool = new ProviderPool({ now: () => now }); t.after(() => pool.close());
+  const lease = pool.acquire({ match_id: 'slow', provider_sources: { A: 'https://a.example/slow' } }, 'probe');
+  now = 14000; assert.equal(pool.touch(lease, 'probe'), true);
+  now = 20000; pool.rebalance(); assert.equal(pool.valid(lease), true);
+  pool.revoke('A'); assert.equal(pool.touch(lease, 'probe'), false);
+});
+
 test('six accounts isolate the seventh request and fail over only to free accounts', t => {
   const pool = new ProviderPool(); t.after(() => pool.close());
   const playback = id => ({ pool_key: id, match_id: id, channel_id: id, priority_score: 100,

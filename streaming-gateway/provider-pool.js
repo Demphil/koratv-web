@@ -18,6 +18,13 @@ export class ProviderPool {
   close() { clearInterval(this.timer); this.health?.close(); for (const lease of this.leases.values()) lease.controller.abort(); }
   score(demand) { return demand.base + demand.viewers.size * priorityMatrix.viewerPoints; }
   valid(lease) { return this.leases.get(lease.provider) === lease && !lease.controller.signal.aborted; }
+  touch(lease, viewer) {
+    if (!this.valid(lease)) return false;
+    const demand = this.demands.get(lease.key);
+    if (!demand) return false;
+    demand.lastSeen = this.now(); demand.viewers.set(viewer, this.now());
+    return true;
+  }
   revoke(provider) {
     const lease = this.leases.get(provider);
     lease?.controller.abort(); this.leases.delete(provider);

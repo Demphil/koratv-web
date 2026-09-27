@@ -392,6 +392,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   app.post('/internal/accounts-probe', accountAdmin, async (req, res) => {
     if (!providerPool || !config.providerChannels || probeRunning) return res.sendStatus(409);
     probeRunning = true;
+    const diagnosticLeases = new Map();
+    const heartbeat = setInterval(() => {
+      for (const [provider, lease] of diagnosticLeases) providerPool.touch(lease, `internal-diagnostic-${provider}`);
+    }, 5000);
+    heartbeat.unref();
     try {
       const channels = config.providerChannels();
       const used = new Set([...providerPool.leases.values()].map(lease => providerPool.demands.get(lease.key)?.channel));
@@ -411,6 +416,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         try {
           const lease = providerPool.acquire(job.playback, `internal-diagnostic-${job.provider}`);
           if (lease.provider !== job.provider) return { ...result, error: 'lease_changed' };
+          diagnosticLeases.set(job.provider, lease);
           let url = new URL(lease.url), playlist = '';
           const headers = { 'User-Agent': config.upstreamUserAgent, Accept: '*/*' };
           for (let depth = 0; depth < 4; depth++) {
@@ -439,7 +445,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       }));
       accountHealth?.persist();
       res.json({ results, accounts: accountHealth?.snapshot() || [] });
-    } finally { probeRunning = false; }
+    } finally { clearInterval(heartbeat); probeRunning = false; }
   });
 
   app.get('/healthz', async (req, res) => {
