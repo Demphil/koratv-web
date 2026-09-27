@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { mkdir, readFile, writeFile, rename, chmod, access } from 'node:fs/promises';
 import { matchChannels, normalizeName } from '../../secure-streaming/scripts/import-m3u.js';
 import { createHash } from 'node:crypto';
+import { selectProviderChannel } from '../provider-catalog.js';
 
 const dir = process.env.PROVIDER_POOL_DIR || '/etc/koratv';
 const credentials = JSON.parse(process.env.IPTV_PROVIDER_B_JSON || '{}');
@@ -48,14 +49,14 @@ for (const row of channels) {
   if (parts.includes(credentials.username) && parts.includes(credentials.password)) throw new Error('Provider A and B must be independent accounts');
 }
 const matched = matchChannels(channels.map(c => c.name), entries, { candidatesPerChannel: 30 });
-const qualityRank = candidate => /\b(?:4k|uhd|fhd|1080p)\b/i.test(candidate.source_name) ? 1 : /\b(?:hd|720p)\b/i.test(candidate.source_name) ? 0 : 2;
 const catalog = { updatedAt: new Date().toISOString(), providers: { B: { enabled: true, maxConnections: 1, expiresAt: new Date(expiresAt).toISOString(),
   firstActivatedAt: new Date(firstActivatedAt).toISOString(), fingerprint, expirySource: providerExpiry > 0 ? 'provider' : '24-hour-trial-window' } }, channels: {} };
 for (const match of matched) {
-  const chosen = [...match.candidates].sort((a, b) => qualityRank(a) - qualityRank(b) || a.source_name.localeCompare(b.source_name))[0];
+  const chosen = selectProviderChannel(match);
+  if (!chosen) continue;
   catalog.channels[match.name] = { B: chosen.original_url, sourceName: chosen.source_name };
 }
-if (!matched.length) throw new Error('No sports channels matched; existing pool catalog preserved');
+if (!Object.keys(catalog.channels).length) throw new Error('No sports channels matched; existing pool catalog preserved');
 await mkdir(dir, { recursive: true, mode: 0o700 });
 await writeFile(`${dir}/provider-catalog.json.tmp`, JSON.stringify(catalog, null, 2), { mode: 0o600 });
 await rename(`${dir}/provider-catalog.json.tmp`, `${dir}/provider-catalog.json`);
@@ -72,5 +73,5 @@ const syncEnvPath = new URL('../../secure-streaming/.env', import.meta.url);
 const syncEnv = (await readFile(syncEnvPath, 'utf8')).split(/\r?\n/).filter(line => !/^(PROVIDER_POOL_ENABLED|IPTV_VALIDATE_STREAMS|IPTV_SYNC_MASTER_QUALITIES)=/.test(line));
 await writeFile(syncEnvPath, `${syncEnv.join('\n')}\nPROVIDER_POOL_ENABLED=true\nIPTV_VALIDATE_STREAMS=false\nIPTV_SYNC_MASTER_QUALITIES=false\n`, { mode: 0o600 });
 console.log(JSON.stringify({ provider: 'B', max_connections: info.user_info.max_connections, active_cons: info.user_info.active_cons,
-  expiresAt: catalog.providers.B.expiresAt, sportsChannels: entries.length, matchedChannels: matched.length,
-  mapped: matched.map(item => ({ channel: item.name, source: catalog.channels[item.name].sourceName })) }));
+  expiresAt: catalog.providers.B.expiresAt, sportsChannels: entries.length, matchedChannels: Object.keys(catalog.channels).length,
+  mapped: Object.entries(catalog.channels).map(([channel, value]) => ({ channel, source: value.sourceName })) }));

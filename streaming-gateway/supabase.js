@@ -257,7 +257,7 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null)
       qualities: catalog ? [] : qualityVariants.map(({ label, height }) => ({ label, height })),
       quality_sources: catalog ? [] : qualityVariants,
       ...(catalog ? { provider_sources: providerSources,
-        pool_key: `${String(match.kickoff_time).slice(0, 10)}:${payload.broadcast?.sourceMatchId || payload.sourceMatchId || match.match_id}`,
+        pool_key: `${String(match.kickoff_time).slice(0, 10)}:${payload.broadcast?.sourceMatchId || payload.sourceMatchId || match.match_id}:${channel.name}`,
         priority_score: basePriority(match, channel.name), single_quality: true } : {}),
     };
   };

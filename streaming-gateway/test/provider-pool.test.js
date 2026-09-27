@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ProviderPool, PoolError } from '../provider-pool.js';
 import { basePriority } from '../priority.js';
 import { singleQualityManifest } from '../single-quality.js';
+import { selectProviderChannel } from '../provider-catalog.js';
 
 const playback = (id, score = 100, sources = { A: `https://a.example/${id}.m3u8`, B: `https://b.example/${id}.m3u8` }) =>
   ({ match_id: id, pool_key: id, channel_id: id, priority_score: score, provider_sources: sources });
@@ -91,4 +92,11 @@ test('master playlists expose one 720p rendition and no I-frame stream', () => {
   const result = singleQualityManifest(manifest);
   assert.equal((result.match(/#EXT-X-STREAM-INF:/g) || []).length, 1);
   assert.match(result, /720.m3u8/); assert.doesNotMatch(result, /1080.m3u8|360.m3u8|iframe.m3u8/);
+});
+
+test('catalog chooses one quality but rejects different channel editions', () => {
+  const candidates = ['AR | BEIN-SPORTS 1 FHD', 'AR | BEIN-SPORTS 1 HD', 'AR | BEIN-SPORTS 12 HD'].map(source_name => ({ source_name }));
+  assert.equal(selectProviderChannel({ name: 'beIN SPORTS HD 1', candidates }).source_name, 'AR | BEIN-SPORTS 1 HD');
+  assert.equal(selectProviderChannel({ name: 'Arryadia S/D', candidates: [{ source_name: 'MA| ARRYADIA OLYMPICS SD' }] }), null);
+  assert.equal(selectProviderChannel({ name: 'أون سبورت 2', candidates: [{ source_name: 'EGY| ON SPORT PLUS HD' }] }), null);
 });

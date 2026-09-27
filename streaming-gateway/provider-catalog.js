@@ -1,4 +1,12 @@
 import { readFileSync } from 'node:fs';
+import { findChannelNameMatch } from '../shared/channel-name-match.mjs';
+
+export function selectProviderChannel(match) {
+  const qualityRank = candidate => /\b(?:4k|uhd|fhd|1080p)\b/i.test(candidate.source_name) ? 1 : /\b(?:hd|720p)\b/i.test(candidate.source_name) ? 0 : 2;
+  return [...(match.candidates || [])]
+    .filter(candidate => findChannelNameMatch(match.name, [candidate.source_name]) === candidate.source_name)
+    .sort((a, b) => qualityRank(a) - qualityRank(b) || a.source_name.localeCompare(b.source_name))[0] || null;
+}
 
 export function createProviderCatalog(env = process.env) {
   let catalog = { channels: {} }, overrides = { matches: {} }, checked = 0;
