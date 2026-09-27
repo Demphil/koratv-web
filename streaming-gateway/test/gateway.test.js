@@ -59,6 +59,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
           ],
           substitutes: []
         }],
+        standingsVersion: 2,
         standings: [{ rank: 1, team: 'Botafogo', points: 42 }],
         venue: 'Test Stadium', referee: 'Test Referee'
       },
