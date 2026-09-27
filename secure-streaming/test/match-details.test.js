@@ -73,7 +73,7 @@ test("two live fixtures and their lineups are enriched by one batched fixture re
     const parsed = new URL(url);
     requests.push(parsed);
     const body = parsed.pathname.endsWith("/standings") ? {
-      response: [{ league: { standings: [[{ rank: 1, points: 12, goalsDiff: 4, team: { name: "Home" }, all: { played: 4 } }]] } }]
+      response: [{ league: { standings: [[{ rank: 1, points: 12, goalsDiff: 4, team: { id: 1, name: "Home" }, all: { played: 4 } }, { rank: 2, team: { id: 2, name: "Away" } }]] } }]
     } : {
       response: [101, 202].map((id) => ({
         fixture: { id, venue: { name: "City Stadium", city: "Rabat" }, referee: "Official" },
@@ -88,7 +88,7 @@ test("two live fixtures and their lineups are enriched by one batched fixture re
     const rows = [101, 202].map((id, index) => ({
       home_team: index ? "Home 2" : "Home", away_team: index ? "Away 2" : "Away",
       kickoff_time: new Date(now - 10 * 60_000).toISOString(),
-      payload: { sourceFixtureId: id, leagueId: 39, season: 2026, isLive: true }
+      payload: { sourceFixtureId: id, leagueId: 39, season: 2026, isLive: true, homeTeamId: 1, awayTeamId: 2 }
     }));
     await enrichApiFootballMatchDetails(rows);
 
@@ -103,4 +103,11 @@ test("two live fixtures and their lineups are enriched by one batched fixture re
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('standings select the fixture group before truncation, not the first 40 unrelated teams', () => {
+  const unrelated = Array.from({ length: 40 }, (_, i) => ({ team: { id: i + 10, name: `Other ${i}` } }));
+  const wanted = [{ team: { id: 1, name: 'Gibraltar' }, rank: 2 }, { team: { id: 2, name: 'Andorra' }, rank: 3 }];
+  const rows = normalizeApiFootballStandings([unrelated, wanted], { payload: { homeTeamId: 1, awayTeamId: 2 } });
+  assert.deepEqual(rows.map(row => row.team), ['Gibraltar', 'Andorra']);
 });

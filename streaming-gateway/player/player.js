@@ -281,9 +281,25 @@ function formatEventMinute(event) {
 
 function renderPlayerCard(player) {
   const grid = String(player.grid || '').match(/^([1-5]):([1-5])$/);
-  const slot = grid ? `slot-${grid[1]}-${grid[2]}` : 'lineup-unplaced';
+  const slot = player.pitchSlot ? 'lineup-positioned' : grid ? `slot-${grid[1]}-${grid[2]}` : 'lineup-unplaced';
+  const position = player.pitchSlot ? ` data-pitch-x="${player.pitchSlot.x}" data-pitch-y="${player.pitchSlot.y}"` : '';
   const photo = player.photo ? `<img src="${escapeHtml(player.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="lineup-player-placeholder">${escapeHtml(teamInitials(player.name))}</span>`;
-  return `<div class="lineup-player ${slot}" title="${escapeHtml(player.name)}">${photo}<b>${escapeHtml(String(player.number || ''))}</b><span>${escapeHtml(cleanText(player.name, 'لاعب'))}</span></div>`;
+  return `<div class="lineup-player ${slot}"${position} title="${escapeHtml(player.name)}">${photo}<b>${escapeHtml(String(player.number || ''))}</b><span>${escapeHtml(cleanText(player.name, 'لاعب'))}</span></div>`;
+}
+
+function positionLineup(players) {
+  const rows = new Map();
+  for (const player of players) {
+    const grid = String(player.grid || '').match(/^([1-5]):([1-5])$/);
+    if (!grid) continue;
+    const row = Number(grid[1]);
+    if (!rows.has(row)) rows.set(row, []);
+    rows.get(row).push({ ...player, column: Number(grid[2]) });
+  }
+  return [...rows.keys()].sort((a, b) => a - b).flatMap((row, index, keys) =>
+    rows.get(row).sort((a, b) => a.column - b.column).map((player, column, group) => ({
+      ...player, pitchSlot: { x: 100 * (column + 1) / (group.length + 1), y: 12 + index * 76 / Math.max(1, keys.length - 1) },
+    })));
 }
 
 function lineupForSide(match, side) {
@@ -320,7 +336,7 @@ function renderLineups(match) {
   const home = selectedLineupSide === 'home';
   const teamName = home ? match.homeTeam : match.awayTeam;
   const players = lineup?.startXI || [];
-  const placed = players.filter((player) => /^([1-5]):([1-5])$/.test(String(player.grid || '')));
+  const placed = positionLineup(players);
   const unplaced = players.filter((player) => !/^([1-5]):([1-5])$/.test(String(player.grid || '')));
   const teamButtons = `
     <div class="lineup-team-switch" role="group" aria-label="اختيار الفريق">
@@ -329,7 +345,7 @@ function renderLineups(match) {
     </div>`;
   if (!lineup || !players.length) return `${teamButtons}<p class="empty-match-data">لم تصل التشكيلة الرسمية لهذه المباراة بعد.</p>`;
   const pitch = placed.length ? `
-    <div class="lineup-pitch" aria-label="تشكيلة ${escapeHtml(teamName)}">
+    <div class="lineup-pitch lineup-coordinate-pitch" aria-label="تشكيلة ${escapeHtml(teamName)}">
       <div class="pitch-lines" aria-hidden="true"></div>
       ${placed.map(renderPlayerCard).join('')}
     </div>` : '';
@@ -346,7 +362,7 @@ function renderMatchDetail(tab, match) {
   if (tab === 'lineups') return renderLineups(match);
   if (tab === 'standings') {
     const table = Array.isArray(match.standings) ? match.standings : [];
-    return table.length ? `<div class="standings-list">${table.map((row) => `<div><b>${escapeHtml(row.rank || '')}</b><span>${escapeHtml(row.team || row.name || '')}</span><strong>${escapeHtml(row.points ?? '')}</strong></div>`).join('')}</div>`
+    return table.length ? `<div class="standings-table-wrap"><table class="match-standings"><thead><tr><th>#</th><th>الفريق</th><th>لعب</th><th>فارق</th><th>نقاط</th></tr></thead><tbody>${table.map((row) => `<tr><td>${escapeHtml(row.rank || '')}</td><th>${escapeHtml(row.team || row.name || '')}</th><td>${escapeHtml(row.played ?? '')}</td><td>${escapeHtml(row.goalDifference ?? '')}</td><td><strong>${escapeHtml(row.points ?? '')}</strong></td></tr>`).join('')}</tbody></table></div>`
       : '<p class="empty-match-data">جدول الترتيب غير متوفر في بيانات هذه المباراة حالياً.</p>';
   }
   const statisticGroups = Array.isArray(match.statistics) ? match.statistics : [];
@@ -358,7 +374,7 @@ function renderMatchDetail(tab, match) {
   const events = Array.isArray(match.events) && match.events.length ? match.events : (match.goals || []).map((goal) => ({ ...goal, type: 'Goal', detail: 'Goal' }));
   const eventHtml = events.map((event) => `<div class="match-event"><time>${escapeHtml(formatEventMinute(event))}</time><span><b>${escapeHtml(event.player || event.detail || event.type || 'حدث')}</b><small>${escapeHtml([event.team, event.assist ? `تمريرة: ${event.assist}` : '', event.detail].filter(Boolean).join(' · '))}</small></span></div>`).join('');
   return `<div class="match-context-row"><span>${escapeHtml(cleanText(match.league, ''))}</span><b>${escapeHtml(cleanText(match.venue, ''))}${match.venueCity ? ` · ${escapeHtml(match.venueCity)}` : ''}</b>${match.referee ? `<span>الحكم: ${escapeHtml(match.referee)}</span>` : ''}</div>
-    <div class="live-match-events">${eventHtml || '<p class="empty-match-data">لا توجد أحداث مسجلة حتى الآن.</p>'}</div>
+    <div class="live-match-events">${eventHtml || `<p class="empty-match-data">${match.eventDetailsLoaded ? 'لا توجد أحداث مسجلة حتى الآن.' : 'تفاصيل المباراة لم تصل من API-Football بعد.'}</p>`}</div>
     <div class="live-match-statistics">${statRows}</div>`;
 }
 
@@ -372,7 +388,13 @@ function activateMatchApiNode(node) {
   });
   selectedMatchTab = node.dataset.endpoint || 'details';
   const detail = document.getElementById('match-api-detail');
-  if (detail) detail.innerHTML = renderMatchDetail(selectedMatchTab, currentMatchInfo);
+  if (detail) {
+    detail.innerHTML = renderMatchDetail(selectedMatchTab, currentMatchInfo);
+    detail.querySelectorAll('[data-pitch-x]').forEach(player => {
+      player.style.left = `${Number(player.dataset.pitchX)}%`;
+      player.style.top = `${Number(player.dataset.pitchY)}%`;
+    });
+  }
 }
 
 function renderMatchPanel() {
@@ -401,8 +423,8 @@ async function loadMatchPanel(matchId) {
     setText('match-away-name', match.awayTeam || '');
     const homeArabic = document.getElementById('match-home-name-ar');
     const awayArabic = document.getElementById('match-away-name-ar');
-    if (homeArabic) { homeArabic.textContent = arabicTeamLabel(match, 'home'); homeArabic.hidden = !homeArabic.textContent; }
-    if (awayArabic) { awayArabic.textContent = arabicTeamLabel(match, 'away'); awayArabic.hidden = !awayArabic.textContent; }
+    if (homeArabic) { homeArabic.textContent = arabicTeamLabel(match, 'home'); homeArabic.hidden = !homeArabic.textContent || homeArabic.textContent === match.homeTeam; }
+    if (awayArabic) { awayArabic.textContent = arabicTeamLabel(match, 'away'); awayArabic.hidden = !awayArabic.textContent || awayArabic.textContent === match.awayTeam; }
     setText('match-score', cleanScore(match.score));
     setText('match-minute', match.playbackState === 'ended' ? 'النتيجة النهائية' : match.liveMinute != null && Number.isFinite(Number(match.liveMinute)) ? `الدقيقة ${match.liveMinute}` : match.time || '');
     setText('match-yellow-cards', String(cardTotal(match.yellowCards)));

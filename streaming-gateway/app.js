@@ -150,6 +150,8 @@ function normalizeMatch(row, config) {
     dataSource: payload.dataSource || row.source || '',
     sourceFixtureId: payload.sourceFixtureId || payload.sourceMatchId || '',
     eventDetailsLoaded: payload.eventDetailsLoaded === true,
+    detailsState: payload.detailsState || (payload.eventDetailsLoaded ? 'ready' : 'pending'),
+    detailsUpdatedAt: payload.detailsUpdatedAt || null,
     updatedAt: row.updated_at
   };
 }

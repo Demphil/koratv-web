@@ -218,8 +218,12 @@ export function normalizeApiFootballStatistics(statistics = []) {
   }));
 }
 
-export function normalizeApiFootballStandings(groups = []) {
+export function normalizeApiFootballStandings(groups = [], fixture = null) {
   if (!Array.isArray(groups)) return [];
+  if (fixture) {
+    groups = groups.filter(group => Array.isArray(group) && [fixture.payload?.homeTeamId, fixture.payload?.awayTeamId]
+      .every(id => id && group.some(row => String(row.team?.id) === String(id))));
+  }
   return groups.flat().slice(0, 40).map((row) => ({
     rank: Number(row?.rank) || null,
     team: String(row?.team?.name || "").slice(0, 90),
@@ -704,16 +708,16 @@ export async function enrichApiFootballMatchDetails(rows) {
 
   if (standingsLimit > 0) {
     const dueLeagues = [...new Map(rows.filter((row) => row.payload?.leagueId && row.payload?.season)
-      .filter((row) => now - new Date(row.payload?.standingsUpdatedAt || 0).getTime() >= standingsRefreshMs)
+      .filter((row) => row.payload?.standingsVersion !== 2 || now - new Date(row.payload?.standingsUpdatedAt || 0).getTime() >= standingsRefreshMs)
       .map((row) => [`${row.payload.leagueId}:${row.payload.season}`, row])).values()]
       .slice(0, standingsLimit);
     for (const row of dueLeagues) {
       try {
         const response = await fetchApiFootball("/standings", { league: row.payload.leagueId, season: row.payload.season });
-        const standings = normalizeApiFootballStandings(response[0]?.league?.standings || []);
         const leagueKey = `${row.payload.leagueId}:${row.payload.season}`;
         for (const related of rows.filter((item) => `${item.payload?.leagueId}:${item.payload?.season}` === leagueKey)) {
-          related.payload = { ...related.payload, standings, standingsUpdatedAt: new Date(now).toISOString() };
+          const standings = normalizeApiFootballStandings(response[0]?.league?.standings || [], related);
+          related.payload = { ...related.payload, standings, standingsVersion: 2, standingsUpdatedAt: new Date(now).toISOString() };
         }
       } catch (error) {
         console.warn(`API-Football standings failed for league ${row.payload.leagueId}: ${error.message}`);

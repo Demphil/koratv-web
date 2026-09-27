@@ -1085,6 +1085,12 @@ body.tamper-lock .player-container {
 .lineup-pitch { position: relative; display: grid; grid-template: repeat(5, minmax(68px, auto)) / repeat(5, minmax(0, 1fr)); gap: 2px; min-height: 350px; margin: 10px 0; padding: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.38); border-radius: 8px; background: linear-gradient(90deg, transparent calc(50% - 1px), rgba(255,255,255,0.25) 50%, transparent calc(50% + 1px)), linear-gradient(180deg, #168355, #096844); }
 .pitch-lines { position: absolute; inset: 50% 0 auto; height: 1px; background: rgba(255,255,255,0.22); pointer-events: none; }
 .lineup-player { z-index: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-align: center; color: #fff; text-shadow: 0 1px 3px #003b27; }
+.lineup-coordinate-pitch { display: block; height: 460px; min-height: 460px; }
+.lineup-coordinate-pitch .lineup-positioned { position: absolute; width: 17%; max-width: 120px; transform: translate(-50%, -50%); }
+.standings-table-wrap { width: 100%; overflow-x: auto; }
+.match-standings { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.match-standings th, .match-standings td { padding: 10px 6px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.12); }
+.match-standings tbody th { text-align: start; }
 .lineup-player img,.lineup-player-placeholder { width: 40px; height: 40px; object-fit: cover; border: 2px solid #fff; border-radius: 50%; background: #e8eceb; }
 .lineup-player-placeholder { display: grid; place-items: center; color: #173d30; font-size: 0.72rem; font-weight: 900; text-shadow: none; }
 .lineup-player b { font-size: 0.68rem; }

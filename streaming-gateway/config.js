@@ -1,4 +1,5 @@
 import { createMatchesReader, createPlaybackResolver } from './supabase.js';
+import { attachApiFootballDetails } from '../shared/match-details.mjs';
 
 function sourceForOrigin(origin, { koratvOrigins, frajaOrigins }) {
   if (koratvOrigins.has(origin)) return 'kooora';
@@ -77,7 +78,12 @@ export function loadConfig(env = process.env) {
     getMatches: getApiFootballMatches,
     getMatchesForOrigin: async (origin, matchId = '') => {
       const source = sourceForMatchId(matchId) || sourceForOrigin(origin, { koratvOrigins, frajaOrigins });
-      if (source === 'kooora') return getKoooraMatches();
+      if (source === 'kooora') {
+        const rows = await getKoooraMatches();
+        if (!matchId) return rows;
+        const row = rows.find(item => item.match_id === matchId || item.id === matchId);
+        return row ? [attachApiFootballDetails(row, await getApiFootballMatches())] : [];
+      }
       if (source === 'api-football') return getApiFootballMatches();
       return [...await getApiFootballMatches(), ...await getKoooraMatches()];
     },
