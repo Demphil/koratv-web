@@ -888,8 +888,7 @@ document.addEventListener('click', (event) => {
   const side = event.target.closest?.('[data-lineup-side]');
   if (side && currentMatchInfo) {
     selectedLineupSide = side.dataset.lineupSide;
-    const detail = document.getElementById('match-api-detail');
-    if (detail) detail.innerHTML = renderLineups(currentMatchInfo);
+    renderMatchPanel();
   }
 });
 document.addEventListener('keydown', (event) => {
@@ -899,8 +898,7 @@ document.addEventListener('keydown', (event) => {
   if (node.matches('.match-api-node')) activateMatchApiNode(node);
   else {
     selectedLineupSide = node.dataset.lineupSide;
-    const detail = document.getElementById('match-api-detail');
-    if (detail && currentMatchInfo) detail.innerHTML = renderLineups(currentMatchInfo);
+    if (currentMatchInfo) renderMatchPanel();
   }
 });
 embedModal?.addEventListener('click', (event) => {

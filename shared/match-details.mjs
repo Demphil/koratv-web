@@ -17,7 +17,7 @@ export function attachApiFootballDetails(row, apiRows) {
   return { ...row, payload: {
     ...row.payload,
     ...Object.fromEntries(['events', 'lineups', 'venue', 'venueCity', 'referee', 'standings',
-      'eventDetailsLoaded', 'detailsUpdatedAt', 'standingsUpdatedAt', 'sourceFixtureId', 'status', 'isLive', 'isFinished', 'liveMinute']
+      'eventDetailsLoaded', 'detailsUpdatedAt', 'standingsUpdatedAt', 'standingsVersion', 'sourceFixtureId', 'status', 'isLive', 'isFinished', 'liveMinute']
       .filter(key => Object.hasOwn(p, key)).map(key => [key, p[key]])),
     ...(score ? { score } : {}),
     statistics: reverse ? [...(p.statistics || [])].reverse() : p.statistics || [],

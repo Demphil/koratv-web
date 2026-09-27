@@ -52,3 +52,10 @@ test('pitch centers the goalkeeper and distributes defenders without overlapping
   assert.equal(positioned[4].pitchSlot.x, 80);
   assert.equal(new Set(positioned.map(p => `${p.pitchSlot.x}:${p.pitchSlot.y}`)).size, players.length);
 });
+
+test('team switching reuses the positioned panel renderer for pointer and keyboard input', () => {
+  const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
+  assert.match(source, /selectedLineupSide = side.dataset.lineupSide;\s+renderMatchPanel\(\)/);
+  assert.match(source, /selectedLineupSide = node.dataset.lineupSide;\s+if \(currentMatchInfo\) renderMatchPanel\(\)/);
+  assert.doesNotMatch(source, /detail.innerHTML = renderLineups/);
+});

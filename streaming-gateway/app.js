@@ -146,7 +146,7 @@ function normalizeMatch(row, config) {
     venue: cleanText(payload.venue).slice(0, 120),
     venueCity: cleanText(payload.venueCity).slice(0, 90),
     referee: cleanText(payload.referee).slice(0, 90),
-    standings: Array.isArray(payload.standings) ? payload.standings.slice(0, 40) : [],
+    standings: payload.standingsVersion === 2 && Array.isArray(payload.standings) ? payload.standings.slice(0, 40) : [],
     dataSource: payload.dataSource || row.source || '',
     sourceFixtureId: payload.sourceFixtureId || payload.sourceMatchId || '',
     eventDetailsLoaded: payload.eventDetailsLoaded === true,
