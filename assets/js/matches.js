@@ -37,6 +37,8 @@ function hideLoading() {
 window.openWaitModal = function(message) {
     const modal = document.getElementById('wait-modal');
     if (modal) {
+        const titleElement = modal.querySelector('h2, h3');
+        if (titleElement) titleElement.innerText = 'حالة البث المباشر';
         const msgElement = modal.querySelector('p');
         if (msgElement && message) msgElement.innerText = message;
         modal.style.display = 'flex';

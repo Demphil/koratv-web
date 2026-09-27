@@ -175,7 +175,18 @@ function channelRule(name) {
 function scoreEntry(entry, rule) {
   const text = entry.search;
   const raw = `${entry.rawName || entry.name} ${entry.group || ""}`.toLowerCase();
-  if (!rule.required.every((token) => text.includes(token))) return -1;
+  const words = new Set(text.split(/\s+/));
+  if (!rule.required.every((token) => words.has(token))) return -1;
+  if (rule.required.includes('bein')) {
+    const nameWords = new Set(normalizeName(entry.name).split(/\s+/));
+    const number = rule.required.find((token) => /^\d+$/.test(token));
+    if (number && !nameWords.has(number)) return -1;
+    for (const variant of ['max', 'xtra', 'premium', 'eng', 'english']) {
+      if (nameWords.has(variant) !== rule.required.includes(variant)) return -1;
+    }
+    if (/\b(?:france|french|turkey|turkish|usa|canada|australia)\b/i.test(raw)
+      || /^(?:fr|tr|us|ca|au)\s*[|:-]/i.test(entry.rawName || entry.name)) return -1;
+  }
   if (rule.channelVariant === "tnt" && !/\btnt\b/i.test(raw)) return -1;
   if (rule.channelVariant === "sd" && !/(?:\bs\s*\/\s*d\b|\bsd\b)/i.test(raw)) return -1;
   let score = rule.required.length * 10;
@@ -251,6 +262,12 @@ export function matchChannels(streamNames, m3uEntries, options = {}) {
         pushUniqueEntry(candidates, entry);
       }
 
+      const rule = channelRule(name);
+      if (rule?.required.includes('bein')) {
+        for (let index = candidates.length - 1; index >= 0; index -= 1) {
+          if (scoreEntry(candidates[index], rule) < 0) candidates.splice(index, 1);
+        }
+      }
       const entry = candidates[0] || findByRule(name, m3uEntries);
       if (!entry) return null;
 

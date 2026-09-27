@@ -1,6 +1,6 @@
 const PREFIX_NOISE = new Set(['ar', 'spi', 'ma', 'iptv', 'live', 'tv', 'channel', 'chan', 'stream']);
 const QUALITY_LABELS = new Set(['hd', 'fhd', 'uhd', '4k', '8k', 'fullhd']);
-const VARIANT_LABELS = new Set(['tnt', 'sd', 'plus', 'max', 'premium', 'terrestrial']);
+const VARIANT_LABELS = new Set(['tnt', 'sd', 'plus', 'max', 'premium', 'terrestrial', 'eng', 'english', 'fr', 'french', 'tr', 'turkish', 'xtra']);
 
 function tokensFor(value) {
   const normalized = String(value || '')
@@ -10,8 +10,12 @@ function tokensFor(value) {
     .replace(/ى/g, 'ي')
     .replace(/ة/g, 'ه')
     .replace(/\bs\s*\/\s*d\b/giu, ' sd ')
+    .replace(/\b(hd|fhd|uhd)(\d{1,2})\b/giu, '$1 $2')
     .replace(/[^a-z0-9\p{L}]+/giu, ' ')
     .toLowerCase()
+    .replace(/\bsport\b/g, 'sports')
+    .replace(/\b0([1-9])\b/g, '$1')
+    .replace(/\bbein\s+sports\s+mena\b/g, 'bein sports')
     .replace(/(?:الرياضيه\s+المغربيه|المغربيه\s+الرياضيه)/gu, ' arryadia ')
     .replace(/\barryadia\s+(?:hd\s*3|3\s*hd|3)\b/giu, 'arryadia tnt')
     .replace(/\b(?:arr?y?adia|arriadia)\b/giu, 'arryadia');
@@ -37,7 +41,7 @@ function editSimilarity(left, right) {
 }
 
 function variantOf(tokens) {
-  return tokens.find((token) => /^\d{1,2}$/.test(token) || VARIANT_LABELS.has(token)) || '';
+  return tokens.filter((token) => /^\d{1,2}$/.test(token) || VARIANT_LABELS.has(token)).sort().join(':');
 }
 
 function baseTokens(tokens) {
@@ -76,6 +80,8 @@ function explicitVariant(value) {
 }
 
 export function findChannelNameMatch(requested, candidates) {
+  const exact = (candidates || []).find((name) => typeof name === 'string' && name.toLowerCase() === String(requested || '').toLowerCase());
+  if (exact) return exact;
   let ranked = (candidates || [])
     .filter((candidate) => typeof candidate === 'string' && candidate.trim())
     .map((name) => ({ name, score: scoreName(requested, name) }))

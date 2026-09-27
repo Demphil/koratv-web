@@ -81,3 +81,28 @@ test('Kooora legacy channel aliases resolve to the exact active IPTV channel', a
     globalThis.fetch = originalFetch;
   }
 });
+
+test('reader and ticket resolver choose an available broadcaster from the verified list', async () => {
+  const originalFetch = globalThis.fetch;
+  const fixture = {
+    id: 'api-fixture', match_id: 'api-fixture', active: true, source: 'api-football',
+    kickoff_time: new Date(Date.now() - 60000).toISOString(), channel: 'SNRT Live',
+    payload: { status: 'HT', broadcast: { source: 'kooora', channels: ['SNRT Live', 'Arryadia HD 3'] } },
+  };
+  const channel = { id: 1, name: 'Arryadia TNT', active: true, original_url: 'https://media.example.com/live/1.m3u8' };
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    const body = url.pathname.endsWith('/matches') ? [fixture]
+      : url.searchParams.has('name') ? [] : [channel];
+    return Response.json(body);
+  };
+  try {
+    const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' };
+    const [row] = await createMatchesReader(env)();
+    assert.equal(row.source_ready, true);
+    assert.equal(row.channel, 'Arryadia TNT');
+    const playback = await createPlaybackResolver(env)(fixture.match_id);
+    assert.equal(playback.channel_id, row.channel);
+    assert.equal(playback.is_streaming_active, true);
+  } finally { globalThis.fetch = originalFetch; }
+});

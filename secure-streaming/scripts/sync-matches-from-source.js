@@ -3,13 +3,12 @@ import * as cheerio from "cheerio";
 import { fileURLToPath } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
 import { isAllowedMatch, normalizeTeamName } from "../../shared/league-whitelist.mjs";
-import { findChannelNameMatch } from "../../shared/channel-name-match.mjs";
+import { reconcileBroadcasts, mergeRefreshedMatch } from "../../shared/match-broadcasts.mjs";
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
 const dryRun = process.argv.includes("--dry-run");
-const enrichAfterSync = process.env.GEMINI_ENRICH_AFTER_MATCH_SYNC === "true";
 const apiFootballKey = process.env.API_FOOTBALL_KEY
   || process.env.APIFOOTBALL_KEY
   || process.env.FOOTBALL_API_KEY
@@ -25,25 +24,6 @@ const apiFootballTodayRefreshMs = Math.max(5, Number(process.env.API_FOOTBALL_TO
 const apiFootballTomorrowRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_TOMORROW_REFRESH_HOURS || 12)) * 60 * 60_000;
 const apiFootballFixtureCache = new Map();
 
-const KOOORA_LEAGUE_CHANNEL_FALLBACKS = [
-  { pattern: /الدوري الانجليزي الممتاز|premier league/i, channels: ["beIN SPORTS HD 2", "beIN SPORTS HD 1"] },
-  { pattern: /الدوري الاسباني|la ?liga/i, channels: ["beIN SPORTS HD 3", "beIN SPORTS Mena 3", "beIN SPORTS HD 4"] },
-  { pattern: /الدوري الفرنسي|ligue 1/i, channels: ["beIN SPORTS HD 1", "beIN SPORTS HD 5"] },
-  { pattern: /الدوري الالماني|bundesliga/i, channels: ["beIN SPORTS HD 5", "beIN SPORTS HD 7"] },
-  { pattern: /الدوري الايطالي|serie a/i, channels: ["beIN SPORTS HD 4", "beIN SPORTS HD 1"] },
-  { pattern: /دوري ابطال اوروبا|champions league/i, channels: ["beIN SPORTS HD 1", "beIN SPORTS HD 2", "beIN SPORTS HD 3"] },
-  { pattern: /الدوري الاوروبي|europa league/i, channels: ["beIN SPORTS HD 1", "beIN SPORTS HD 2"] },
-  { pattern: /دوري المؤتمر الاوروبي|conference league/i, channels: ["beIN SPORTS HD 3", "beIN SPORTS HD 4"] },
-  { pattern: /كاس السوبر الاوروبي|european super cup/i, channels: ["beIN SPORTS HD 1"] },
-  { pattern: /دوري الامم الاوروبيه|nations league/i, channels: ["beIN SPORTS HD 1", "beIN SPORTS HD 2"] },
-  { pattern: /بطوله امم اوروبا|uefa euro|كاس امم افريقيا|afcon/i, channels: ["beIN SPORTS MAX 1", "beIN SPORTS MAX 2", "beIN SPORTS HD 1"] },
-  { pattern: /دوري ابطال افريقيا|كاس الكونف|كاس السوبر الافريقي|بطوله امم افريقيا للمحليين/i, channels: ["beIN SPORTS HD 6", "beIN SPORTS HD 7", "beIN SPORTS HD 1"] },
-  { pattern: /الدوري المصري الممتاز/i, channels: ["On Time Sports 1", "ON TIME SPORTS 2", "أون سبورت 1"] },
-  { pattern: /البطوله الوطنيه الاحترافيه المغربيه|البطولة الوطنية الاحترافية المغربية|الدوري المغربي|botola/i, channels: ["الرياضية المغربية", "Arryadia TNT", "الرياضية المغربية 1"] },
-  { pattern: /الرابطه التونسيه المحترفه الاولي|الرابطة التونسية المحترفة الأولى/i, channels: ["beIN SPORTS HD 6", "beIN SPORTS HD 7"] },
-  { pattern: /الرابطه الجزائريه المحترفه الاولي|الرابطة الجزائرية المحترفة الأولى/i, channels: ["beIN SPORTS HD 6", "beIN SPORTS HD 7"] },
-  { pattern: /دوري روشن السعودي|saudi pro/i, channels: ["ثمانية 1", "ثمانية 2", "ثمانية 3"] },
-];
 
 function moroccoDateParts(offsetDays = 0) {
   const now = new Date();
@@ -312,9 +292,6 @@ async function collectApiFootballRows() {
           isLive: status.isLive,
           isFinished: status.isFinished,
           liveMinute: status.liveMinute,
-          goals: [],
-          yellowCards: null,
-          redCards: null,
           time: new Intl.DateTimeFormat("en-GB", {
             timeZone: "Africa/Casablanca", hourCycle: "h23", hour: "2-digit", minute: "2-digit"
           }).format(new Date(kickoff)),
@@ -341,6 +318,7 @@ async function collectApiFootballRows() {
 
 async function fetchHtml(url) {
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(20000),
     headers: {
       "user-agent": "Mozilla/5.0 koratv metascrape/1.0",
       "accept": "text/html,application/xhtml+xml"
@@ -557,56 +535,8 @@ function matchMinute(match = {}) {
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-function pickExistingChannel(channelNames, candidates) {
-  for (const candidate of candidates) {
-    const match = findChannelNameMatch(candidate, channelNames);
-    if (match) return match;
-  }
-  return "";
-}
 
-async function readActiveChannelNames(supabase) {
-  const { data, error } = await supabase
-    .from("channels")
-    .select("name,active")
-    .eq("active", true);
-  if (error) {
-    console.warn(`Could not read active channels before Kooora fallback mapping: ${error.message}`);
-    return [];
-  }
-  return (data || []).map((channel) => channel.name).filter(Boolean);
-}
-
-async function applyKoooraChannelFallbacks(supabase, rows) {
-  const channelNames = await readActiveChannelNames(supabase);
-  if (!channelNames.length) return { rows, updated: 0 };
-
-  let updated = 0;
-  const output = rows.map((row) => {
-    if (row.channel) return row;
-    const league = normalizeLookup(row.league);
-    const rule = KOOORA_LEAGUE_CHANNEL_FALLBACKS.find((item) => item.pattern.test(league));
-    const channel = rule ? pickExistingChannel(channelNames, rule.channels) : "";
-    if (!channel) return row;
-    updated += 1;
-    return {
-      ...row,
-      channel,
-      payload: {
-        ...(row.payload || {}),
-        channel,
-        channelResolvedBy: "kooora-league-fallback",
-        channelConfidence: 0.7,
-        channelNotes: "Kooora did not expose tvChannels for this match; selected the configured IPTV channel fallback for this Kooora league.",
-        channelResolvedAt: new Date().toISOString()
-      }
-    };
-  });
-
-  return { rows: output, updated };
-}
-
-function parseKoooraMatches(html) {
+export function parseKoooraMatches(html) {
   const $ = cheerio.load(html);
   const raw = $('#__NEXT_DATA__').text();
   if (!raw) throw new Error('Kooora __NEXT_DATA__ payload is missing.');
@@ -662,10 +592,12 @@ function parseKoooraMatches(html) {
           }).format(new Date(kickoff)),
           homeLogo: match?.teamA?.image?.url || '',
           awayLogo: match?.teamB?.image?.url || '',
-          channels: channelNames,
+          ...(Array.isArray(match.tvChannels) ? { channels: channelNames } : {}),
           channel: preferredChannel,
           commentator: '',
           sourceMatchId: match.id || '',
+          homeSourceTeamId: match?.teamA?.id || null,
+          awaySourceTeamId: match?.teamB?.id || null,
           matchLink: match?.link?.slug ? `https://www.kooora.com/${match.link.slug}/${match.id}` : '',
           channelSource: 'kooora-live-scores'
         },
@@ -683,30 +615,49 @@ export function mergeMatchPayload(existingPayload = {}, refreshedPayload = {}) {
 
 async function mergeExistingChannels(supabase, rows) {
   const matchIds = rows.map((row) => row.match_id).filter(Boolean);
-  if (!matchIds.length) return rows;
+  if (!matchIds.length) return { rows, versions: new Map() };
 
   const { data, error } = await supabase
     .from(matchesTable)
-    .select("match_id,channel,payload")
+    .select("match_id,channel,payload,updated_at")
     .in("match_id", matchIds);
 
   if (error) {
-    console.warn(`Could not read existing match channels before upsert: ${error.message}`);
-    return rows;
+    throw new Error(`Cannot safely merge current match snapshots (${error.code || 'network'})`);
   }
 
   const existingByMatchId = new Map((data || []).map((row) => [row.match_id, row]));
-  return rows.map((row) => {
+  const merged = rows.map((row) => {
     const existing = existingByMatchId.get(row.match_id);
-    return {
-      ...row,
-      channel: existing?.channel || row.channel,
-      payload: mergeMatchPayload(existing?.payload, {
-        ...(row.payload || {}),
-        ...(existing?.channel ? { previousChannelPreserved: true } : {})
-      })
-    };
+    return mergeRefreshedMatch(existing, row);
   });
+  return { rows: merged, versions: new Map((data || []).map((row) => [row.match_id, row.updated_at])) };
+}
+
+export async function persistMatchSnapshots(supabase, rows, versions) {
+  const inserts = rows.filter((row) => !versions.has(row.match_id));
+  let written = 0;
+  if (inserts.length) {
+    const { data, error } = await supabase.from(matchesTable)
+      .upsert(inserts, { onConflict: 'match_id', ignoreDuplicates: true }).select('match_id');
+    if (error) throw error;
+    written += data.length;
+  }
+  const updates = rows.filter((row) => versions.has(row.match_id));
+  // Compare-and-swap prevents overlapping scheduled syncs from replacing a newer snapshot.
+  for (let offset = 0; offset < updates.length; offset += 4) {
+    const counts = await Promise.all(updates.slice(offset, offset + 4).map(async (row) => {
+      const expected = versions.get(row.match_id);
+      if (expected && Date.parse(expected) > Date.parse(row.updated_at)) return 0;
+      let query = supabase.from(matchesTable).update(row).eq('match_id', row.match_id);
+      query = expected ? query.eq('updated_at', expected) : query.is('updated_at', null);
+      const { data, error } = await query.select('match_id');
+      if (error) throw error;
+      return data.length;
+    }));
+    written += counts.reduce((sum, count) => sum + count, 0);
+  }
+  return written;
 }
 
 export async function enrichApiFootballMatchDetails(rows) {
@@ -735,15 +686,12 @@ export async function enrichApiFootballMatchDetails(rows) {
         const eventSummary = apiFootballEvents(detail.events, row.home_team, row.away_team);
         row.payload = {
           ...row.payload,
-          ...(normalizedEvents.length ? { events: normalizedEvents } : {}),
-          ...(Array.isArray(detail.lineups) && detail.lineups.length ? { lineups: normalizeApiFootballLineups(detail.lineups) } : {}),
-          ...(Array.isArray(detail.statistics) && detail.statistics.length ? { statistics: normalizeApiFootballStatistics(detail.statistics) } : {}),
+          ...(Array.isArray(detail.events) ? { events: normalizedEvents, ...eventSummary } : {}),
+          ...(Array.isArray(detail.lineups) ? { lineups: normalizeApiFootballLineups(detail.lineups) } : {}),
+          ...(Array.isArray(detail.statistics) ? { statistics: normalizeApiFootballStatistics(detail.statistics) } : {}),
           ...(detail.fixture?.venue?.name ? { venue: String(detail.fixture.venue.name).slice(0, 120) } : {}),
           ...(detail.fixture?.venue?.city ? { venueCity: String(detail.fixture.venue.city).slice(0, 90) } : {}),
           ...(detail.fixture?.referee ? { referee: String(detail.fixture.referee).slice(0, 90) } : {}),
-          ...(eventSummary.goals.length ? { goals: eventSummary.goals } : {}),
-          ...(eventSummary.yellowCards ? { yellowCards: eventSummary.yellowCards } : {}),
-          ...(eventSummary.redCards ? { redCards: eventSummary.redCards } : {}),
           eventDetailsLoaded: true,
           detailsUpdatedAt: new Date(now).toISOString()
         };
@@ -785,7 +733,6 @@ export async function collectMatchRowsFromSource() {
       console.error(`API-Football source failed: ${error.message}; falling back to Kooora source.`);
     }
   }
-  if (rows.length && provider !== "both") return [...new Map(rows.map((row) => [`${String(row.kickoff_time || '').slice(0, 10)}:${row.match_id}`, row])).values()];
 
   const tomorrowDate = moroccoDateParts(1);
   const pages = [
@@ -793,12 +740,15 @@ export async function collectMatchRowsFromSource() {
     { url: fixturesUrlForDate(tomorrowDate), dayOffset: 1 },
   ];
   const koooraRows = [];
+  const failedDates = [];
+  const checkedAt = new Date().toISOString();
 
   for (const page of pages) {
     try {
       const html = await fetchHtml(page.url);
       koooraRows.push(...parseMatches(html, page.dayOffset));
     } catch (error) {
+      failedDates.push(moroccoDateParts(page.dayOffset));
       console.error(`Failed source ${page.url}: ${error.message}`);
     }
   }
@@ -806,39 +756,25 @@ export async function collectMatchRowsFromSource() {
   rows.push(...koooraRows);
   const uniqueRows = [...new Map(rows.map((row) => [`${String(row.kickoff_time || '').slice(0, 10)}:${row.match_id}`, row])).values()];
   console.log(`Parsed ${uniqueRows.length} matches from ${pages.map((page) => page.url).join(', ')}.`);
-  return uniqueRows;
+  return reconcileBroadcasts(uniqueRows, { checkedAt, failedDates });
 }
 
 export async function upsertMatchRows(rows) {
   const supabase = getSupabaseAdmin();
   const withExisting = await mergeExistingChannels(supabase, rows);
-  const enriched = await enrichApiFootballMatchDetails(withExisting);
-  const rowsForUpsert = enriched;
-  const fallbackResult = await applyKoooraChannelFallbacks(supabase, rowsForUpsert);
-  const finalRowsForUpsert = fallbackResult.rows;
-  if (fallbackResult.updated) {
-    console.log(`Kooora league fallbacks filled ${fallbackResult.updated} match channels.`);
+  const enriched = await enrichApiFootballMatchDetails(withExisting.rows);
+  const finalRowsForUpsert = enriched;
+
+  const written = await persistMatchSnapshots(supabase, finalRowsForUpsert, withExisting.versions);
+  console.log(`Stored ${written}/${finalRowsForUpsert.length} match snapshots; concurrent newer snapshots preserved.`);
+  if (written > 0) {
+    const { error } = await supabase.from(matchesTable).update({ active: false })
+      .eq('active', true).in('source', ['kooora', 'kooora-today-matches', 'metascrape', 'api-football'])
+      .lt('kickoff_time', new Date(Date.now() - 72 * 60 * 60_000).toISOString());
+    if (error) console.warn(`Old match archival deferred (${error.code || 'network'})`);
   }
 
-  const { error } = await supabase
-    .from(matchesTable)
-    .upsert(finalRowsForUpsert, { onConflict: "match_id" });
-
-  if (error) throw error;
-  console.log(`Upserted ${finalRowsForUpsert.length} matches into ${matchesTable}.`);
-
-  let enrichmentResult = null;
-  if (enrichAfterSync) {
-    try {
-      const { enrichMatchChannels } = await import("./enrich-match-language-channels.js");
-      enrichmentResult = await enrichMatchChannels({ rows: finalRowsForUpsert, table: matchesTable, dryRun: false });
-      console.log(`Gemini post-sync enrichment: processed=${enrichmentResult.processed}, arabicUpdated=${enrichmentResult.arabicUpdated}, alternativesUpdated=${enrichmentResult.alternativesUpdated}.`);
-    } catch (error) {
-      console.error(`Gemini post-sync enrichment failed without aborting match sync: ${error.message}`);
-    }
-  }
-
-  return { parsed: rows.length, upserted: finalRowsForUpsert.length, koooraFallbackChannels: fallbackResult.updated, enriched: enrichmentResult };
+  return { parsed: rows.length, upserted: written, koooraFallbackChannels: 0, enriched: null };
 }
 
 export async function syncMatchesFromSource({ dryRunMode = dryRun } = {}) {

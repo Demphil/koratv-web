@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { findChannelNameMatch } from '../shared/channel-name-match.mjs';
+import { broadcastChannelCandidates, deduplicateSourceEvents } from '../shared/match-broadcasts.mjs';
 
 function createServerClient(env) {
   const url = env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL;
@@ -88,6 +89,8 @@ export function createMatchesReader(env, sourceFilter = null) {
       .from(env.SUPABASE_MATCHES_TABLE || 'matches')
       .select('id,match_id,home_team,away_team,league,kickoff_time,channel,source,payload,active,updated_at')
       .eq('active', true)
+      .gte('kickoff_time', new Date(Date.now() - 36 * 60 * 60_000).toISOString())
+      .lte('kickoff_time', new Date(Date.now() + 72 * 60 * 60_000).toISOString())
       .order('kickoff_time', { ascending: true, nullsFirst: false })
       .limit(500);
     if (Array.isArray(sourceFilter) && sourceFilter.length) matchesQuery = matchesQuery.in('source', sourceFilter);
@@ -107,9 +110,9 @@ export function createMatchesReader(env, sourceFilter = null) {
       const matchedName = findChannelNameMatch(name, availableChannels.map((channel) => channel.name));
       return availableChannels.find((channel) => channel.name === matchedName) || null;
     };
-    const resolvedRows = (data || []).map((row) => ({
+    const resolvedRows = deduplicateSourceEvents(data || []).map((row) => ({
       row,
-      channel: resolveChannel(row.channel || row.payload?.channel)
+      channel: broadcastChannelCandidates(row).map(resolveChannel).find(Boolean)
     }));
     const usedChannelNames = [...new Set(resolvedRows
       .map(({ channel }) => channel?.name)
@@ -122,6 +125,7 @@ export function createMatchesReader(env, sourceFilter = null) {
         .map(([name]) => name));
     return resolvedRows.map(({ row, channel }) => ({
       ...row,
+      channel: channel?.name || row.channel,
       source_ready: Boolean(channel && readyChannels.has(channel.name))
     }));
   };
@@ -224,10 +228,13 @@ export function createPlaybackResolver(env, sourceFilter = null) {
       return { is_streaming_active: false, reason: 'upcoming' };
     }
 
-    const channelName = String(match.channel || payload.channel || '').trim();
-    if (!channelName) return { is_streaming_active: false, reason: 'channel_unavailable' };
-
-    const channel = await findChannel(client, channelName);
+    const candidates = broadcastChannelCandidates(match);
+    if (!candidates.length) return { is_streaming_active: false, reason: 'channel_unavailable' };
+    let channel;
+    for (const name of candidates) {
+      channel = await findChannel(client, name);
+      if (channel?.original_url) break;
+    }
     if (!channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
     const streamUrl = canonicalizeXtreamHlsUrl(channel.original_url);
     if (env.CHECK_PLAYBACK_SOURCE_HEALTH === 'true' && !(await isPlayableHlsSource(streamUrl))) {

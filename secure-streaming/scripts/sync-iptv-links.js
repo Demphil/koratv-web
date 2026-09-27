@@ -21,8 +21,8 @@ export async function syncIptvLinks() {
   log("iptv_links_sync_started");
   const result = await syncIptvProvider({
     dryRun,
-    validateStreams: envFlag("IPTV_VALIDATE_STREAMS", "false"),
-    deactivateMissing: envFlag("IPTV_SYNC_DEACTIVATE_MISSING", "true"),
+    validateStreams: envFlag("IPTV_VALIDATE_STREAMS", "true"),
+    deactivateMissing: envFlag("IPTV_SYNC_DEACTIVATE_MISSING", "false"),
     sportsOnly: String(process.env.IPTV_SYNC_ONLY_SPORTS || "true") !== "false"
   });
   log("iptv_links_sync_finished", result);

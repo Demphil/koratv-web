@@ -4,6 +4,9 @@ import { createHash } from "node:crypto";
 import nextEnv from "@next/env";
 import { createClient } from "@supabase/supabase-js";
 import { env, matchChannels, parseM3uText } from "./import-m3u.js";
+import { broadcastChannelCandidates } from "../../shared/match-broadcasts.mjs";
+import { findChannelNameMatch } from "../../shared/channel-name-match.mjs";
+import { isAllowedMatch } from "../../shared/league-whitelist.mjs";
 
 const DEFAULT_TIMEOUT_MS = 90000;
 const SPORTS_INCLUDE_RE = /(?:\b(?:sport|sports|bein|ssc|arryadia|alkass|on\s*time|on\s*sport|ad\s*sport|thmanyah|starzplay|shahid|mbc\s*action|ksa\s*sport)\b|الكاس|الكأس|الرياضيه|الرياضية|رياضة|رياضيه|ثمانيه|ثمانية|أبو\s*ظبي|ابو\s*ظبي|ابوظبي)/i;
@@ -475,6 +478,23 @@ export async function syncIptvProvider(options = {}) {
 
   const providerEntries = rewriteProviderEntryOrigins(parseM3uText(m3uText), providerOrigin(provider.url));
   const entries = sportsOnly ? providerEntries.filter(isSportsProviderEntry) : providerEntries;
+  // Revalidate channels named by actual current fixtures, including previously failed sources.
+  // A transport/probe failure must not permanently remove a channel from subsequent syncs.
+  const { data: fixtures, error: fixturesError } = await supabase.from(env("SUPABASE_MATCHES_TABLE", "matches"))
+    .select("home_team,away_team,league,kickoff_time,channel,payload,source")
+    .eq("active", true)
+    .gte("kickoff_time", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
+    .lte("kickoff_time", new Date(Date.now() + 48 * 60 * 60_000).toISOString());
+  if (fixturesError) throw new Error(`Required channel lookup failed (${fixturesError.code || 'network'})`);
+  for (const fixture of fixtures || []) {
+    if (!isAllowedMatch({ league: fixture.league, leagueCountry: fixture.payload?.leagueCountry,
+      homeTeam: fixture.home_team, awayTeam: fixture.away_team })) continue;
+    if (fixture.payload?.broadcast?.source !== 'kooora' && !String(fixture.source).startsWith('kooora')) continue;
+    for (const name of broadcastChannelCandidates(fixture)) {
+      const match = findChannelNameMatch(name, existingChannels.map((channel) => channel.name));
+      if (match) reactivateChannels.add(match);
+    }
+  }
   const targetChannels = existingChannels.filter((channel) =>
     (!sportsOnly || isSportsChannel(channel)) && (channel.active === true || reactivateChannels.has(channel.name))
   );
@@ -490,7 +510,9 @@ export async function syncIptvProvider(options = {}) {
     concurrency: masterProbeConcurrency,
     enabled: detectMasterQualities
   });
-  const { updates, unchanged, missing } = buildUpdatePayload(targetChannels, matched);
+  const verifiedMatches = validateStreams ? matched : matched.filter((match) =>
+    existingChannels.some((channel) => channel.name === match.name && channel.active === true));
+  const { updates, unchanged, missing } = buildUpdatePayload(targetChannels, verifiedMatches);
 
   log("sync_plan", {
     existingChannels: existingChannels.length,
