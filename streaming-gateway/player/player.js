@@ -92,7 +92,7 @@ function embedSrc() {
 function iframeCode() {
   const src = embedSrc();
   if (!src) return '';
-  return `<iframe src="${src}" title="KoraTV" width="100%" height="620" style="border:0;background:#000" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>`;
+  return `<iframe src="${src}" title="KoraTV" width="100%" style="display:block;width:100%;aspect-ratio:16/9;height:auto;border:0;background:#000" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>`;
 }
 
 function openEmbedModal() {

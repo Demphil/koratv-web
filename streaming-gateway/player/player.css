@@ -11,6 +11,26 @@ body {
   font-family: Cairo, Tahoma, Arial, sans-serif;
 }
 
+html.embedded-view,
+html.embedded-view body {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+}
+html.embedded-view .layout-wrapper,
+html.embedded-view .main-content { width: 100%; max-width: none; margin: 0; }
+html.embedded-view .layout-wrapper { display: block; }
+html.embedded-view .ad-slot,
+html.embedded-view .match-panel,
+html.embedded-view .watch-news-section { display: none !important; }
+html.embedded-view .player-heading { margin: 0 0 4px; border-radius: 0; }
+html.embedded-view .player-container {
+  width: 100%; aspect-ratio: 16 / 9; margin: 0; border-radius: 0; transform: none;
+}
+
 body {
   padding: 20px;
   overflow-x: hidden;
