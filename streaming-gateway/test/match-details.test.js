@@ -59,3 +59,13 @@ test('team switching reuses the positioned panel renderer for pointer and keyboa
   assert.match(source, /selectedLineupSide = node.dataset.lineupSide;\s+if \(currentMatchInfo\) renderMatchPanel\(\)/);
   assert.doesNotMatch(source, /detail.innerHTML = renderLineups/);
 });
+
+test('standings retain zero points and zero goal difference', () => {
+  const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
+  const start = source.indexOf('function escapeHtml(');
+  const end = source.indexOf('async function loadWatchNews(', start);
+  const escape = vm.runInNewContext(`${source.slice(start, end)}; escapeHtml`);
+  assert.equal(escape(0), '0');
+  assert.equal(escape(null), '');
+  assert.equal(escape('<team>'), '&lt;team&gt;');
+});
