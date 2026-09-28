@@ -15,6 +15,7 @@ permissions:
 jobs:
   sync-iptv:
     name: Refresh Supabase IPTV links
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
