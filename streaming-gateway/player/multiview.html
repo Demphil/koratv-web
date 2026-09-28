@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>اختبار الشاشات الست | KoraTV</title>
+  <link rel="stylesheet" href="multiview.css">
+  <script src="hls.min.js" defer></script>
+  <script src="multiview.js" defer></script>
+</head>
+<body>
+  <header><div><h1>اختبار الشاشات الست</h1><p id="summary" role="status">جارٍ الاتصال...</p></div><button id="toggle" type="button" disabled>إيقاف الكل</button></header>
+  <main id="screens"></main>
+  <template id="screen-template">
+    <section class="screen">
+      <div class="screen-heading"><h2></h2><span class="state">انتظار</span></div>
+      <video muted autoplay playsinline controls></video>
+      <dl><div><dt>الحساب</dt><dd class="account" dir="ltr">—</dd></div><div><dt>MEDIA-SEQUENCE</dt><dd class="sequence">—</dd></div><div><dt>آخر مقطع / المحمّل</dt><dd class="segments">—</dd></div><div><dt>تقدم الفيديو / المخزون</dt><dd class="buffer">—</dd></div><div><dt>HTTP</dt><dd class="http">—</dd></div></dl>
+    </section>
+  </template>
+</body>
+</html>

@@ -70,6 +70,9 @@ export class AccountHealth {
           const response = await this.fetch(url, { signal: AbortSignal.timeout(5000) });
           const info = response.ok ? (await response.json()).user_info : null;
           state.checked = new Date(this.now()).toISOString();
+          state.providerStatus = info?.status || null;
+          state.maxConnections = info?.max_connections == null ? null : Number(info.max_connections);
+          state.activeConnections = info?.active_cons == null ? null : Number(info.active_cons);
           const denied = response.status === 401 || info?.auth === 0 || info?.auth === '0'
             || /^(expired|disabled|banned)$/i.test(info?.status || '');
           if (denied) {
@@ -102,6 +105,8 @@ export class AccountHealth {
       const cooldown = state.until > this.now();
       return { provider, id: account.id || `Account_${index + 1}_${provider === 'A' ? 'Primary' : account.username || provider}`,
         username: account.username || null, server: account.server || null,
+        provider_status: state.providerStatus || null, max_connections: state.maxConnections ?? account.maxConnections ?? null,
+        active_cons: state.activeConnections ?? null, gateway_slots: account.enabled ? 1 : 0,
         status: stopped ? 'STOPPED_EXPIRED' : state.stalled && cooldown ? 'STALLED' : cooldown ? 'COOLDOWN_403' : lease ? 'BUSY_STREAMING' : 'ACTIVE',
         current_channel: demand?.channel || null, current_match: demand?.key || null,
         last_http_code: state.code, stopped_reason: !account.enabled ? 'not_configured' : stopped || cooldown ? state.reason : null,

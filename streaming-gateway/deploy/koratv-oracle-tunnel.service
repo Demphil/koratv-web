@@ -1,0 +1,14 @@
+[Unit]
+Description=Njalla HTTPS edge to Oracle streaming gateway
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+User=root
+ExecStart=/usr/bin/ssh -N -T -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/koratv/oracle_known_hosts -i /etc/koratv/oracle_tunnel_key -L 127.0.0.1:3100:127.0.0.1:3100 ubuntu@51.170.48.95
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

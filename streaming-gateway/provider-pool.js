@@ -5,7 +5,7 @@ export class PoolError extends Error {
   constructor(code = 'pool_capacity', status = 503) { super(code); this.code = code; this.status = status; }
 }
 
-export const PROVIDER_IDS = ['A', 'B', 'C', 'D', 'E', 'F'];
+export const PROVIDER_IDS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 
 // One process owns the upstream accounts. Every media fetch must hold a current lease.
 export class ProviderPool {
@@ -70,13 +70,15 @@ export class ProviderPool {
   }
   acquire(playback, viewer) {
     const now = this.now();
-    const key = playback.pool_key || playback.match_id;
+    // A diagnostic screen and a match viewer share one upstream for the same channel.
+    const shared = playback.channel_id && [...this.demands.values()].find(item => item.channel === playback.channel_id);
+    const key = shared?.key || playback.pool_key || playback.match_id;
     let demand = this.demands.get(key);
     if (!demand) {
       demand = { key, viewers: new Map(), createdAt: now };
       this.demands.set(key, demand);
     }
-    Object.assign(demand, { sources: playback.provider_sources || {}, base: playback.priority_score || 10,
+    Object.assign(demand, { sources: playback.provider_sources || {}, base: Math.max(demand.base || 0, playback.priority_score || 10),
       channel: playback.channel_id, lastSeen: now });
     demand.viewers.set(viewer, now);
     this.rebalance();

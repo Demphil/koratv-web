@@ -11,6 +11,7 @@ import { ProviderPool, PoolError, PROVIDER_IDS } from './provider-pool.js';
 import { AccountHealth } from './account-health.js';
 import { HlsProgressMonitor } from './hls-progress.js';
 import { singleQualityManifest } from './single-quality.js';
+import { diagnosticPlayback, registerMultiview } from './multiview.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
 
 const issuer = 'koratv-gateway';
@@ -311,6 +312,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     const bearer = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1];
     return req.query.token || bearer || '';
   };
+  const resolvePlayback = (claims, options) => claims.diagnostic === true
+    ? diagnosticPlayback(config, claims.channel)
+    : config.getPlaybackForSource(claims.source, claims.matchId, options);
+  registerMultiview(app, { config, redis, providerPool, accountHealth, hlsProgress, ipHash, sign });
   const frontendOrigins = config.frontendOrigins || new Set([config.frontend]);
   const tokenOrigins = new Set([...frontendOrigins, config.player]);
   // Public player documents also support opaque file:// parents. API origin checks stay strict.
@@ -398,7 +403,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       const channels = config.providerChannels();
       const used = new Set([...providerPool.leases.values()].map(lease => providerPool.demands.get(lease.key)?.channel));
-      const jobs = PROVIDER_IDS.map(provider => {
+      const jobs = PROVIDER_IDS.filter(provider => Object.values(channels).some(row => row[provider])).map(provider => {
         const held = providerPool.leases.get(provider);
         const demand = held && providerPool.demands.get(held.key);
         const channel = demand?.channel || Object.keys(channels).sort().find(name => channels[name][provider] && !used.has(name) && /^beIN SPORTS HD [1-9]$/.test(name));
@@ -588,7 +593,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       requireOrigin(req, config.player);
       const claims = verify(req.body.token, req, 'player-entry');
-      const playback = await config.getPlaybackForSource(claims.source, claims.matchId);
+      const playback = await resolvePlayback(claims);
       if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
       const result = await redis.set(`stream-used:${claims.jti}`, '1', { NX: true, EX: entryTtl });
       if (result !== 'OK') return res.sendStatus(403);
@@ -608,7 +613,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       rejectUnexpectedOrigin(req, config.player);
       const claims = verify(requestToken(req), req, 'hls-session');
       if (!providerPool) return res.json({ enabled: false });
-      const playback = await config.getPlaybackForSource(claims.source, claims.matchId);
+      const playback = await resolvePlayback(claims);
       if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
       const lease = providerPool.acquire(playback, claims.jti);
       res.json({ enabled: true, provider: lease.provider });
@@ -631,7 +636,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       let lease = null;
       let candidateSources = null;
       if (req.path === '/api/stream.m3u8' || providerPool) {
-        playback = await config.getPlaybackForSource(claims.source, claims.matchId);
+        playback = await resolvePlayback(claims);
         if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
         if (providerPool) lease = providerPool.acquire(playback, claims.jti);
         candidateSources = lease ? [lease.url] : streamCandidates(playback, req.query.quality);
@@ -706,7 +711,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           if (progress.stalled) {
             const failedProvider = lease.provider;
             config.refreshProviderCatalog?.();
-            const refreshed = await config.getPlaybackForSource(claims.source, claims.matchId, { fresh: true });
+            const refreshed = await resolvePlayback(claims, { fresh: true });
             if (!refreshed?.is_streaming_active || refreshed.channel_id !== playback.channel_id) {
               throw new PoolError('stalled_channel_unavailable', 503);
             }

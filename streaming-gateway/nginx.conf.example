@@ -2,6 +2,7 @@
 # TLS certificates must exist before this file is enabled.
 
 upstream koratv_gateway {
+    # Njalla loopback is an SSH forward to the single Oracle gateway process.
     server 127.0.0.1:3100;
     keepalive 64;
     keepalive_requests 1000;
@@ -102,23 +103,11 @@ add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style
     }
 
     location = /739184.html {
-        proxy_pass http://127.0.0.1:3100;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header CF-Connecting-IP "";
+        try_files /739184.html =404;
     }
 
     location = /watch.html {
-        proxy_pass http://127.0.0.1:3100;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header CF-Connecting-IP "";
+        try_files /watch.html =404;
     }
 
     location /api/ {
@@ -139,13 +128,7 @@ add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style
     }
 
     location ~ "^/[A-Za-z0-9]{10,24}$" {
-        proxy_pass http://127.0.0.1:3100;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header CF-Connecting-IP "";
+        try_files /739184.html =404;
     }
 
     location / {

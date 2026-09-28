@@ -22,6 +22,8 @@ if (error) throw new Error('Primary channel catalog unavailable');
 let catalog = { providers: {}, channels: {} };
 try { catalog = JSON.parse(await readFile(`${dir}/provider-catalog.json`, 'utf8')); } catch {}
 catalog.providers ||= {}; catalog.channels ||= {};
+let savedCredentials = {};
+try { savedCredentials = JSON.parse(await readFile(`${dir}/provider-credentials.json`, 'utf8')); } catch {}
 // Remove legacy account deadlines, including catalogs retained during a partial sync.
 for (const id of PROVIDER_IDS) if (catalog.providers[id]) {
   const { expiresAt, firstActivatedAt, expirySource, ...retained } = catalog.providers[id];
@@ -44,8 +46,12 @@ for (const value of [...channels.map(row => row.original_url), ...Object.values(
 }
 for (const id of PROVIDER_IDS.slice(1)) {
   const input = process.env[`IPTV_PROVIDER_${id}_JSON`];
-  if (!input) continue;
-  const credentials = JSON.parse(input);
+  let credentials = input ? JSON.parse(input) : savedCredentials[id];
+  if (!credentials && catalog.providers[id]?.sourceUrl) {
+    const source = new URL(catalog.providers[id].sourceUrl), parts = source.pathname.split('/').filter(Boolean);
+    if (parts[0] === 'live' && parts.length >= 4) credentials = { username: decodeURIComponent(parts[1]), password: decodeURIComponent(parts[2]), origins: catalog.providers[id].origins || [source.origin] };
+  }
+  if (!credentials) continue;
   if (!credentials.username || !credentials.password || !credentials.origins?.length) throw new Error(`Provider ${id} credentials missing`);
   const accountKey = `${credentials.username}:${credentials.password}`;
   if (accountKeys.has(accountKey)) throw new Error(`Provider ${id} must be an independent account`);
@@ -93,9 +99,9 @@ for (const id of PROVIDER_IDS.slice(1)) {
     catalog.channels[name].sourceNames ||= {};
     catalog.channels[name].sourceNames[id] = chosen.source_name;
   }
-  catalog.providers[id] = { enabled: true, maxConnections: 1,
+  catalog.providers[id] = { enabled: true, maxConnections: Number(info.user_info.max_connections), slotLimit: 1,
     id: `Account_${PROVIDER_IDS.indexOf(id) + 1}_${credentials.username}`, username: credentials.username, server: origin,
-    sourceUrl: selected[0].chosen.original_url };
+    origins: credentials.origins, sourceUrl: selected[0].chosen.original_url };
   console.log(JSON.stringify({ provider: id, max_connections: info.user_info.max_connections, active_cons: info.user_info.active_cons,
     sportsChannels: entries.length, matchedChannels: selected.length, mapped: selected.map(({name,chosen}) => ({channel:name,source:chosen.source_name})) }));
 }
@@ -113,5 +119,7 @@ const values = { PROVIDER_POOL_ENABLED: 'true', PROVIDER_CATALOG_PATH: `${dir}/p
 envText = envText.split(/\r?\n/).filter(line => !Object.keys(values).some(key => line.startsWith(`${key}=`))).join('\n');
 await writeFile(envPath, `${envText}\n${Object.entries(values).map(([key,value]) => `${key}=${value}`).join('\n')}\n`, { mode: 0o600 });
 const syncEnvPath = new URL('../../secure-streaming/.env', import.meta.url);
-const syncEnv = (await readFile(syncEnvPath, 'utf8')).split(/\r?\n/).filter(line => !/^(PROVIDER_POOL_ENABLED|IPTV_VALIDATE_STREAMS|IPTV_SYNC_MASTER_QUALITIES)=/.test(line));
-await writeFile(syncEnvPath, `${syncEnv.join('\n')}\nPROVIDER_POOL_ENABLED=true\nIPTV_VALIDATE_STREAMS=false\nIPTV_SYNC_MASTER_QUALITIES=false\n`, { mode: 0o600 });
+try {
+  const syncEnv = (await readFile(syncEnvPath, 'utf8')).split(/\r?\n/).filter(line => !/^(PROVIDER_POOL_ENABLED|IPTV_VALIDATE_STREAMS|IPTV_SYNC_MASTER_QUALITIES)=/.test(line));
+  await writeFile(syncEnvPath, `${syncEnv.join('\n')}\nPROVIDER_POOL_ENABLED=true\nIPTV_VALIDATE_STREAMS=false\nIPTV_SYNC_MASTER_QUALITIES=false\n`, { mode: 0o600 });
+} catch (error) { if (error.code !== 'ENOENT') throw error; }
