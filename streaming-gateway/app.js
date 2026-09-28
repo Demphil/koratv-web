@@ -9,6 +9,7 @@ import { antiBotMiddleware } from './anti-bot.js';
 import { HlsResourceCache } from './hls-resource-cache.js';
 import { ProviderPool, PoolError, PROVIDER_IDS } from './provider-pool.js';
 import { AccountHealth } from './account-health.js';
+import { HlsProgressMonitor } from './hls-progress.js';
 import { singleQualityManifest } from './single-quality.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
 
@@ -265,6 +266,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   const app = express();
   const accountHealth = config.providerPoolEnabled && config.providerAccounts ? new AccountHealth({ accounts: config.providerAccounts, path: config.accountsStatusPath, fetchImpl }) : null;
   const providerPool = config.providerPoolEnabled ? new ProviderPool({ health: accountHealth }) : null;
+  const hlsProgress = new HlsProgressMonitor();
   accountHealth?.attach(providerPool);
   app.locals.accountHealth = accountHealth;
   app.locals.providerPool = providerPool;
@@ -698,7 +700,50 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           runtimeOrigins.add(new URL(upstream.url).origin);
         }
         const manifestUrl = allowedUrl(upstream.url || source.href, runtimeOrigins);
-        const rawText = await upstream.text();
+        let rawText = await upstream.text();
+        if (providerPool && lease && hlsResourceKind(source) === 'manifest' && !rawText.includes('#EXT-X-STREAM-INF:')) {
+          const progress = hlsProgress.observe(lease.provider, playback.channel_id, rawText);
+          if (progress.stalled) {
+            const failedProvider = lease.provider;
+            config.refreshProviderCatalog?.();
+            const refreshed = await config.getPlaybackForSource(claims.source, claims.matchId, { fresh: true });
+            if (!refreshed?.is_streaming_active || refreshed.channel_id !== playback.channel_id) {
+              throw new PoolError('stalled_channel_unavailable', 503);
+            }
+            playback = refreshed;
+            lease = providerPool.acquire(refreshed, claims.jti);
+            if (lease.provider !== failedProvider) throw new PoolError('lease_changed_during_catalog_refresh', 503);
+            let refreshedProgress = { stalled: true };
+            if (refreshed.provider_sources?.[failedProvider]) {
+              if (!providerPool.updateSource(lease, refreshed.provider_sources[failedProvider])) {
+                throw new PoolError('catalog_source_refresh_failed', 503);
+              }
+              source = allowedUrl(lease.url, new Set([new URL(lease.url).origin]));
+              upstream = await fetchLeasedUpstream(source, { headers, redirect: 'follow' }, lease);
+              if (!upstream.ok) {
+                if ([401, 403].includes(upstream.status)) providerPool.fail(lease, upstream.status);
+                await upstream.body?.cancel();
+                throw new PoolError('refreshed_source_unavailable', 503);
+              }
+              rawText = await upstream.text();
+              refreshedProgress = hlsProgress.observe(lease.provider, playback.channel_id, rawText);
+            }
+            if (refreshedProgress.stalled) {
+              providerPool.failStalled(lease);
+              lease = providerPool.acquire(refreshed, claims.jti);
+              if (lease.provider === failedProvider) throw new PoolError('no_healthy_alternate_account', 503);
+              source = allowedUrl(lease.url, new Set([new URL(lease.url).origin]));
+              upstream = await fetchLeasedUpstream(source, { headers, redirect: 'follow' }, lease);
+              if (!upstream.ok) {
+                if ([401, 403].includes(upstream.status)) providerPool.fail(lease, upstream.status);
+                await upstream.body?.cancel();
+                throw new PoolError('alternate_account_unavailable', 503);
+              }
+              rawText = await upstream.text();
+            }
+            await redis.set(`stream-source:${claims.sourceId}`, lease.url, { EX: config.sessionTtl });
+          }
+        }
         const text = providerPool ? singleQualityManifest(rawText) : rawText;
         if (!text.trimStart().startsWith('#EXTM3U')) {
           console.error('[stream-proxy] upstream response is not an HLS manifest', {

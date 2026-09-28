@@ -37,13 +37,19 @@ export class ProviderPool {
     }
     for (const [provider, lease] of this.leases) {
       const demand = this.demands.get(lease.key);
-      if (!demand || demand.sources[provider] !== lease.url || (this.blocked.get(provider) || 0) > now) this.revoke(provider);
+      if (!demand || (this.blocked.get(provider) || 0) > now
+        || (demand.sources[provider] !== lease.url && !demand.viewers.size)) this.revoke(provider);
     }
+    const protectedLeases = new Map([...this.leases.values()].flatMap(lease => {
+      const demand = this.demands.get(lease.key);
+      return demand?.viewers.size ? [[lease.provider, demand]] : [];
+    }));
     const held = new Set([...this.leases.values()].map(lease => lease.key));
     const ranked = [...this.demands.values()].sort((a, b) => this.score(b) - this.score(a)
       || Number(held.has(b.key)) - Number(held.has(a.key)) || a.createdAt - b.createdAt || a.key.localeCompare(b.key));
-    const desired = new Map();
+    const desired = new Map(protectedLeases);
     for (const demand of ranked) {
+      if ([...protectedLeases.values()].some(item => item.key === demand.key)) continue;
       const current = [...this.leases.values()].find(lease => lease.key === demand.key)?.provider;
       const available = [...PROVIDER_IDS].sort((a, b) => {
         const score = id => this.leases.has(id) ? this.score(this.demands.get(this.leases.get(id).key)) : -1;
@@ -51,6 +57,7 @@ export class ProviderPool {
       });
       const providers = [...new Set([current, ...available].filter(Boolean))];
       const provider = providers.find(id => !desired.has(id) && demand.sources[id] && (this.blocked.get(id) || 0) <= now
+        && (!this.leases.has(id) || this.leases.get(id).key === demand.key)
         && (!(demand.failedUntil > now) || !this.leases.has(id) || this.leases.get(id).key === demand.key));
       if (provider) desired.set(provider, demand);
       if (desired.size === PROVIDER_IDS.length) break;
@@ -89,6 +96,19 @@ export class ProviderPool {
     this.failures[lease.provider]++;
     const until = this.health?.failure(lease.provider, status) ?? this.now() + 30000;
     this.quarantine(lease.provider, until);
+  }
+  failStalled(lease) {
+    if (!this.valid(lease)) return;
+    this.failures[lease.provider]++;
+    const until = this.health?.stalled(lease.provider) ?? this.now() + 60000;
+    this.quarantine(lease.provider, until);
+  }
+  updateSource(lease, sourceUrl) {
+    if (!this.valid(lease) || typeof sourceUrl !== 'string' || !sourceUrl) return false;
+    const demand = this.demands.get(lease.key);
+    if (!demand || demand.sources[lease.provider] !== sourceUrl) return false;
+    lease.url = sourceUrl;
+    return true;
   }
   async run(lease, operation) {
     const task = (this.tails.get(lease.provider) || Promise.resolve()).catch(() => {}).then(async () => {

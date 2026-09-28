@@ -4,6 +4,7 @@ import { ProviderPool, PoolError } from '../provider-pool.js';
 import { basePriority } from '../priority.js';
 import { singleQualityManifest } from '../single-quality.js';
 import { selectProviderChannel, createProviderCatalog } from '../provider-catalog.js';
+import { HlsProgressMonitor } from '../hls-progress.js';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -45,14 +46,53 @@ test('provider catalog ignores legacy account expiry but retains manual override
   assert.equal(catalog.override('old'), null);
 });
 
-test('viewer points count unique sessions, higher scores preempt only the weaker lease', t => {
+test('provider catalog can be forced to refresh before selecting a replacement URL', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provider-catalog-refresh-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const catalogPath = join(dir, 'catalog.json'), overridePath = join(dir, 'override.json');
+  writeFileSync(catalogPath, JSON.stringify({ providers: { C: { enabled: true } }, channels: { sport: { C: 'https://old.example/live.m3u8' } } }));
+  writeFileSync(overridePath, '{"matches":{}}');
+  const catalog = createProviderCatalog({ PROVIDER_CATALOG_PATH: catalogPath, MANUAL_BROADCAST_OVERRIDE_PATH: overridePath });
+  assert.equal(catalog.sources('sport').C, 'https://old.example/live.m3u8');
+  writeFileSync(catalogPath, JSON.stringify({ providers: { C: { enabled: true } }, channels: { sport: { C: 'https://fresh.example/live.m3u8' } } }));
+  catalog.refreshNow();
+  assert.equal(catalog.sources('sport').C, 'https://fresh.example/live.m3u8');
+});
+
+test('higher scores never preempt a lease with active viewers', t => {
   const { pool } = setup(t);
   const a = pool.acquire(playback('vip', 100), 'one');
   const b = pool.acquire(playback('low', 10), 'two');
-  const c = pool.acquire(playback('next', 75), 'three');
-  assert.equal(c.provider, 'B'); assert.ok(pool.valid(a)); assert.ok(!pool.valid(b));
+  assert.throws(() => pool.acquire(playback('next', 75), 'three'), PoolError);
+  assert.ok(pool.valid(a)); assert.ok(pool.valid(b));
   pool.acquire(playback('vip', 100), 'four');
   assert.equal(pool.snapshot().find(row => row.provider === 'A').score, 140);
+});
+
+test('stalled HLS refreshes first, then fails over only to an idle same-channel account', t => {
+  let now = 50_000;
+  const order = [];
+  const health = { stalled: () => { order.push('quarantine'); return now + 60_000; }, close() {} };
+  const pool = new ProviderPool({ now: () => now, health }); t.after(() => pool.close());
+  const monitor = new HlsProgressMonitor({ now: () => now });
+  const target = playback('target', 100, { A: 'https://a.example/channel.m3u8', C: 'https://c.example/channel.m3u8' });
+  const peer = playback('peer', 100, { B: 'https://b.example/other.m3u8' });
+  const failed = pool.acquire(target, 'target-viewer');
+  const protectedLease = pool.acquire(peer, 'peer-viewer');
+  const manifest = seq => `#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:${seq}\n#EXTINF:6,\n${seq}.ts`;
+  monitor.observe('A', 'channel', manifest(10));
+  now += 12_000;
+  assert.equal(monitor.observe('A', 'channel', manifest(10)).stalled, true);
+  order.push('catalog-refresh');
+  const refreshed = { ...target, provider_sources: { ...target.provider_sources } };
+  const stillCurrent = pool.acquire(refreshed, 'target-viewer');
+  assert.equal(stillCurrent.provider, 'A');
+  pool.failStalled(failed);
+  const replacement = pool.acquire(refreshed, 'target-viewer');
+  assert.equal(replacement.provider, 'C');
+  assert.equal(monitor.observe('C', 'channel', manifest(400)).stalled, false);
+  assert.ok(pool.valid(protectedLease));
+  assert.deepEqual(order, ['catalog-refresh', 'quarantine']);
 });
 
 test('idle lease releases at 15 seconds and refreshed activity keeps the other account', t => {
@@ -92,7 +132,7 @@ test('provider request queue serializes body reads and rejects stale prefetched 
     peak = Math.max(peak, ++active); await new Promise(resolve => setTimeout(resolve, 5)); active--; return 200;
   }));
   await Promise.all(jobs); assert.equal(peak, 1);
-  pool.acquire(playback('vip', 100, { A: 'https://a.example/vip.m3u8' }), 'two');
+  pool.revoke('A');
   await assert.rejects(pool.run(a, () => assert.fail('stale fetch must never reach upstream')), PoolError);
 });
 

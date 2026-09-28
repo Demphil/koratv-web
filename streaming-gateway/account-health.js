@@ -9,12 +9,13 @@ export class AccountHealth {
       for (const row of JSON.parse(readFileSync(path, 'utf8')).accounts || []) {
         this.states.set(row.provider, { code: row.last_http_code, checked: row.last_checked_at,
           reason: row.stopped_reason, stopped: row.status === 'STOPPED_EXPIRED',
+          stalled: row.status === 'STALLED',
           until: Date.parse(row.cooldown_until) || 0, failures: row.consecutive_403 || 0 });
       }
     } catch {}
   }
   state(id) {
-    if (!this.states.has(id)) this.states.set(id, { code: null, checked: null, reason: null, stopped: false, until: 0, failures: 0 });
+    if (!this.states.has(id)) this.states.set(id, { code: null, checked: null, reason: null, stopped: false, stalled: false, until: 0, failures: 0 });
     return this.states.get(id);
   }
   attach(pool) {
@@ -31,17 +32,26 @@ export class AccountHealth {
   observe(id, code, media = true) {
     const state = this.state(id);
     state.code = code; state.checked = new Date(this.now()).toISOString();
-    if (code === 200 && media) { state.reason = null; state.failures = 0; state.stopped = false; state.until = 0; }
+    if (code === 200 && media) { state.reason = null; state.failures = 0; state.stopped = false; state.stalled = false; state.until = 0; }
   }
   failure(id, code) {
     this.observe(id, code);
     const state = this.state(id);
     state.failures += code === 403 ? 1 : 0;
     state.stopped = code === 401;
+    state.stalled = false;
     state.reason = code === 401 ? 'upstream_authentication_401' : state.failures >= 3 ? 'persistent_upstream_403' : 'upstream_403';
     state.until = this.now() + (state.failures >= 3 ? 300000 : 30000);
     this.persist();
     return state.stopped ? Infinity : state.until;
+  }
+  stalled(id) {
+    const state = this.state(id);
+    state.code = 200; state.checked = new Date(this.now()).toISOString();
+    state.reason = 'stalled_hls_media_sequence'; state.stalled = true; state.stopped = false;
+    state.until = this.now() + 60000;
+    this.persist();
+    return state.until;
   }
   async check() {
     if (this.checking || this.closed) return;
@@ -74,6 +84,7 @@ export class AccountHealth {
               for (const demand of this.pool?.demands.values() || []) if (demand.failedProvider === id) demand.failedUntil = 0;
             }
             if (state.until <= this.now()) { state.reason = null; state.code = response.status; }
+            if (state.until <= this.now()) state.stalled = false;
           }
         } catch {
           // A metadata timeout is not evidence that a working streaming account expired.
@@ -91,7 +102,7 @@ export class AccountHealth {
       const cooldown = state.until > this.now();
       return { provider, id: account.id || `Account_${index + 1}_${provider === 'A' ? 'Primary' : account.username || provider}`,
         username: account.username || null, server: account.server || null,
-        status: stopped ? 'STOPPED_EXPIRED' : cooldown ? 'COOLDOWN_403' : lease ? 'BUSY_STREAMING' : 'ACTIVE',
+        status: stopped ? 'STOPPED_EXPIRED' : state.stalled && cooldown ? 'STALLED' : cooldown ? 'COOLDOWN_403' : lease ? 'BUSY_STREAMING' : 'ACTIVE',
         current_channel: demand?.channel || null, current_match: demand?.key || null,
         last_http_code: state.code, stopped_reason: !account.enabled ? 'not_configured' : stopped || cooldown ? state.reason : null,
         last_checked_at: state.checked, cooldown_until: cooldown ? new Date(state.until).toISOString() : null, consecutive_403: state.failures };

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { mkdir, readFile, writeFile, rename, chmod, access } from 'node:fs/promises';
 import { matchChannels, normalizeName } from '../../secure-streaming/scripts/import-m3u.js';
 import { selectProviderChannel } from '../provider-catalog.js';
+import { fetchProviderArray } from '../provider-array.js';
 import { PROVIDER_IDS } from '../provider-pool.js';
 
 const dir = process.env.PROVIDER_POOL_DIR || '/etc/koratv';
@@ -54,22 +55,37 @@ for (const id of PROVIDER_IDS.slice(1)) {
     try { const result = await api(credentials, host); if (Number(result.user_info?.auth) === 1) { origin = new URL(host).origin; info = result; break; } } catch {}
   }
   if (!info) {
-    if (!catalog.providers[id]?.sourceUrl) throw new Error(`Provider ${id} authentication unavailable`);
-    console.log(`Provider ${id} catalog refresh unavailable; saved account retained for health monitoring`);
+    console.warn(`Provider ${id} authentication unavailable; saved catalog retained`);
     continue;
   }
-  if (Number(info.user_info.max_connections) < 1) throw new Error(`Provider ${id} has no permitted connections`);
-  const categories = await api(credentials, origin, 'get_live_categories');
+  if (Number(info.user_info.max_connections) < 1) {
+    console.warn(`Provider ${id} skipped: source reports no permitted connections; saved catalog retained`);
+    continue;
+  }
+  const categoriesResult = await fetchProviderArray(api, credentials, origin, 'get_live_categories');
+  if (!Array.isArray(categoriesResult)) {
+    console.warn(`Provider ${id} skipped: get_live_categories remained invalid after retries`);
+    continue;
+  }
+  const categories = categoriesResult;
   const sport = /sport|bein|arryadia|arriadia|ssc|alkass|الرياض|رياضي|الكأس|الكاس/i;
-  const ids = new Set(categories.filter(c => sport.test(c.category_name)).map(c => String(c.category_id)));
-  const streams = await api(credentials, origin, 'get_live_streams');
-  const entries = streams.filter(s => ids.has(String(s.category_id)) || sport.test(s.name)).filter(s => /^\d+$/.test(String(s.stream_id)))
-    .map(s => ({ name: s.name, rawName: s.name, group: categories.find(c => String(c.category_id) === String(s.category_id))?.category_name || '',
+  const ids = new Set(categories.filter(c => c && typeof c === 'object' && sport.test(String(c.category_name || ''))).map(c => String(c.category_id)));
+  const streamsResult = await fetchProviderArray(api, credentials, origin, 'get_live_streams');
+  if (!Array.isArray(streamsResult)) {
+    console.warn(`Provider ${id} skipped: get_live_streams remained invalid after retries`);
+    continue;
+  }
+  const streams = streamsResult;
+  const entries = streams.filter(s => s && typeof s === 'object' && (ids.has(String(s.category_id)) || sport.test(String(s.name || '')))).filter(s => /^\d+$/.test(String(s.stream_id)))
+    .map(s => ({ name: String(s.name || ''), rawName: String(s.name || ''), group: categories.find(c => c && String(c.category_id) === String(s.category_id))?.category_name || '',
       url: new URL(`/live/${encodeURIComponent(credentials.username)}/${encodeURIComponent(credentials.password)}/${s.stream_id}.m3u8`, origin).href }))
     .map(entry => ({ ...entry, search: normalizeName(`${entry.name} ${entry.group}`) }));
   const selected = matchChannels(channels.map(c => c.name), entries, { candidatesPerChannel: 30 })
     .map(match => ({ name: match.name, chosen: selectProviderChannel(match) })).filter(row => row.chosen);
-  if (!selected.length) throw new Error(`Provider ${id}: no sports channels matched; catalog preserved`);
+  if (!selected.length) {
+    console.warn(`Provider ${id} skipped: no sports channels matched; saved catalog retained`);
+    continue;
+  }
   for (const row of Object.values(catalog.channels)) { delete row[id]; if (row.sourceNames) delete row.sourceNames[id]; }
   for (const { name, chosen } of selected) {
     catalog.channels[name] ||= {};

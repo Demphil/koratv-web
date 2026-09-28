@@ -57,7 +57,8 @@ export function loadConfig(env = process.env) {
   const getApiFootballMatches = createMatchesReader(env, apiFootballSources, catalog);
   const cachedResolver = resolver => {
     const cache = new Map();
-    return matchId => {
+    return (matchId, { fresh = false } = {}) => {
+      if (fresh) cache.delete(matchId);
       const entry = cache.get(matchId);
       if (entry && entry.until > Date.now()) return entry.promise;
       if (cache.size >= 500) cache.delete(cache.keys().next().value);
@@ -74,6 +75,7 @@ export function loadConfig(env = process.env) {
     providerPoolEnabled,
     providerAccounts: catalog ? () => catalog.accounts() : null,
     providerChannels: catalog ? () => catalog.channels() : null,
+    refreshProviderCatalog: catalog ? () => catalog.refreshNow() : null,
     accountsStatusPath: env.ACCOUNTS_STATUS_PATH || '/etc/koratv/accounts-status.json',
     hmacSecret,
     enableAntiBot: String(env.ENABLE_ANTI_BOT || 'true').trim().toLowerCase() !== 'false',
@@ -106,11 +108,11 @@ export function loadConfig(env = process.env) {
       return [...await getApiFootballMatches(), ...await getKoooraMatches()];
     },
     getPlayback: getApiFootballPlayback,
-    getPlaybackForSource: async (source, matchId) => {
-      if (source === 'kooora' || String(matchId).startsWith('kooora_')) return getKoooraPlayback(matchId);
-      if (source === 'api-football' || String(matchId).startsWith('api-football_')) return getApiFootballPlayback(matchId);
-      const apiPlayback = await getApiFootballPlayback(matchId);
-      return apiPlayback?.is_streaming_active ? apiPlayback : getKoooraPlayback(matchId);
+    getPlaybackForSource: async (source, matchId, options = {}) => {
+      if (source === 'kooora' || String(matchId).startsWith('kooora_')) return getKoooraPlayback(matchId, options);
+      if (source === 'api-football' || String(matchId).startsWith('api-football_')) return getApiFootballPlayback(matchId, options);
+      const apiPlayback = await getApiFootballPlayback(matchId, options);
+      return apiPlayback?.is_streaming_active ? apiPlayback : getKoooraPlayback(matchId, options);
     }
   };
 }

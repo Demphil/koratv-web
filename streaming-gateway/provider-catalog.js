@@ -11,13 +11,14 @@ export function selectProviderChannel(match) {
 
 export function createProviderCatalog(env = process.env) {
   let catalog = { channels: {} }, overrides = { matches: {} }, checked = 0;
-  const refresh = () => {
-    if (Date.now() - checked < 5000) return;
+  const refresh = (force = false) => {
+    if (!force && Date.now() - checked < 5000) return;
     checked = Date.now();
     try { catalog = JSON.parse(readFileSync(env.PROVIDER_CATALOG_PATH || '/etc/koratv/provider-catalog.json', 'utf8')); } catch {}
     try { overrides = JSON.parse(readFileSync(env.MANUAL_BROADCAST_OVERRIDE_PATH || '/etc/koratv/manual-broadcast-override.json', 'utf8')); } catch {}
   };
   return {
+    refreshNow() { checked = 0; refresh(true); },
     accounts() { refresh(); return catalog.providers || {}; },
     channels() { refresh(); return catalog.channels || {}; },
     override(matchId) {

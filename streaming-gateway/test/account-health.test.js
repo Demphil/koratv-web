@@ -52,3 +52,18 @@ test('health distinguishes actual expiry, cooldown and recovery; private file ne
   assert.equal(health.snapshot()[1].status, 'BUSY_STREAMING');
   assert.ok(Number.isFinite(pool.blocked.get('B') || 0));
 });
+
+test('stalled HLS sequence is reported separately and a successful media response clears it', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'account-stalled-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  let now = 1000;
+  const health = new AccountHealth({ accounts: () => ({ B: { enabled: true, username: 'licensed', server: 'https://provider.example' } }),
+    path: join(dir, 'accounts-status.json'), now: () => now });
+  const pool = new ProviderPool({ now: () => now, health }); health.pool = pool; t.after(() => pool.close());
+  health.stalled('B');
+  assert.equal(health.snapshot()[1].status, 'STALLED');
+  assert.equal(health.snapshot()[1].stopped_reason, 'stalled_hls_media_sequence');
+  now += 1000;
+  health.observe('B', 200, true);
+  assert.equal(health.snapshot()[1].status, 'ACTIVE');
+});
