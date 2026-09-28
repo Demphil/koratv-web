@@ -13,7 +13,7 @@ for (let round = 0; round < (probe ? 10 : 1); round++) {
   if (!response.ok) throw new Error(`Local account diagnostic HTTP ${response.status}`);
   const data = await response.json();
   console.log(JSON.stringify({ round, elapsed_ms: Date.now() - started, ...data }));
-  if (probe && (data.results.length !== 6 || new Set(data.results.map(r => r.channel)).size !== 6 || data.results.some(r => r.error || r.manifestStatus !== 200 || r.segmentStatus !== 200 || !r.bytes))) {
+  if (probe && (!data.results.length || new Set(data.results.map(r => r.channel)).size !== data.results.length || data.results.some(r => r.error || r.manifestStatus !== 200 || r.segmentStatus !== 200 || !r.bytes))) {
     process.exitCode = 1; break;
   }
 }

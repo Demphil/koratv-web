@@ -2,7 +2,7 @@
 
 `fabor.sbs` player documents and assets are served by Nginx on Njalla. Its API routes and `stream-api.koratv.click` forward over a restricted SSH tunnel to `127.0.0.1:3100` on Oracle. Only Oracle runs the gateway, account checks, IPTV catalogs, segment cache and provider connections.
 
-Oracle runs `ecosystem.oracle.cjs` from a versioned release. `/opt/koratv/current` points to that release. Existing checkouts are preserved. Gateway configuration, credentials, catalog and account status are private files under `/etc/koratv`; release `.env` links to `gateway.env`. Njalla must not run another provider pool.
+Oracle runs `ecosystem.oracle.config.js` from a versioned release. `/opt/koratv/current` points to that release. Existing checkouts are preserved. Gateway configuration, credentials, catalog and account status are private files under `/etc/koratv`; release `.env` links to `gateway.env`. Njalla must not run another provider pool.
 
 The Njalla service is `koratv-oracle-tunnel.service`. Its dedicated key on Oracle is restricted to forwarding to `127.0.0.1:3100`, with no shell session. Nginx remains responsible for HTTPS and original client forwarding. Neither public DNS nor the fabor.sbs certificate moves to Oracle.
 

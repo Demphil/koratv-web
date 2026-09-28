@@ -1,4 +1,4 @@
-# Six-account pool
+# Seven-account pool
 
 Production runs exactly one `koratv-gateway` process. Do not increase PM2 instances: the in-memory scheduler, leases, singleflight cache and account queues belong to that process.
 
@@ -8,7 +8,7 @@ Production runs exactly one `koratv-gateway` process. Do not increase PM2 instan
 - HTTP 403 cools down that account for 30 seconds. Failover only uses a free compatible account. It never steals the other live account as a failover action.
 - Capacity returns 503 and `Retry-After: 3`; reassignment returns 409. The player retries the same match, never an unrelated match.
 - One fixed upstream URL per account/channel, one HLS rendition (720p preferred). Alternate DNS names are not extra accounts.
-- Accounts A through F have no local expiry deadline. Update the corresponding `IPTV_PROVIDER_B_JSON` through `IPTV_PROVIDER_F_JSON` secret and deploy to replace secondary credentials. Viewer token and manual override expiry remain separate.
+- Accounts A through G have no local expiry deadline. On Oracle, update the corresponding entry in `/etc/koratv/provider-credentials.json` or `IPTV_PROVIDER_B_JSON` through `IPTV_PROVIDER_G_JSON`. Viewer token and manual override expiry remain separate.
 - Imported sports catalog and credentials stay in `/etc/koratv/provider-catalog.json` (0600), outside Git and the web root.
 
 ## Manual broadcast override
@@ -33,7 +33,7 @@ Use the exact `matchId` returned by `/api/matches` and an existing canonical cha
 
 Priority definitions: `/opt/koratv/koratv-web/streaming-gateway/priority-matrix.json` (version-controlled; deploy changes).
 
-The pool enforces six allowed upstream slots, one channel per independent account. Failover requires a free account that carries the same channel; six occupied slots leave no spare capacity.
+The pool enforces seven allowed upstream slots, one channel per independent account. Actual capacity depends on provider account status. Failover requires a free account that carries the same channel; seven occupied slots leave no spare capacity.
 
 ## Private account status
 
