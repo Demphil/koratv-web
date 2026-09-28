@@ -1,9 +1,6 @@
 name: Deploy streaming gateway
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
@@ -16,6 +13,7 @@ permissions:
 jobs:
   deploy:
     name: Deploy to Njalla VPS
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
