@@ -24,10 +24,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install Dependencies
-        run: npm install --omit=dev
+        run: npm ci --omit=dev --no-audit --fund=false
 
       - name: Wait for static hosting refresh
         run: sleep 90
