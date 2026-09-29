@@ -1,0 +1,62 @@
+name: Publish static SEO updates
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "*.html"
+      - "**/*.html"
+      - "robots.txt"
+      - "sitemap.xml"
+      - "scripts/apply-seo.js"
+      - ".github/workflows/publish-site.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: static-pages-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare static website
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          rsync -a ./ _site/ \
+            --exclude .git \
+            --exclude .github \
+            --exclude _site \
+            --exclude node_modules \
+            --exclude secure-streaming/node_modules \
+            --exclude streaming-gateway/node_modules \
+            --exclude secure-streaming/.next \
+            --exclude streaming-gateway/dist \
+            --exclude "**/.env*" \
+            --exclude "**/*.log"
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload website artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Publish website
+        id: deployment
+        uses: actions/deploy-pages@v4
