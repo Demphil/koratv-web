@@ -11,6 +11,10 @@ on:
       - "sitemap.xml"
       - "8f13b7e3fc9c709be30188a8675772ed.txt"
       - "scripts/apply-seo.js"
+      - "scripts/generate-match-pages.cjs"
+      - "scripts/submit-indexnow.js"
+      - "assets/js/matches.js"
+      - "assets/css/matches.css"
       - ".github/workflows/publish-site.yml"
   workflow_dispatch:
 
@@ -27,12 +31,20 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_MATCHES_TABLE: matches
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Prepare static website
         run: |
@@ -50,6 +62,11 @@ jobs:
             --exclude "**/.env*" \
             --exclude "**/*.log"
 
+      - name: Test and generate indexable match pages
+        run: |
+          node --test scripts/generate-match-pages.test.cjs
+          node scripts/generate-match-pages.cjs --output _site
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
@@ -61,3 +78,9 @@ jobs:
       - name: Publish website
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Notify IndexNow about published URLs
+        run: node scripts/submit-indexnow.js
+        env:
+          INDEXNOW_SITEMAP_PATH: _site/sitemap.xml
+        continue-on-error: true

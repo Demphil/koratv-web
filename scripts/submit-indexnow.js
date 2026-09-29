@@ -1,6 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
 
 const root = path.resolve(__dirname, "..");
 const cnamePath = path.join(root, "CNAME");
@@ -10,7 +9,7 @@ const configuredHost = process.env.SITE_URL || (fs.existsSync(cnamePath)
 const siteHost = new URL(configuredHost.includes("://") ? configuredHost : `https://${configuredHost}`).hostname;
 const key = "8f13b7e3fc9c709be30188a8675772ed";
 const keyLocation = `https://${siteHost}/${key}.txt`;
-const sitemapPath = path.join(root, "sitemap.xml");
+const sitemapPath = process.env.INDEXNOW_SITEMAP_PATH || path.join(root, "sitemap.xml");
 
 function getUrlsFromSitemap() {
   const xml = fs.readFileSync(sitemapPath, "utf8");
@@ -27,20 +26,18 @@ async function submitIndexNow() {
     throw new Error(`Sitemap contains URLs outside configured host ${siteHost}`);
   }
 
-  const response = await axios.post(
-    "https://api.indexnow.org/indexnow",
-    {
+  const response = await fetch("https://api.indexnow.org/indexnow", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({
       host: siteHost,
       key,
       keyLocation,
       urlList,
-    },
-    {
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      timeout: 15000,
-      validateStatus: (status) => status >= 200 && status < 300,
-    },
-  );
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error(`IndexNow returned HTTP ${response.status}`);
 
   console.log(`IndexNow submitted ${urlList.length} URLs. Status: ${response.status}`);
 }

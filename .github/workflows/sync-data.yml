@@ -70,6 +70,10 @@ jobs:
     needs: catalog
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_MATCHES_TABLE: matches
     permissions:
       contents: read
       pages: write
@@ -79,6 +83,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Prepare static frontend artifact
         run: |
           set -euo pipefail
@@ -94,9 +101,18 @@ jobs:
             --exclude streaming-gateway/dist \
             --exclude "**/.env*" \
             --exclude "**/*.log"
+      - name: Test and generate indexable match pages
+        run: |
+          node --test scripts/generate-match-pages.test.cjs
+          node scripts/generate-match-pages.cjs --output _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
       - uses: actions/deploy-pages@v4
         id: deployment
+      - name: Notify IndexNow about published URLs
+        run: node scripts/submit-indexnow.js
+        env:
+          INDEXNOW_SITEMAP_PATH: _site/sitemap.xml
+        continue-on-error: true
