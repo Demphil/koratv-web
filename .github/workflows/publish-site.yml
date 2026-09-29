@@ -9,7 +9,7 @@ on:
       - "**/*.html"
       - "robots.txt"
       - "sitemap.xml"
-      - "7fbee603f5d44620b6cf6cdff1cb2156.txt"
+      - "8f13b7e3fc9c709be30188a8675772ed.txt"
       - "scripts/apply-seo.js"
       - ".github/workflows/publish-site.yml"
   workflow_dispatch:

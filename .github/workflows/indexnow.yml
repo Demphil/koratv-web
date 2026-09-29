@@ -8,7 +8,7 @@ on:
       - "**/*.html"
       - "sitemap.xml"
       - "robots.txt"
-      - "7fbee603f5d44620b6cf6cdff1cb2156.txt"
+      - "8f13b7e3fc9c709be30188a8675772ed.txt"
       - "scripts/submit-indexnow.js"
   workflow_dispatch:
 

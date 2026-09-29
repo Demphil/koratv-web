@@ -8,7 +8,7 @@ const configuredHost = process.env.SITE_URL || (fs.existsSync(cnamePath)
   ? fs.readFileSync(cnamePath, "utf8").trim()
   : "koratv.click");
 const siteHost = new URL(configuredHost.includes("://") ? configuredHost : `https://${configuredHost}`).hostname;
-const key = "7fbee603f5d44620b6cf6cdff1cb2156";
+const key = "8f13b7e3fc9c709be30188a8675772ed";
 const keyLocation = `https://${siteHost}/${key}.txt`;
 const sitemapPath = path.join(root, "sitemap.xml");
 
