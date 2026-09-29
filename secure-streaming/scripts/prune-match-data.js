@@ -11,7 +11,7 @@ export async function pruneMatchData(supabase, table = 'matches', now = Date.now
     if (data.length < 500) break;
   }
   const fresh = rows.filter((row) => ['kooora', 'api-football'].includes(row.source)
-    && row.match_id.startsWith(`${row.source}_`)
+    && String(row.match_id || '').startsWith(`${row.source}_`)
     && Date.parse(row.payload?.broadcast?.checkedAt) > now - 30 * 60_000);
   const obsolete = obsoleteMatchRows(rows, fresh, now);
   let deleted = 0;

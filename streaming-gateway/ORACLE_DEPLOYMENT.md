@@ -8,7 +8,7 @@ The Njalla service is `koratv-oracle-tunnel.service`. Its dedicated key on Oracl
 
 ## Accounts
 
-Slots A through G permit one upstream channel per independent account. Backup hosts do not add capacity. Provider metadata, not a local date, determines expiration. `provider-credentials.json` maps provider IDs to objects with `username`, `password`, `origins` fields; keep mode 0600 and never commit it. The catalog sync runs every ten minutes on Oracle and retains prior data when a provider fails.
+Slots A through J permit one upstream channel per independent account. Backup hosts do not add capacity. Provider metadata, not a local date, determines expiration. `provider-credentials.json` maps provider IDs to objects with `username`, `password`, `origins` fields; keep mode 0600 and never commit it. The catalog sync runs every ten minutes on Oracle and retains prior data when a provider fails.
 
 Read current status on Oracle with `sudo cat /etc/koratv/accounts-status.json`. `max_connections` is the provider-reported limit; `gateway_slots` is the configured one-slot-per-account policy. Expired or quarantined accounts cannot be counted as available capacity.
 

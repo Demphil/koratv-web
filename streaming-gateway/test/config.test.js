@@ -24,7 +24,7 @@ test('configuration accepts independent secrets and HTTPS origins', () => {
   assert.equal(config.enableAntiBot, true);
   assert.equal(loadConfig({ ...valid, ENABLE_ANTI_BOT: 'false' }).enableAntiBot, false);
   assert.equal(config.sessionTtl, 7200);
-  assert.equal(config.upstreamUserAgent, 'koratvProviderSync/1.0');
+  assert.equal(config.upstreamUserAgent, 'IPTVSmartersPlayer');
   assert.ok(config.upstreamOrigins.has('https://media.example.com'));
 });
 

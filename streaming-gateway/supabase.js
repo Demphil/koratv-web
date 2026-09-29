@@ -114,7 +114,7 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
     const resolvedRows = deduplicateSourceEvents(data || []).map((row) => ({
       row,
       channel: (catalog?.override(row.match_id || row.id) ? [catalog.override(row.match_id || row.id)] : broadcastChannelCandidates(row))
-        .map(name => resolveChannel(name) || (catalog?.sources(name)?.B ? { name } : null)).find(Boolean)
+        .map(name => resolveChannel(name) || (catalog && Object.keys(catalog.sources(name)).length ? { name } : null)).find(Boolean)
     }));
     const usedChannelNames = [...new Set(resolvedRows
       .map(({ channel }) => channel?.name)
@@ -124,7 +124,8 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
       : usedChannelNames.map((name) => [name, true]);
     const readyChannels = new Set(healthChecks
         .filter(([, ok]) => ok)
-        .map(([name]) => name));
+        .map(([name]) => name)
+        .filter(name => !catalog || Object.keys(catalog.sources(name)).length > 0));
     return resolvedRows.map(({ row, channel }) => ({
       ...row,
       channel: channel?.name || row.channel,
@@ -236,14 +237,15 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null)
     let channel;
     for (const name of candidates) {
       channel = await findChannel(client, name);
-      if (!channel?.original_url && catalog?.sources(name)?.B) channel = { name, original_url: '', quality_variants: [] };
-      if (catalog?.sources(channel?.name)?.B) break;
-      if (channel?.original_url) break;
+      if (!channel?.original_url && catalog && Object.keys(catalog.sources(name)).length) channel = { name, original_url: '', quality_variants: [] };
+      if (catalog && Object.keys(catalog.sources(channel?.name)).length) break;
+      if (!catalog && channel?.original_url) break;
     }
-    if (!channel?.original_url && !catalog?.sources(channel?.name)?.B) return { is_streaming_active: false, reason: 'source_unavailable' };
+    if (catalog && !Object.keys(catalog.sources(channel?.name)).length) return { is_streaming_active: false, reason: 'source_unavailable' };
+    if (!catalog && !channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
     const primaryUrl = canonicalizeXtreamHlsUrl(channel.original_url);
-    const providerSources = catalog?.sources(channel.name, primaryUrl);
-    const streamUrl = primaryUrl || providerSources?.B;
+    const providerSources = catalog?.sources(channel.name);
+    const streamUrl = catalog ? Object.values(providerSources)[0] : primaryUrl;
     if (!catalog && env.CHECK_PLAYBACK_SOURCE_HEALTH === 'true' && !(await isPlayableHlsSource(streamUrl))) {
       return { is_streaming_active: false, reason: 'source_unavailable' };
     }

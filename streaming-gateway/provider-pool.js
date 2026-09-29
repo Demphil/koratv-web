@@ -5,7 +5,7 @@ export class PoolError extends Error {
   constructor(code = 'pool_capacity', status = 503) { super(code); this.code = code; this.status = status; }
 }
 
-export const PROVIDER_IDS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+export const PROVIDER_IDS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
 // One process owns the upstream accounts. Every media fetch must hold a current lease.
 export class ProviderPool {

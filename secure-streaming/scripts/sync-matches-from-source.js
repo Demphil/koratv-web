@@ -764,7 +764,7 @@ export async function collectMatchRowsFromSource() {
   return reconcileBroadcasts(uniqueRows, { checkedAt, failedDates });
 }
 
-export async function upsertMatchRows(rows) {
+export async function upsertMatchRows(rows, { prune = true } = {}) {
   const supabase = getSupabaseAdmin();
   const withExisting = await mergeExistingChannels(supabase, rows);
   const enriched = await enrichApiFootballMatchDetails(withExisting.rows);
@@ -772,7 +772,7 @@ export async function upsertMatchRows(rows) {
 
   const written = await persistMatchSnapshots(supabase, finalRowsForUpsert, withExisting.versions);
   console.log(`Stored ${written}/${finalRowsForUpsert.length} match snapshots; concurrent newer snapshots preserved.`);
-  await pruneMatchData(supabase, matchesTable);
+  if (prune) await pruneMatchData(supabase, matchesTable);
 
   return { parsed: rows.length, upserted: written, koooraFallbackChannels: 0, enriched: null };
 }

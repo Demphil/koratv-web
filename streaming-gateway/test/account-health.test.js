@@ -14,13 +14,13 @@ test('diagnostic heartbeats preserve slow in-flight leases without resurrecting 
   pool.revoke('A'); assert.equal(pool.touch(lease, 'probe'), false);
 });
 
-test('seven accounts isolate the eighth request and fail over only to free accounts', t => {
+test('ten accounts isolate the eleventh request and fail over only to free accounts', t => {
   const pool = new ProviderPool(); t.after(() => pool.close());
   const playback = id => ({ pool_key: id, match_id: id, channel_id: id, priority_score: 100,
     provider_sources: Object.fromEntries(PROVIDER_IDS.map(p => [p, `https://${p.toLowerCase()}.example/${id}.m3u8`])) });
   const leases = PROVIDER_IDS.map(p => pool.acquire(playback(p), p));
   assert.deepEqual(leases.map(l => l.provider), PROVIDER_IDS);
-  assert.throws(() => pool.acquire({ ...playback('eighth'), priority_score: 10 }, 'eighth'), PoolError);
+  assert.throws(() => pool.acquire({ ...playback('eleventh'), priority_score: 10 }, 'eleventh'), PoolError);
   pool.fail(leases[5]);
   assert.ok(leases.slice(0,5).every(l => pool.valid(l)));
   pool.revoke('E'); pool.demands.delete('E');

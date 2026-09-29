@@ -67,7 +67,7 @@ export class AccountHealth {
           const url = new URL('/player_api.php', source);
           url.searchParams.set('username', decodeURIComponent(parts[1]));
           url.searchParams.set('password', decodeURIComponent(parts[2]));
-          const response = await this.fetch(url, { signal: AbortSignal.timeout(5000) });
+          const response = await this.fetch(url, { headers: { 'User-Agent': 'IPTVSmartersPlayer' }, signal: AbortSignal.timeout(5000) });
           const info = response.ok ? (await response.json()).user_info : null;
           state.checked = new Date(this.now()).toISOString();
           state.providerStatus = info?.status || null;
@@ -101,15 +101,16 @@ export class AccountHealth {
       const account = accounts[provider] || {}, state = this.state(provider);
       const lease = this.pool?.leases.get(provider);
       const demand = lease && this.pool.demands.get(lease.key);
+      const unavailable = account.syncStatus === 'UNAVAILABLE';
       const stopped = !account.enabled || state.stopped;
       const cooldown = state.until > this.now();
       return { provider, id: account.id || `Account_${index + 1}_${provider === 'A' ? 'Primary' : account.username || provider}`,
         username: account.username || null, server: account.server || null,
         provider_status: state.providerStatus || null, max_connections: state.maxConnections ?? account.maxConnections ?? null,
         active_cons: state.activeConnections ?? null, gateway_slots: account.enabled ? 1 : 0,
-        status: stopped ? 'STOPPED_EXPIRED' : state.stalled && cooldown ? 'STALLED' : cooldown ? 'COOLDOWN_403' : lease ? 'BUSY_STREAMING' : 'ACTIVE',
+        status: unavailable ? 'UNAVAILABLE_SYNC' : stopped ? 'STOPPED_EXPIRED' : state.stalled && cooldown ? 'STALLED' : cooldown ? 'COOLDOWN_403' : lease ? 'BUSY_STREAMING' : 'ACTIVE',
         current_channel: demand?.channel || null, current_match: demand?.key || null,
-        last_http_code: state.code, stopped_reason: !account.enabled ? 'not_configured' : stopped || cooldown ? state.reason : null,
+        last_http_code: state.code, stopped_reason: unavailable ? 'provider_catalog_unavailable' : !account.enabled ? 'not_configured' : stopped || cooldown ? state.reason : null,
         last_checked_at: state.checked, cooldown_until: cooldown ? new Date(state.until).toISOString() : null, consecutive_403: state.failures };
     });
   }

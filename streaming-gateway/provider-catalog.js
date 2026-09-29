@@ -26,9 +26,9 @@ export function createProviderCatalog(env = process.env) {
       if (!item || item.enabled === false || !Number.isFinite(Date.parse(item.expiresAt)) || Date.parse(item.expiresAt) <= Date.now()) return null;
       return typeof item.channel === 'string' ? item.channel : null;
     },
-    sources(channel, primaryUrl) {
-      refresh(); const sources = primaryUrl ? { A: primaryUrl } : {};
-      for (const id of PROVIDER_IDS.slice(1)) {
+    sources(channel) {
+      refresh(); const sources = {};
+      for (const id of PROVIDER_IDS) {
         if (catalog.providers?.[id]?.enabled && catalog.channels?.[channel]?.[id]) sources[id] = catalog.channels[channel][id];
       }
       return sources;

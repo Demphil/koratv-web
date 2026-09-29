@@ -1,4 +1,4 @@
-# Seven-account pool
+# Ten-account pool
 
 Production runs exactly one `koratv-gateway` process. Do not increase PM2 instances: the in-memory scheduler, leases, singleflight cache and account queues belong to that process.
 
@@ -8,8 +8,8 @@ Production runs exactly one `koratv-gateway` process. Do not increase PM2 instan
 - HTTP 403 cools down that account for 30 seconds. Failover only uses a free compatible account. It never steals the other live account as a failover action.
 - Capacity returns 503 and `Retry-After: 3`; reassignment returns 409. The player retries the same match, never an unrelated match.
 - One fixed upstream URL per account/channel, one HLS rendition (720p preferred). Alternate DNS names are not extra accounts.
-- Accounts A through G have no local expiry deadline. On Oracle, update the corresponding entry in `/etc/koratv/provider-credentials.json` or `IPTV_PROVIDER_B_JSON` through `IPTV_PROVIDER_G_JSON`. Viewer token and manual override expiry remain separate.
-- Imported sports catalog and credentials stay in `/etc/koratv/provider-catalog.json` (0600), outside Git and the web root.
+- Accounts A through J have no local expiry deadline. On Oracle, update the corresponding entry in `/etc/koratv/provider-credentials.json` or `IPTV_PROVIDER_B_JSON` through `IPTV_PROVIDER_J_JSON`. Viewer token and manual override expiry remain separate.
+- Sports links stay in `/etc/koratv/provider-catalog.json`; credentials stay in `/etc/koratv/provider-credentials.json`. Both are mode 0600 outside Git and the web root.
 
 ## Manual broadcast override
 

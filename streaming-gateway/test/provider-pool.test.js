@@ -39,10 +39,10 @@ test('provider catalog ignores legacy account expiry but retains manual override
   const dir = mkdtempSync(join(tmpdir(), 'provider-catalog-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const catalogPath = join(dir, 'catalog.json'), overridePath = join(dir, 'override.json');
-  writeFileSync(catalogPath, JSON.stringify({ providers: { B: { enabled: true, expiresAt: '2000-01-01T00:00:00Z' }, C: { enabled: true } }, channels: { sport: { B: 'https://b.example/live', C: 'https://c.example/live' } } }));
+  writeFileSync(catalogPath, JSON.stringify({ providers: { A: { enabled: true }, B: { enabled: true, expiresAt: '2000-01-01T00:00:00Z' }, C: { enabled: true } }, channels: { sport: { A: 'https://fresh-a.example/live', B: 'https://b.example/live', C: 'https://c.example/live' } } }));
   writeFileSync(overridePath, JSON.stringify({ matches: { old: { channel: 'sport', expiresAt: '2000-01-01T00:00:00Z' } } }));
   const catalog = createProviderCatalog({ PROVIDER_CATALOG_PATH: catalogPath, MANUAL_BROADCAST_OVERRIDE_PATH: overridePath });
-  assert.deepEqual(catalog.sources('sport', 'https://a.example/live'), { A: 'https://a.example/live', B: 'https://b.example/live', C: 'https://c.example/live' });
+  assert.deepEqual(catalog.sources('sport', 'https://stale-a.example/live'), { A: 'https://fresh-a.example/live', B: 'https://b.example/live', C: 'https://c.example/live' });
   assert.equal(catalog.override('old'), null);
 });
 

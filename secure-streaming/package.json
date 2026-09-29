@@ -16,6 +16,7 @@
     "sync:matches:dry": "node scripts/sync-matches-from-source.js --dry-run",
     "sync:matches:daily": "node scripts/sync-matches-daily.js",
     "sync:matches:daily:dry": "node scripts/sync-matches-daily.js --dry-run",
+    "prune:matches": "node scripts/prune-stale-matches.js",
     "sync:iptv": "node scripts/sync-iptv-provider.js",
     "sync:iptv:dry": "node scripts/sync-iptv-provider.js --dry-run",
     "sync:iptv:links": "node scripts/sync-iptv-links.js",

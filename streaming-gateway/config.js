@@ -92,7 +92,7 @@ export function loadConfig(env = process.env) {
     sessionTtl: Math.max(300, Number(env.STREAM_SESSION_TTL_SECONDS || 300)),
     streamOpensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || 20),
     streamClosesAfterMinutes: Number(env.STREAM_CLOSES_AFTER_MINUTES || 150),
-    upstreamUserAgent: env.IPTV_UPSTREAM_USER_AGENT || 'koratvProviderSync/1.0',
+    upstreamUserAgent: env.IPTV_UPSTREAM_USER_AGENT || 'IPTVSmartersPlayer',
     upstreamOrigins: new Set((env.UPSTREAM_ORIGINS || '').split(',').filter(Boolean).map(upstreamOrigin)),
     sourceForOrigin: (origin) => sourceForOrigin(origin, { koratvOrigins, frajaOrigins }),
     getMatches: getApiFootballMatches,

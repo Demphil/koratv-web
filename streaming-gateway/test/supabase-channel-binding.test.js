@@ -106,3 +106,25 @@ test('reader and ticket resolver choose an available broadcaster from the verifi
     assert.equal(playback.is_streaming_active, true);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('pooled playback takes the refreshed provider URL rather than the stored channel URL', async () => {
+  const originalFetch = globalThis.fetch;
+  const match = { id: 'refreshed-match', match_id: 'refreshed-match', active: true, source: 'kooora',
+    kickoff_time: new Date(Date.now() - 60000).toISOString(), channel: 'beIN SPORTS HD 1',
+    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: ['beIN SPORTS HD 1'] } } };
+  const channel = { id: 1, name: 'beIN SPORTS HD 1', active: true,
+    original_url: 'https://stale.example/live/old/secret/1.m3u8' };
+  globalThis.fetch = async input => {
+    const url = new URL(input);
+    return Response.json(url.pathname.endsWith('/matches') ? [match] : [channel]);
+  };
+  const catalog = { override: () => null,
+    sources: name => name === channel.name ? { A: 'https://fresh.example/live/new/secret/1.m3u8' } : {} };
+  try {
+    const playback = await createPlaybackResolver({ NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' }, 'kooora', catalog)(match.match_id);
+    assert.equal(playback.is_streaming_active, true);
+    assert.equal(playback.stream_url, catalog.sources(channel.name).A);
+    assert.deepEqual(playback.provider_sources, catalog.sources(channel.name));
+  } finally { globalThis.fetch = originalFetch; }
+});
