@@ -3,12 +3,31 @@ import { mkdir, readFile, writeFile, rename, chmod } from 'node:fs/promises';
 import { PROVIDER_IDS } from '../provider-pool.js';
 import { credentialsFromCatalog, discoverProvider } from '../provider-direct.js';
 import { applyProviderDiscovery } from '../provider-catalog-update.js';
+import { broadcastChannelCandidates } from '../../shared/match-broadcasts.mjs';
 
 const dir = process.env.PROVIDER_POOL_DIR || '/etc/koratv';
 const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
   process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 const { data: channels, error } = await client.from('channels').select('name').eq('active', true).limit(1000);
 if (error) throw new Error('Canonical channel list unavailable');
+const from = new Date(Date.now() - Number(process.env.PROVIDER_SYNC_MATCH_LOOKBACK_HOURS || 18) * 60 * 60_000).toISOString();
+const to = new Date(Date.now() + Number(process.env.PROVIDER_SYNC_MATCH_LOOKAHEAD_HOURS || 36) * 60 * 60_000).toISOString();
+const { data: matches, error: matchesError } = await client
+  .from(process.env.SUPABASE_MATCHES_TABLE || 'matches')
+  .select('id,match_id,kickoff_time,channel,source,payload,active')
+  .eq('active', true)
+  .gte('kickoff_time', from)
+  .lte('kickoff_time', to)
+  .limit(Number(process.env.PROVIDER_SYNC_MATCH_LIMIT || 700));
+if (matchesError) throw new Error(`Match route targets unavailable (${matchesError.code || 'network'})`);
+const canonicalNames = [...new Set([
+  ...(channels || []).map((channel) => channel?.name).filter(Boolean),
+  ...(matches || []).flatMap((row) => {
+    const candidates = broadcastChannelCandidates(row);
+    if (candidates.length) return candidates;
+    return typeof row.channel === 'string' && row.channel.trim() ? [row.channel.trim()] : [];
+  })
+])];
 let catalog = { providers: {}, channels: {} };
 try { catalog = JSON.parse(await readFile(`${dir}/provider-catalog.json`, 'utf8')); } catch {}
 catalog.providers ||= {}; catalog.channels ||= {};
@@ -28,7 +47,7 @@ for (const id of PROVIDER_IDS) {
   const origins = [...new Set((credentials.origins?.length ? credentials.origins : catalog.providers[id]?.origins || []).filter(Boolean))];
   if (!origins.length) { report.push({ provider: id, error: 'origins_missing' }); continue; }
   let discovered;
-  try { discovered = await discoverProvider(credentials, origins, channels.map(x => x.name)); }
+  try { discovered = await discoverProvider(credentials, origins, canonicalNames); }
   catch (error) { discovered = { attempts: [{ error: error.message }], selected: [] }; }
   const update = applyProviderDiscovery(catalog, id, credentials, origins, discovered, checkedAt);
   if (update.replaced) refreshedProviders++;

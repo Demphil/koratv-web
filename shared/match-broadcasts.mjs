@@ -67,16 +67,22 @@ export function sameFixture(left, right) {
 }
 
 export function normalizeBroadcastChannel(name) {
-  return String(name || '').trim().replace(/^beIN Sports Mena\s*(\d+)$/i, 'beIN SPORTS HD $1');
+  const value = String(name || '').trim();
+  if (!value || /\bbadge\b/i.test(value)) return '';
+  return value.replace(/^beIN Sports Mena\s*(\d+)$/i, 'beIN SPORTS HD $1');
 }
 
 export function broadcastSnapshot(row, checkedAt = new Date().toISOString()) {
   const names = row.payload?.channels ?? row.payload?.sourceChannels;
   if (!Array.isArray(names)) return null;
+  const channels = [...new Set(names
+    .filter((name) => typeof name === 'string' && name.trim())
+    .map(normalizeBroadcastChannel)
+    .filter(Boolean))];
   return {
     source: 'kooora', sourceMatchId: String(row.payload?.sourceMatchId || row.match_id),
-    checkedAt, channels: [...new Set(names.filter((name) => typeof name === 'string' && name.trim()).map((name) => name.trim()))],
-    state: names.length ? 'assigned' : 'unassigned',
+    checkedAt, channels,
+    state: channels.length ? 'assigned' : 'unassigned',
   };
 }
 

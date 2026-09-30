@@ -64,6 +64,14 @@ test('Arabic broadcasters are tried before foreign options while preserving thei
   assert.deepEqual(broadcastChannelCandidates(row), ['beIN SPORTS HD 2', 'Arryadia TNT', 'SuperSport Maximo 1', 'SABC Plus']);
 });
 
+test('team badge alt text is never stored as a broadcaster', () => {
+  const [row] = reconcileBroadcasts([{ ...kooora, payload: { ...kooora.payload,
+    channels: ['إيريتريا badge', 'Abu Dhabi Sports 2', 'MBC Action'] } }], { checkedAt });
+  assert.equal(row.channel, 'Abu Dhabi Sports 2');
+  assert.deepEqual(row.payload.broadcast.channels, ['Abu Dhabi Sports 2', 'MBC Action']);
+  assert.deepEqual(broadcastChannelCandidates(row), ['Abu Dhabi Sports 2', 'MBC Action']);
+});
+
 test('joins St. Vincent API naming to Kooora Arabic naming only for the same kickoff', () => {
   const apiMatch = { ...api, home_team: 'St. Vincent / Grenadines', away_team: 'Belize' };
   const koooraMatch = { ...kooora, home_team: 'سانت فنسنت وجزر غرينادين', away_team: 'بليز' };
