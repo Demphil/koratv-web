@@ -20,7 +20,24 @@ const { data: matches, error: matchesError } = await client
   .lte('kickoff_time', to)
   .limit(Number(process.env.PROVIDER_SYNC_MATCH_LIMIT || 700));
 if (matchesError) throw new Error(`Match route targets unavailable (${matchesError.code || 'network'})`);
+const defaultTargetChannels = [
+  'MBC Action',
+  'Abu Dhabi Sports 1',
+  'Abu Dhabi Sports 2',
+  'Oman Sports TV',
+  'Kuwait Sport TV',
+  'AL KASS One',
+  'AL KASS Two',
+  'AL KASS 1',
+  'AL KASS 2'
+];
+const extraTargetChannels = String(process.env.PROVIDER_SYNC_EXTRA_CHANNELS || '')
+  .split(',')
+  .map((name) => name.trim())
+  .filter(Boolean);
 const canonicalNames = [...new Set([
+  ...defaultTargetChannels,
+  ...extraTargetChannels,
   ...(channels || []).map((channel) => channel?.name).filter(Boolean),
   ...(matches || []).flatMap((row) => {
     const candidates = broadcastChannelCandidates(row);
