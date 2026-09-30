@@ -128,3 +128,41 @@ test('pooled playback takes the refreshed provider URL rather than the stored ch
     assert.deepEqual(playback.provider_sources, catalog.sources(channel.name));
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('reader and ticket resolver skip a listed broadcaster without a provider source and try the next one', async () => {
+  const originalFetch = globalThis.fetch;
+  const fixture = {
+    id: 'alternative-fixture', match_id: 'alternative-fixture', active: true, source: 'kooora',
+    kickoff_time: new Date(Date.now() - 60000).toISOString(),
+    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: ['SuperSport Maximo 1', 'SABC Plus'] } },
+  };
+  const channels = [
+    { id: 1, name: 'SuperSport Maximo 1', active: true, original_url: 'https://media.example.com/1.m3u8' },
+    { id: 2, name: 'SABC Plus', active: true, original_url: 'https://media.example.com/2.m3u8' },
+  ];
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith('/matches')) return Response.json([fixture]);
+    const nameFilter = url.searchParams.get('name');
+    if (nameFilter) {
+      const requested = nameFilter.replace(/^eq\./, '');
+      return Response.json(channels.filter((channel) => channel.name === requested));
+    }
+    return Response.json(channels);
+  };
+  const catalog = {
+    override: () => null,
+    sources: (name) => name === 'SABC Plus' ? { A: 'https://pool.example/live/sabc.m3u8' } : {},
+  };
+  try {
+    const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' };
+    const [row] = await createMatchesReader(env, 'kooora', catalog)();
+    assert.equal(row.source_ready, true);
+    assert.equal(row.channel, 'SABC Plus');
+
+    const playback = await createPlaybackResolver(env, 'kooora', catalog)(fixture.match_id);
+    assert.equal(playback.is_streaming_active, true);
+    assert.equal(playback.channel_id, 'SABC Plus');
+    assert.equal(playback.stream_url, 'https://pool.example/live/sabc.m3u8');
+  } finally { globalThis.fetch = originalFetch; }
+});

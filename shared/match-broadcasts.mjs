@@ -134,7 +134,13 @@ export function broadcastChannelCandidates(row) {
   const snapshot = row.payload?.broadcast;
   if (snapshot?.source !== 'kooora') return [];
   const names = snapshot.channels;
-  return [...new Set((names || []).filter((name) => typeof name === 'string' && name.trim()).map(normalizeBroadcastChannel))];
+  const isArabicBroadcaster = (name) => /[\u0600-\u06ff]/u.test(name)
+    || (/\bbein\b/i.test(name) && !/\b(?:eng|english|fr|french|turkish)\b/i.test(name))
+    || /\b(?:arryadia|arriadia|snrt|ssc|al.?kass|abu dhabi sports|dubai sports|on time sports|nile sports|saudi sports|ksa sports|kuwait sports|oman sports|jordan sports)\b/i.test(name);
+  return [...new Set((names || []).filter((name) => typeof name === 'string' && name.trim()).map(normalizeBroadcastChannel))]
+    .map((name, index) => ({ name, index, arabic: isArabicBroadcaster(name) }))
+    .sort((left, right) => Number(right.arabic) - Number(left.arabic) || left.index - right.index)
+    .map(({ name }) => name);
 }
 
 export function obsoleteMatchRows(existing, fresh, now = Date.now()) {

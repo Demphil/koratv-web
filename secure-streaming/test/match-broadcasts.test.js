@@ -58,6 +58,12 @@ test('joins exact bilingual opponents and kickoff, preserving API-Football detai
   assert.equal(rows[1].channel, rows[0].channel);
 });
 
+test('Arabic broadcasters are tried before foreign options while preserving their source order', () => {
+  const row = reconcileBroadcasts([{ ...kooora, payload: { ...kooora.payload,
+    channels: ['SuperSport Maximo 1', 'beIN Sports Mena 2', 'SABC Plus', 'Arryadia TNT'] } }], { checkedAt })[0];
+  assert.deepEqual(broadcastChannelCandidates(row), ['beIN SPORTS HD 2', 'Arryadia TNT', 'SuperSport Maximo 1', 'SABC Plus']);
+});
+
 test('joins St. Vincent API naming to Kooora Arabic naming only for the same kickoff', () => {
   const apiMatch = { ...api, home_team: 'St. Vincent / Grenadines', away_team: 'Belize' };
   const koooraMatch = { ...kooora, home_team: 'سانت فنسنت وجزر غرينادين', away_team: 'بليز' };

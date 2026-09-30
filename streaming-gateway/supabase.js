@@ -111,11 +111,17 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
       const matchedName = findChannelNameMatch(name, availableChannels.map((channel) => channel.name));
       return availableChannels.find((channel) => channel.name === matchedName) || null;
     };
-    const resolvedRows = deduplicateSourceEvents(data || []).map((row) => ({
-      row,
-      channel: (catalog?.override(row.match_id || row.id) ? [catalog.override(row.match_id || row.id)] : broadcastChannelCandidates(row))
-        .map(name => resolveChannel(name) || (catalog && Object.keys(catalog.sources(name)).length ? { name } : null)).find(Boolean)
-    }));
+    const resolvedRows = deduplicateSourceEvents(data || []).map((row) => {
+      const candidates = catalog?.override(row.match_id || row.id)
+        ? [catalog.override(row.match_id || row.id)]
+        : broadcastChannelCandidates(row);
+      const channel = candidates.map((name) => {
+        const resolved = resolveChannel(name);
+        if (resolved && (!catalog || Object.keys(catalog.sources(resolved.name)).length)) return resolved;
+        return catalog && Object.keys(catalog.sources(name)).length ? { name } : null;
+      }).find(Boolean);
+      return { row, channel };
+    });
     const usedChannelNames = [...new Set(resolvedRows
       .map(({ channel }) => channel?.name)
       .filter(Boolean))];
