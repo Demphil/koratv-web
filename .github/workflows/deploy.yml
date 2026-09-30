@@ -77,6 +77,7 @@ jobs:
             if [ -n "${IPTV_PROVIDER_B_JSON:-}${IPTV_PROVIDER_C_JSON:-}" ]; then
               node --env-file=.env scripts/sync-provider-pool.js
             fi
+            node --env-file=.env scripts/maintenance-sync.js
             if [ -n "${ARRYADIA_UPSTREAM_ORIGINS:-}" ]; then
               IFS=',' read -r -a arryadia_origins <<< "$ARRYADIA_UPSTREAM_ORIGINS"
               for upstream_origin in "${arryadia_origins[@]}"; do

@@ -55,6 +55,11 @@ test('maintenance sync writes opaque route ids without playback URLs', async () 
     const active = JSON.parse(await readFile(join(dir, 'active-catalog.json'), 'utf8'));
     assert.equal(active.matches['fixture-1'].routes[0].routeId, 'channel:SABC Plus');
     assert.equal(JSON.stringify(active).includes('private.example'), false);
+    const routeState = JSON.parse(await readFile(join(dir, 'direct-match-route-state.json'), 'utf8'));
+    assert.equal(routeState.matches['fixture-1'].requestedChannel, 'SABC Plus');
+    assert.equal(routeState.matches['fixture-1'].resolvedChannel, 'SABC Plus');
+    assert.equal(routeState.matches['fixture-1'].status, 'RESOLVED');
+    assert.equal(JSON.stringify(routeState).includes('private.example'), false);
   } finally {
     globalThis.fetch = originalFetch;
   }

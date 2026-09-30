@@ -84,6 +84,44 @@ test('provider catalog resolves Kooora broadcaster aliases against source names'
   assert.equal(catalog.sources('beIN SPORTS CONNECT').B, 'https://b.example/connect.m3u8');
 });
 
+test('provider catalog exposes safe direct match route state without raw URLs', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provider-route-state-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const catalogPath = join(dir, 'catalog.json');
+  const overridePath = join(dir, 'override.json');
+  const routeStatePath = join(dir, 'direct-match-route-state.json');
+  writeFileSync(catalogPath, JSON.stringify({
+    providers: { A: { enabled: true } },
+    channels: { 'MBC Action': { A: 'https://private.example/live/user/pass/777.m3u8' } }
+  }));
+  writeFileSync(overridePath, '{"matches":{}}');
+  writeFileSync(routeStatePath, JSON.stringify({
+    matches: {
+      'match-1': {
+        status: 'RESOLVED',
+        requestedChannels: ['MBC Action'],
+        requestedChannel: 'MBC Action',
+        resolvedChannel: 'MBC Action',
+        providerIds: ['A']
+      }
+    }
+  }));
+  const catalog = createProviderCatalog({
+    PROVIDER_CATALOG_PATH: catalogPath,
+    MANUAL_BROADCAST_OVERRIDE_PATH: overridePath,
+    DIRECT_MATCH_ROUTE_STATE_PATH: routeStatePath
+  });
+  assert.deepEqual(catalog.matchRoute('match-1'), {
+    matchId: 'match-1',
+    requestedChannels: ['MBC Action'],
+    resolvedChannel: 'MBC Action',
+    status: 'RESOLVED',
+    source: 'direct-match-route-state',
+  });
+  assert.equal(JSON.stringify(catalog.matchRoute('match-1')).includes('private.example'), false);
+  assert.equal(catalog.sources(catalog.matchRoute('match-1').resolvedChannel).A, 'https://private.example/live/user/pass/777.m3u8');
+});
+
 
 test('higher scores never preempt a lease with active viewers', t => {
   const { pool } = setup(t);

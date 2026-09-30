@@ -129,6 +129,34 @@ test('pooled playback takes the refreshed provider URL rather than the stored ch
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('pooled playback can use direct match route state before broadcast matching', async () => {
+  const originalFetch = globalThis.fetch;
+  const match = { id: 'direct-route-match', match_id: 'direct-route-match', active: true, source: 'kooora',
+    kickoff_time: new Date(Date.now() - 60000).toISOString(), channel: null,
+    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: [] } } };
+  const channel = { id: 1, name: 'MBC Action', active: true, original_url: 'https://stale.example/live/old/secret/1.m3u8' };
+  globalThis.fetch = async input => {
+    const url = new URL(input);
+    return Response.json(url.pathname.endsWith('/matches') ? [match] : [channel]);
+  };
+  const catalog = {
+    override: () => null,
+    matchRoute: id => id === match.match_id ? { resolvedChannel: 'MBC Action', requestedChannels: ['MBC Action'], status: 'RESOLVED' } : null,
+    resolve: name => name,
+    sources: name => name === channel.name ? { A: 'https://pool.example/live/mbc-action.m3u8' } : {},
+  };
+  try {
+    const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' };
+    const [row] = await createMatchesReader(env, 'kooora', catalog)();
+    assert.equal(row.source_ready, true);
+    assert.equal(row.channel, 'MBC Action');
+    const playback = await createPlaybackResolver(env, 'kooora', catalog)(match.match_id);
+    assert.equal(playback.is_streaming_active, true);
+    assert.equal(playback.channel_id, 'MBC Action');
+    assert.equal(playback.stream_url, 'https://pool.example/live/mbc-action.m3u8');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test('reader and ticket resolver skip a listed broadcaster without a provider source and try the next one', async () => {
   const originalFetch = globalThis.fetch;
   const fixture = {

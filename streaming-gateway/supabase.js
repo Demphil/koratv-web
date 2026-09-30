@@ -112,9 +112,12 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
       return availableChannels.find((channel) => channel.name === matchedName) || null;
     };
     const resolvedRows = deduplicateSourceEvents(data || []).map((row) => {
+      const routeState = catalog?.matchRoute?.(row.match_id || row.id);
       const candidates = catalog?.override(row.match_id || row.id)
         ? [catalog.override(row.match_id || row.id)]
-        : broadcastChannelCandidates(row);
+        : routeState?.resolvedChannel
+          ? [routeState.resolvedChannel]
+          : broadcastChannelCandidates(row);
       const channel = candidates.map((name) => {
         const resolved = resolveChannel(name);
         if (resolved && (!catalog || Object.keys(catalog.sources(resolved.name)).length)) return resolved;
@@ -243,8 +246,10 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null)
       return { is_streaming_active: false, reason: 'upcoming' };
     }
 
-    const override = catalog?.override(match.match_id || match.id);
-    const candidates = override ? [override] : broadcastChannelCandidates(match);
+    const matchKey = match.match_id || match.id;
+    const override = catalog?.override(matchKey);
+    const routeState = catalog?.matchRoute?.(matchKey);
+    const candidates = override ? [override] : routeState?.resolvedChannel ? [routeState.resolvedChannel] : broadcastChannelCandidates(match);
     if (!candidates.length) return unavailable('channel_unavailable', catalog ? {
       stage: 'kooora_broadcast',
       broadcastState: payload.broadcast?.state || null,

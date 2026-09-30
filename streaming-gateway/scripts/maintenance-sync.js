@@ -98,6 +98,34 @@ async function readTodayMatches(env, dateKey, timezone) {
   return (data || []).filter((row) => dateKeyFor(row.kickoff_time, timezone) === dateKey);
 }
 
+async function writeRouteStateToSupabase(env, dateKey, routeStates) {
+  if (String(env.ROUTE_SYNC_WRITE_SUPABASE_STATE || '').trim().toLowerCase() !== 'true') return { enabled: false, written: 0 };
+  const table = env.ROUTE_STATE_TABLE || 'match_route_state';
+  const rows = Object.values(routeStates).map((state) => ({
+    match_id: state.matchId,
+    route_date: dateKey,
+    requested_channels: state.requestedChannels,
+    requested_channel: state.requestedChannel,
+    resolved_channel: state.resolvedChannel,
+    matched_alias: state.matchedAlias,
+    provider_ids: state.providerIds,
+    status: state.status,
+    updated_at: state.updatedAt,
+  }));
+  if (!rows.length) return { enabled: true, written: 0 };
+  try {
+    const client = createServerClient(env);
+    const { data, error } = await client.from(table)
+      .upsert(rows, { onConflict: 'match_id' })
+      .select('match_id');
+    if (error) throw error;
+    return { enabled: true, written: data?.length || rows.length };
+  } catch (error) {
+    console.warn(`Route state Supabase write skipped: ${error?.message || error}`);
+    return { enabled: true, written: 0, error: error?.message || String(error) };
+  }
+}
+
 function targetChannelsForMatch(row) {
   const candidates = broadcastChannelCandidates(row);
   if (candidates.length) return candidates;
@@ -111,12 +139,14 @@ export async function runMaintenanceSync(env = process.env) {
   const dir = env.PROVIDER_POOL_DIR || DEFAULT_POOL_DIR;
   const providerCatalogPath = env.PROVIDER_CATALOG_PATH || `${dir}/provider-catalog.json`;
   const activeCatalogPath = env.ACTIVE_CATALOG_PATH || `${dir}/active-catalog.json`;
+  const routeStatePath = env.DIRECT_MATCH_ROUTE_STATE_PATH || `${dir}/direct-match-route-state.json`;
   const missingRoutesPath = env.MISSING_ROUTES_PATH || `${dir}/missing-routes.json`;
   const providerCatalog = await readJson(providerCatalogPath, { providers: {}, channels: {} });
   const routes = buildAvailableRoutes(providerCatalog);
   const matches = await readTodayMatches(env, dateKey, timezone);
   const activeChannels = {};
   const matchRoutes = {};
+  const routeStates = {};
   const missing = [];
   for (const row of matches) {
     const matchId = row.match_id || row.id;
@@ -151,6 +181,7 @@ export async function runMaintenanceSync(env = process.env) {
       }
     }
     if (resolved.length || targets.length) {
+      const selected = resolved[0] || null;
       matchRoutes[matchId] = {
         matchId,
         date: dateKey,
@@ -160,6 +191,21 @@ export async function runMaintenanceSync(env = process.env) {
         kickoffTime: row.kickoff_time,
         requestedNames: targets,
         routes: resolved,
+      };
+      routeStates[matchId] = {
+        matchId,
+        date: dateKey,
+        homeTeam: row.home_team,
+        awayTeam: row.away_team,
+        league: row.league,
+        kickoffTime: row.kickoff_time,
+        requestedChannels: targets,
+        requestedChannel: targets[0] || null,
+        resolvedChannel: selected?.channel || null,
+        matchedAlias: selected?.matchedAlias || null,
+        providerIds: selected?.providerIds || [],
+        status: selected ? 'RESOLVED' : 'UNRESOLVED',
+        updatedAt: new Date().toISOString(),
       };
     }
   }
@@ -184,15 +230,31 @@ export async function runMaintenanceSync(env = process.env) {
     missingCount: missing.length,
     missing,
   };
+  const routeStateOutput = {
+    version: 1,
+    generatedAt: output.generatedAt,
+    date: dateKey,
+    timezone,
+    source: 'maintenance-sync',
+    matchCount: Object.keys(routeStates).length,
+    resolvedCount: Object.values(routeStates).filter((item) => item.status === 'RESOLVED').length,
+    matches: routeStates,
+  };
   await writeJsonAtomic(activeCatalogPath, output);
+  await writeJsonAtomic(routeStatePath, routeStateOutput);
   await writeJsonAtomic(missingRoutesPath, missingOutput);
+  const supabaseState = await writeRouteStateToSupabase(env, dateKey, routeStates);
   return {
     generatedAt: output.generatedAt,
     date: dateKey,
     matches: output.matchCount,
     activeRoutes: output.routeCount,
     missingRoutes: missing.length,
+    routeStateMatches: routeStateOutput.matchCount,
+    routeStateResolved: routeStateOutput.resolvedCount,
+    supabaseState,
     activeCatalogPath,
+    routeStatePath,
     missingRoutesPath,
   };
 }
