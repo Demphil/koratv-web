@@ -161,3 +161,46 @@ jobs:
         env:
           INDEXNOW_SITEMAP_PATH: _site/sitemap.xml
         continue-on-error: true
+
+  deploy-player:
+    name: Redeploy fabor player
+    needs: catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: streaming-gateway/package-lock.json
+      - name: Build isolated player
+        working-directory: streaming-gateway
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --no-audit --fund=false
+          npm run build:player
+      - name: Upload player artifact to Njalla
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "streaming-gateway/dist"
+          target: "/tmp/koratv-player-sync-${{ github.run_id }}"
+      - name: Publish player files on Njalla
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            SRC="/tmp/koratv-player-sync-${{ github.run_id }}/streaming-gateway/dist"
+            test -d "$SRC"
+            install -d -m 0755 /var/www/koratv-player
+            rsync -a --delete "$SRC/" /var/www/koratv-player/
+            find /var/www/koratv-player -type d -exec chmod 0755 {} +
+            find /var/www/koratv-player -type f -exec chmod 0644 {} +
+            rm -rf "/tmp/koratv-player-sync-${{ github.run_id }}"
