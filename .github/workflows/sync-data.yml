@@ -47,6 +47,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - uses: actions/checkout@v4
+      - name: Prepare Oracle gateway bundle
+        run: |
+          set -euo pipefail
+          rm -rf _oracle-sync
+          mkdir -p _oracle-sync
+          rsync -a streaming-gateway/ _oracle-sync/streaming-gateway/ \
+            --exclude node_modules \
+            --exclude dist \
+            --exclude .env \
+            --exclude "*.log" \
+            --exclude "scripts/audit-provider-accounts.js"
+          rsync -a shared/ _oracle-sync/shared/
+          cp ecosystem.oracle.config.js _oracle-sync/ecosystem.oracle.config.js
       - name: Check Oracle SSH configuration
         env:
           ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
@@ -54,6 +68,14 @@ jobs:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
           test -n "$ORACLE_HOST" && test -n "$ORACLE_USER" && test -n "$ORACLE_SSH_KEY"
+      - name: Upload current gateway code to Oracle
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          source: "_oracle-sync"
+          target: "/tmp/koratv-oracle-sync-${{ github.run_id }}"
       - name: Refresh current links on Oracle
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
@@ -63,9 +85,27 @@ jobs:
           command_timeout: 20m
           script: |
             set -euo pipefail
+            STAGING="/tmp/koratv-oracle-sync-${{ github.run_id }}/_oracle-sync"
+            RELEASE="/opt/koratv/current"
+            test -d "$STAGING/streaming-gateway"
+            test -d "$RELEASE/streaming-gateway"
+
+            rsync -a --delete "$STAGING/streaming-gateway/" "$RELEASE/streaming-gateway/" \
+              --exclude .env \
+              --exclude node_modules \
+              --exclude dist \
+              --exclude "*.log"
+            rsync -a --delete "$STAGING/shared/" "$RELEASE/shared/"
+            install -m 0644 "$STAGING/ecosystem.oracle.config.js" "$RELEASE/ecosystem.oracle.config.js"
+
             cd /opt/koratv/current/streaming-gateway
+            npm ci --omit=dev --no-audit --fund=false
             flock -w 300 /etc/koratv/provider-catalog.lock node --env-file=.env scripts/sync-provider-pool.js
             flock -w 300 /etc/koratv/direct-match-route-state.lock node --env-file=.env scripts/maintenance-sync.js
+            cd /opt/koratv/current
+            pm2 startOrReload ecosystem.oracle.config.js --env production
+            pm2 save
+            rm -rf "/tmp/koratv-oracle-sync-${{ github.run_id }}"
 
   deploy-pages:
     name: Redeploy GitHub Pages frontend
