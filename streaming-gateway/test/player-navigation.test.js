@@ -103,33 +103,3 @@ test('match opens a tab before token fetch and preserves the original page', asy
   assert.equal(window.location.href, 'https://koratv.click/');
   assert.equal(tab.opener, null);
 });
-
-test('token conflicts fall back to the public player route instead of blocking navigation', async () => {
-  const source = readFileSync(new URL('../../assets/js/matches.js', import.meta.url), 'utf8');
-  const start = source.indexOf('function opaqueWatchId(');
-  const end = source.indexOf('function setupSecurePlayerLinks()', start);
-  const events = [];
-  const tab = {
-    closed: false,
-    document: { body: {}, documentElement: {} },
-    location: { replace: (url) => events.push(url) },
-    close: () => events.push('close'),
-  };
-  const window = {
-    location: { href: 'https://koratv.click/' },
-    open: () => { events.push('open'); return tab; },
-    closeWaitModal: () => events.push('close-modal'),
-    openWaitModal: () => events.push('open-modal'),
-  };
-  await vm.runInNewContext(`${source.slice(start, end)}; openSecurePlayer('match-1', 'https://fabor.sbs/739184.html?m=public-id')`, {
-    window, STREAM_API_ORIGIN: 'https://stream-api.koratv.click',
-    PLAYER_ORIGIN: 'https://fabor.sbs', PLAYER_PATH: '/739184.html',
-    fetch: async () => {
-      events.push('fetch');
-      return { ok: false, status: 409, json: async () => ({ error: 'source_unavailable' }) };
-    },
-    encodeURIComponent,
-  });
-  assert.deepEqual(events, ['open', 'open-modal', 'fetch', 'close-modal', 'https://fabor.sbs/739184.html?m=public-id']);
-  assert.equal(window.location.href, 'https://koratv.click/');
-});

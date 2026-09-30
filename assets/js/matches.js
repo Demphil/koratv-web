@@ -319,16 +319,8 @@ function opaqueWatchId(value) {
   return String(hash).padStart(10, '0');
 }
 
-async function openSecurePlayer(matchId, fallbackUrl = '') {
+async function openSecurePlayer(matchId) {
   if (!matchId) return;
-  let publicFallbackUrl = fallbackUrl;
-  const fallbackPlayerUrl = () => {
-    if (!publicFallbackUrl) {
-      const publicId = typeof opaqueWatchId === 'function' ? opaqueWatchId(matchId) : matchId;
-      publicFallbackUrl = `${PLAYER_ORIGIN}${PLAYER_PATH}?m=${encodeURIComponent(publicId)}`;
-    }
-    return publicFallbackUrl;
-  };
   const playerTab = window.open('about:blank', '_blank');
   if (!playerTab) {
     window.openWaitModal?.('يرجى السماح بفتح تبويب جديد للمشاهدة.');
@@ -349,22 +341,28 @@ async function openSecurePlayer(matchId, fallbackUrl = '') {
       body: JSON.stringify({ matchId })
     });
   } catch {
-    window.closeWaitModal?.();
-    if (!playerTab.closed) playerTab.location.replace(fallbackPlayerUrl());
+    playerTab.close();
+    window.openWaitModal?.('تعذر الاتصال بخادم البث. حاول مرة أخرى.');
     return;
   }
 
   if (!response.ok) {
-    await response.json().catch(() => ({}));
-    window.closeWaitModal?.();
-    if (!playerTab.closed) playerTab.location.replace(fallbackPlayerUrl());
+    playerTab.close();
+    const payload = await response.json().catch(() => ({}));
+    const messages = {
+      upcoming: 'سيُفتح البث قبل بداية المباراة بعشرين دقيقة.',
+      ended: 'انتهت المباراة وتم إغلاق البث.',
+      channel_unavailable: 'لم تُحدد القناة الناقلة بعد.',
+      source_unavailable: 'مصدر القناة غير متوفر حالياً.'
+    };
+    window.openWaitModal?.(messages[payload.error] || 'البث غير متاح حالياً. حاول مرة أخرى لاحقاً.');
     return;
   }
 
   const { token } = await response.json().catch(() => ({}));
   if (!token) {
-    window.closeWaitModal?.();
-    if (!playerTab.closed) playerTab.location.replace(fallbackPlayerUrl());
+    playerTab.close();
+    window.openWaitModal?.('لم يتمكن الخادم من إنشاء جلسة مشاهدة آمنة.');
     return;
   }
   window.closeWaitModal?.();
@@ -379,7 +377,7 @@ function setupSecurePlayerLinks() {
     if (!link) return;
     event.preventDefault();
     const matchId = decodeURIComponent(link.dataset.secureMatchId || '');
-    openSecurePlayer(matchId, link.href);
+    openSecurePlayer(matchId);
   });
 }
 
