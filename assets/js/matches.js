@@ -198,10 +198,19 @@ function renderMatch(match) {
   const isEnded = match.playbackState === 'ended' || /result|finished|ended|full.?time|انته/.test(sourceStatus) || diffMins < -matchDuration;
   const isLive = !isEnded && (match.isLive === true || (diffMins <= 0 && diffMins >= -matchDuration));
   const isSoon = diffMins > 0 && diffMins <= 60; 
-  const canOpenSecurePlayer = isLive && !isEnded;
+  const hasReadySource = match.sourceReady === true;
+  const hasKnownSource = match.sourceAvailable === true || Boolean(match.channelName);
+  const canOpenSecurePlayer = isLive && !isEnded && hasReadySource;
+  const disabledReason = isEnded
+    ? 'ended'
+    : !isLive
+      ? 'upcoming'
+      : !hasKnownSource
+        ? 'channel_unavailable'
+        : 'source_unavailable';
   const linkAttributes = canOpenSecurePlayer
     ? `href="${watchUrl}" data-secure-match-id="${encodeURIComponent(stableId)}"`
-    : 'href="javascript:void(0)"';
+    : `href="javascript:void(0)" data-disabled-reason="${disabledReason}"`;
   const linkClass = canOpenSecurePlayer ? 'clickable' : 'not-clickable';
 
   let timeText = match.time;
@@ -378,6 +387,18 @@ function setupSecurePlayerLinks() {
     event.preventDefault();
     const matchId = decodeURIComponent(link.dataset.secureMatchId || '');
     openSecurePlayer(matchId);
+  });
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest?.('.match-card-link.not-clickable[data-disabled-reason]');
+    if (!link) return;
+    event.preventDefault();
+    const messages = {
+      upcoming: 'سيُفتح البث قبل بداية المباراة بعشرين دقيقة.',
+      ended: 'انتهت المباراة وتم إغلاق البث.',
+      channel_unavailable: 'لم تُحدد القناة الناقلة بعد.',
+      source_unavailable: 'القناة معروفة لكن مصدر التشغيل لم يجهز بعد. سيتم تحديثها تلقائياً.'
+    };
+    window.openWaitModal?.(messages[link.dataset.disabledReason] || 'البث غير متاح حالياً.');
   });
 }
 
