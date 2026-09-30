@@ -1,4 +1,4 @@
-import { parseM3uText, normalizeName, matchChannels } from '../secure-streaming/scripts/import-m3u.js';
+import { parseM3uText, normalizeName, matchChannels } from '../shared/provider-channel-match.mjs';
 import { selectProviderChannel } from './provider-catalog.js';
 
 export const PROVIDER_USER_AGENT = 'IPTVSmartersPlayer';
