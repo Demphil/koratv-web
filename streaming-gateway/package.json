@@ -6,7 +6,8 @@
     "start": "node --env-file=.env server.js",
     "test": "node --test test/*.test.js",
     "build:player": "node scripts/build-player.js",
-    "check:supabase": "node --env-file=.env scripts/check-supabase.js"
+    "check:supabase": "node --env-file=.env scripts/check-supabase.js",
+    "maintenance:sync": "node --env-file=.env scripts/maintenance-sync.js"
   },
   "engines": {
     "node": ">=22"

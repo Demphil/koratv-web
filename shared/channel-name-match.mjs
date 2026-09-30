@@ -1,6 +1,7 @@
-const PREFIX_NOISE = new Set(['ar', 'spi', 'ma', 'iptv', 'live', 'tv', 'channel', 'chan', 'stream']);
+const PREFIX_NOISE = new Set(['ar', 'spi', 'ma', 'iptv', 'live', 'tv', 'channel', 'chan', 'stream', 'sports']);
 const QUALITY_LABELS = new Set(['hd', 'fhd', 'uhd', '4k', '8k', 'fullhd']);
-const VARIANT_LABELS = new Set(['tnt', 'sd', 'plus', 'max', 'premium', 'terrestrial', 'eng', 'english', 'fr', 'french', 'tr', 'turkish', 'xtra']);
+const VARIANT_LABELS = new Set(['tnt', 'sd', 'max', 'premium', 'terrestrial', 'eng', 'english', 'fr', 'french', 'tr', 'turkish', 'xtra', 'extra', 'connect']);
+const REQUIRED_BASE_LABELS = new Set(['plus']);
 
 function tokensFor(value) {
   const normalized = String(value || '')
@@ -9,10 +10,17 @@ function tokensFor(value) {
     .replace(/[أإآ]/g, 'ا')
     .replace(/ى/g, 'ي')
     .replace(/ة/g, 'ه')
+    .replace(/\+/g, ' plus ')
+    .replace(/\bdstv\s*now\b/giu, ' dstv ')
+    .replace(/\bdstvnow\b/giu, ' dstv ')
+    .replace(/\btod\s*tv\b/giu, ' tod ')
+    .replace(/\bbein\s+sports?\s+connect\b/giu, ' bein connect ')
     .replace(/\bs\s*\/\s*d\b/giu, ' sd ')
     .replace(/\b(hd|fhd|uhd)(\d{1,2})\b/giu, '$1 $2')
     .replace(/[^a-z0-9\p{L}]+/giu, ' ')
     .toLowerCase()
+    .replace(/\bsabc\s+plus\b/g, 'sabc plus')
+    .replace(/\bdisney\s+plus\b/g, 'disney plus')
     .replace(/\bsport\b/g, 'sports')
     .replace(/\b0([1-9])\b/g, '$1')
     .replace(/\bbein\s+sports\s+mena\b/g, 'bein sports')
@@ -59,6 +67,9 @@ function scoreName(requested, candidate) {
   const requestBase = baseTokens(requestTokens);
   const candidateBase = baseTokens(candidateTokens);
   if (!requestBase.length || !candidateBase.length) return 0;
+  for (const token of REQUIRED_BASE_LABELS) {
+    if (requestBase.includes(token) && !candidateBase.includes(token)) return 0;
+  }
 
   const requestVariant = variantOf(requestTokens);
   const candidateVariant = variantOf(candidateTokens);

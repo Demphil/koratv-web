@@ -59,6 +59,32 @@ test('provider catalog can be forced to refresh before selecting a replacement U
   assert.equal(catalog.sources('sport').C, 'https://fresh.example/live.m3u8');
 });
 
+test('provider catalog resolves Kooora broadcaster aliases against source names', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provider-catalog-alias-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const catalogPath = join(dir, 'catalog.json'), overridePath = join(dir, 'override.json');
+  writeFileSync(catalogPath, JSON.stringify({
+    providers: { A: { enabled: true }, B: { enabled: true } },
+    channels: {
+      'SABC+ HD': {
+        A: 'https://a.example/sabc.m3u8',
+        sourceNames: { A: 'ZA | SABC Plus HD' }
+      },
+      'beIN Connect HD': {
+        B: 'https://b.example/connect.m3u8',
+        sourceNames: { B: 'AR | beIN SPORTS CONNECT FHD' }
+      }
+    }
+  }));
+  writeFileSync(overridePath, '{"matches":{}}');
+  const catalog = createProviderCatalog({ PROVIDER_CATALOG_PATH: catalogPath, MANUAL_BROADCAST_OVERRIDE_PATH: overridePath });
+  assert.equal(catalog.resolve('SABC Plus'), 'SABC+ HD');
+  assert.equal(catalog.sources('SABC Plus').A, 'https://a.example/sabc.m3u8');
+  assert.equal(catalog.resolve('beIN SPORTS CONNECT'), 'beIN Connect HD');
+  assert.equal(catalog.sources('beIN SPORTS CONNECT').B, 'https://b.example/connect.m3u8');
+});
+
+
 test('higher scores never preempt a lease with active viewers', t => {
   const { pool } = setup(t);
   const a = pool.acquire(playback('vip', 100), 'one');

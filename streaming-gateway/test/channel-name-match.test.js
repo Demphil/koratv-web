@@ -40,3 +40,17 @@ test('matches Arabic and Latin Arryadia aliases across IPTV prefixes', () => {
     'AR-SPI MA ARRYADIA TNT'
   );
 });
+
+test('matches platform broadcaster aliases requested by daily route sync', () => {
+  assert.equal(findChannelNameMatch('SABC Plus', ['SABC+ HD', 'SABC 1']), 'SABC+ HD');
+  assert.equal(findChannelNameMatch('DStv Now', ['DSTVNow Sports', 'SuperSport Maximo 1']), 'DSTVNow Sports');
+  assert.equal(findChannelNameMatch('TOD TV', ['TOD', 'TV3']), 'TOD');
+  assert.equal(findChannelNameMatch('beIN SPORTS CONNECT', ['beIN Connect HD', 'beIN SPORTS HD 1']), 'beIN Connect HD');
+  assert.equal(findChannelNameMatch('Disney+ Premium', ['Disney Plus Premium HD', 'Disney Channel']), 'Disney Plus Premium HD');
+});
+
+test('keeps important route variants for language and premium editions', () => {
+  assert.equal(findChannelNameMatch('beIN Sports ENG 1', ['beIN SPORTS HD 1', 'beIN SPORTS ENG 1 HD']), 'beIN SPORTS ENG 1 HD');
+  assert.equal(findChannelNameMatch('beIN Sports ENG 2', ['beIN SPORTS ENG 1 HD', 'beIN SPORTS HD 2']), null);
+  assert.equal(findChannelNameMatch('Disney+ Premium', ['Disney Plus HD']), null);
+});

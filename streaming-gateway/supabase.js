@@ -118,7 +118,8 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
       const channel = candidates.map((name) => {
         const resolved = resolveChannel(name);
         if (resolved && (!catalog || Object.keys(catalog.sources(resolved.name)).length)) return resolved;
-        return catalog && Object.keys(catalog.sources(name)).length ? { name } : null;
+        const catalogName = catalog?.resolve?.(name) || name;
+        return catalog && Object.keys(catalog.sources(catalogName)).length ? { name: catalogName } : null;
       }).find(Boolean);
       return { row, channel };
     });
@@ -243,7 +244,8 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null)
     let channel;
     for (const name of candidates) {
       channel = await findChannel(client, name);
-      if (!channel?.original_url && catalog && Object.keys(catalog.sources(name)).length) channel = { name, original_url: '', quality_variants: [] };
+      const catalogName = catalog?.resolve?.(channel?.name || name) || channel?.name || name;
+      if (!channel?.original_url && catalog && Object.keys(catalog.sources(catalogName)).length) channel = { name: catalogName, original_url: '', quality_variants: [] };
       if (catalog && Object.keys(catalog.sources(channel?.name)).length) break;
       if (!catalog && channel?.original_url) break;
     }

@@ -166,3 +166,32 @@ test('reader and ticket resolver skip a listed broadcaster without a provider so
     assert.equal(playback.stream_url, 'https://pool.example/live/sabc.m3u8');
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('pooled playback resolves a Kooora broadcaster directly from provider catalog aliases', async () => {
+  const originalFetch = globalThis.fetch;
+  const fixture = {
+    id: 'alias-fixture', match_id: 'alias-fixture', active: true, source: 'kooora',
+    kickoff_time: new Date(Date.now() - 60000).toISOString(),
+    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: ['SABC Plus'] } },
+  };
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    return Response.json(url.pathname.endsWith('/matches') ? [fixture] : []);
+  };
+  const catalog = {
+    override: () => null,
+    resolve: (name) => name === 'SABC Plus' ? 'SABC+ HD' : null,
+    sources: (name) => ['SABC Plus', 'SABC+ HD'].includes(name) ? { A: 'https://pool.example/live/sabc-plus.m3u8' } : {},
+  };
+  try {
+    const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' };
+    const [row] = await createMatchesReader(env, 'kooora', catalog)();
+    assert.equal(row.source_ready, true);
+    assert.equal(row.channel, 'SABC+ HD');
+
+    const playback = await createPlaybackResolver(env, 'kooora', catalog)(fixture.match_id);
+    assert.equal(playback.is_streaming_active, true);
+    assert.equal(playback.channel_id, 'SABC+ HD');
+    assert.equal(playback.stream_url, 'https://pool.example/live/sabc-plus.m3u8');
+  } finally { globalThis.fetch = originalFetch; }
+});
