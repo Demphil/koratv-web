@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadConfig, sourceForMatchId } from '../config.js';
-import { isAllowedLeague } from '../../shared/league-whitelist.mjs';
+import { isAllowedLeague, isGulfCupLeague } from '../../shared/league-whitelist.mjs';
 
 const valid = {
   JWT_SECRET: 'j'.repeat(48),
@@ -52,23 +52,59 @@ test('match identifiers pin player metadata to their originating feed', () => {
   assert.equal(sourceForMatchId('legacy-match-id'), '');
 });
 
-test('Kooora feed excludes retired duplicate-producing sources', async () => {
+test('Kora feed keeps Kooora primary and adds only allowed Gulf Cup API fixtures', async () => {
   const originalFetch = globalThis.fetch;
-  let matchSourceFilter = '';
+  const matchSourceFilters = [];
+  const apiFixtures = [
+    { id: 'api-football-gulf', match_id: 'api-football-gulf', home_team: 'Bahrain', away_team: 'Yemen', league: 'Gulf Cup of Nations', kickoff_time: '2026-09-30T17:30:00Z', source: 'api-football', active: true, payload: {} },
+    { id: 'api-football-other', match_id: 'api-football-other', home_team: 'Arsenal', away_team: 'Chelsea', league: 'Premier League', kickoff_time: '2026-09-30T17:30:00Z', source: 'api-football', active: true, payload: {} },
+    { id: 'api-football-women', match_id: 'api-football-women', home_team: 'Bahrain Women', away_team: 'Yemen Women', league: 'Gulf Cup of Nations', kickoff_time: '2026-09-30T17:30:00Z', source: 'api-football', active: true, payload: {} },
+  ];
   globalThis.fetch = async (input) => {
     const url = new URL(input);
-    if (url.pathname.endsWith('/matches')) matchSourceFilter = url.searchParams.get('source') || '';
+    if (url.pathname.endsWith('/matches')) {
+      const source = url.searchParams.get('source') || '';
+      matchSourceFilters.push(source);
+      return new Response(JSON.stringify(source === 'in.(api-football)' ? apiFixtures : []), { headers: { 'content-type': 'application/json' } });
+    }
     return new Response('[]', { headers: { 'content-type': 'application/json' } });
   };
   try {
-    await loadConfig(valid).getMatchesForOrigin('https://koratv.click');
-    assert.equal(matchSourceFilter, 'in.(kooora)');
+    const rows = await loadConfig(valid).getMatchesForOrigin('https://koratv.click');
+    assert.deepEqual(matchSourceFilters.sort(), ['in.(api-football)', 'in.(kooora)']);
+    assert.deepEqual(rows.map(row => row.match_id), ['api-football-gulf']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Kooora-origin playback follows an API-Football match identifier', async () => {
+  const originalFetch = globalThis.fetch;
+  const matchSourceFilters = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith('/matches')) {
+      matchSourceFilters.push(url.searchParams.get('source') || '');
+      return new Response(JSON.stringify([{
+        id: 'api-football_2026-09-30_bahrain_vs_yemen', match_id: 'api-football_2026-09-30_bahrain_vs_yemen', home_team: 'Bahrain', away_team: 'Yemen',
+        league: 'Gulf Cup of Nations', kickoff_time: new Date().toISOString(), source: 'api-football', active: true, payload: {}
+      }]), { headers: { 'content-type': 'application/json' } });
+    }
+    return new Response('[]', { headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const result = await loadConfig(valid).getPlaybackForSource('kooora', 'api-football_2026-09-30_bahrain_vs_yemen');
+    assert.equal(result.reason, 'channel_unavailable');
+    assert.deepEqual(matchSourceFilters, ['in.(api-football)']);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
 test('league whitelist admits requested competitions and rejects lower divisions', () => {
+  assert.equal(isGulfCupLeague('Gulf Cup of Nations'), true);
+  assert.equal(isGulfCupLeague('كأس الخليج العربي'), true);
+  assert.equal(isGulfCupLeague("Women's Gulf Cup"), false);
   assert.equal(isAllowedLeague('دوري أبطال أوروبا للسيدات'), false);
   assert.equal(isAllowedLeague("UEFA Women's Champions League"), false);
   assert.equal(isAllowedLeague('الدوري الإنجليزي الممتاز للسيدات'), false);

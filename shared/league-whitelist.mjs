@@ -81,6 +81,11 @@ export function isAllowedLeague(value) {
   return Boolean(normalized && ALLOWED_LEAGUE_PATTERNS.some((pattern) => pattern.test(normalized)));
 }
 
+export function isGulfCupLeague(value) {
+  const normalized = normalizeLeagueName(value).toLocaleLowerCase('en');
+  return /^(?:gulf cup(?: of nations)?|arabian gulf cup|كاس الخليج(?: العربي)?)(?: 20\d{2})?$/.test(normalized);
+}
+
 function normalizeCountryName(value) {
   return normalizeLeagueName(value).toLocaleLowerCase('en');
 }

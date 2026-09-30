@@ -1,5 +1,6 @@
 import { createMatchesReader, createPlaybackResolver } from './supabase.js';
 import { attachApiFootballDetails } from '../shared/match-details.mjs';
+import { isAllowedMatch, isGulfCupLeague } from '../shared/league-whitelist.mjs';
 import { createProviderCatalog } from './provider-catalog.js';
 
 function sourceForOrigin(origin, { koratvOrigins, frajaOrigins }) {
@@ -100,7 +101,17 @@ export function loadConfig(env = process.env) {
       const source = sourceForMatchId(matchId) || sourceForOrigin(origin, { koratvOrigins, frajaOrigins });
       if (source === 'kooora') {
         const rows = await getKoooraMatches();
-        if (!matchId) return rows;
+        if (!matchId) {
+          const apiRows = await getApiFootballMatches();
+          const gulfFixtures = apiRows.filter(row => isGulfCupLeague(row.league)
+            && isAllowedMatch({
+              league: row.league,
+              leagueCountry: row.payload?.leagueCountry,
+              homeTeam: row.home_team,
+              awayTeam: row.away_team
+            }));
+          return [...rows, ...gulfFixtures];
+        }
         const row = rows.find(item => item.match_id === matchId || item.id === matchId);
         return row ? [attachApiFootballDetails(row, await getApiFootballMatches())] : [];
       }
@@ -109,8 +120,9 @@ export function loadConfig(env = process.env) {
     },
     getPlayback: getApiFootballPlayback,
     getPlaybackForSource: async (source, matchId, options = {}) => {
-      if (source === 'kooora' || String(matchId).startsWith('kooora_')) return getKoooraPlayback(matchId, options);
-      if (source === 'api-football' || String(matchId).startsWith('api-football_')) return getApiFootballPlayback(matchId, options);
+      const matchSource = sourceForMatchId(matchId);
+      if (matchSource === 'kooora' || (!matchSource && source === 'kooora')) return getKoooraPlayback(matchId, options);
+      if (matchSource === 'api-football' || (!matchSource && source === 'api-football')) return getApiFootballPlayback(matchId, options);
       const apiPlayback = await getApiFootballPlayback(matchId, options);
       return apiPlayback?.is_streaming_active ? apiPlayback : getKoooraPlayback(matchId, options);
     }
