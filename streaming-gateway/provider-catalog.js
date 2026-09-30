@@ -1,11 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { findChannelNameMatch } from '../shared/channel-name-match.mjs';
+import { normalizeName } from '../shared/provider-channel-match.mjs';
 import { PROVIDER_IDS } from './provider-pool.js';
 
 export function selectProviderChannel(match) {
   const qualityRank = candidate => /\b(?:4k|uhd|fhd|1080p)\b/i.test(candidate.source_name) ? 1 : /\b(?:hd|720p)\b/i.test(candidate.source_name) ? 0 : 2;
+  const providerNameMatches = (sourceName) => {
+    if (findChannelNameMatch(match.name, [sourceName]) === sourceName) return true;
+    const requestedWords = normalizeName(match.name).split(/\s+/).filter(Boolean);
+    const sourceWords = new Set(normalizeName(sourceName).split(/\s+/).filter(Boolean));
+    return requestedWords.length > 0 && requestedWords.every((word) => sourceWords.has(word));
+  };
   return [...(match.candidates || [])]
-    .filter(candidate => findChannelNameMatch(match.name, [candidate.source_name]) === candidate.source_name)
+    .filter(candidate => providerNameMatches(candidate.source_name))
     .sort((a, b) => qualityRank(a) - qualityRank(b) || a.source_name.localeCompare(b.source_name))[0] || null;
 }
 
