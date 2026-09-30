@@ -35,14 +35,7 @@ const ALLOWED_LEAGUE_PATTERNS = [
   /دوري روشن السعودي|saudi pro league|roshn saudi league/i,
 ];
 
-const WOMEN_COMPETITION_PATTERNS = [
-  /دوري ابطال اوروبا.*سيدات|سيدات.*دوري ابطال اوروبا|uefa women'?s champions league|women'?s champions league/i,
-  /بطوله امم اوروبا.*سيدات|سيدات.*بطوله امم اوروبا|uefa women'?s euro|women'?s euro/i,
-  /دوري الامم الاوروبيه.*سيدات|سيدات.*دوري الامم الاوروبيه|uefa women'?s nations league/i,
-];
-
-const WOMEN_MARKERS = /سيدات|نسائي|نساء|women|women'?s|feminine|femmes/i;
-const GULF_CUP_PATTERN = /كاس الخليج(?: العربي)?|gulf cup(?: of nations)?|arabian gulf cup/i;
+const WOMEN_MARKERS = /سيدات|نسائي|نساء|women|woman|female|lad(?:y|ies)|feminin|femminil|femenin|femenil|femmes?|frauen|damen|\bw\b/i;
 const OUT_OF_SCOPE_LEAGUE_PATTERNS = [
   /canadian premier league|friendlies clubs|club friendlies|copa de la liga/i,
   /\bbotola\s*2\b|\bpremier league\s*2\b|\bbundesliga\s*2\b/i,
@@ -81,20 +74,10 @@ export function normalizeTeamName(value) {
     .trim();
 }
 
-function isWomenCompetition(value) {
-  const normalized = normalizeLeagueName(value);
-  return Boolean(normalized && WOMEN_COMPETITION_PATTERNS.some((pattern) => pattern.test(normalized)));
-}
-
-function isWomenLeague(value) {
-  const normalized = normalizeLeagueName(value);
-  return Boolean(normalized && WOMEN_MARKERS.test(normalized));
-}
-
 export function isAllowedLeague(value) {
   const normalized = normalizeLeagueName(value);
   if (isOutOfScopeLeague(normalized)) return false;
-  if (isWomenLeague(normalized)) return isWomenCompetition(normalized);
+  if (WOMEN_MARKERS.test(normalized)) return false;
   return Boolean(normalized && ALLOWED_LEAGUE_PATTERNS.some((pattern) => pattern.test(normalized)));
 }
 
@@ -133,18 +116,19 @@ const NATIONAL_TEAM_EXCEPTIONS = [
 
 export function isAllowedTeam(value) {
   const normalized = normalizeTeamName(value);
+  if (WOMEN_MARKERS.test(normalized)) return false;
   return Boolean(normalized && ALLOWED_TEAM_PATTERNS.some((pattern) => pattern.test(normalized)));
 }
 
 export function isAllowedNationalTeamException(value) {
   const normalized = normalizeTeamName(value);
+  if (WOMEN_MARKERS.test(normalized)) return false;
   return Boolean(normalized && NATIONAL_TEAM_EXCEPTIONS.some((pattern) => pattern.test(normalized)));
 }
 
 export function isAllowedMatch({ league = '', country = '', leagueCountry = '', homeTeam = '', awayTeam = '' } = {}) {
   const normalizedLeague = normalizeLeagueName(league);
-  if (GULF_CUP_PATTERN.test(normalizedLeague)
-    && [league, homeTeam, awayTeam].some((value) => WOMEN_MARKERS.test(normalizeLeagueName(value)))) return false;
+  if ([league, homeTeam, awayTeam].some((value) => WOMEN_MARKERS.test(normalizeLeagueName(value)))) return false;
   if ([homeTeam, awayTeam].some((team) => YOUTH_MARKER.test(normalizeTeamName(team)))
     && !ALLOWED_YOUTH_COMPETITION.test(normalizedLeague)) return false;
   return isAllowedApiFootballLeague(league, country || leagueCountry)
@@ -182,7 +166,6 @@ export const ALLOWED_LEAGUE_LABELS = Object.freeze([
   'كأس العالم وتصفياته', 'كوبا أمريكا', 'الكأس الذهبية للكونكاكاف',
   'دوري أمم الكونكاكاف', 'كأس أمم أوقيانوسيا', 'كأس العرب', 'كأس الخليج العربي',
   'كأس العالم تحت 17/20 سنة', 'كرة القدم الأولمبية',
-  'بطولات السيدات الأوروبية القارية',
 ]);
 
 export const ALLOWED_TEAM_LABELS = Object.freeze([

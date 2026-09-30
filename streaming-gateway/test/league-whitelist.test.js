@@ -6,18 +6,15 @@ test('normalizes San Diego Arabic spelling variants for match dedupe', () => {
   assert.equal(normalizeTeamName('سان دييجو'), normalizeTeamName('سان دييغو'));
 });
 
-test('allows only requested women and African competition scope', () => {
-  assert.equal(isAllowedMatch({
-    league: 'الدوري الألماني لكرة القدم للسيدات',
-    homeTeam: 'VfB Stuttgart',
-    awayTeam: 'فيردر بريمن'
-  }), false);
-
-  assert.equal(isAllowedMatch({
-    league: 'دوري أبطال أوروبا للسيدات',
-    homeTeam: 'Chelsea Women',
-    awayTeam: 'Barcelona Women'
-  }), true);
+test('rejects women competitions and teams across all competition scopes', () => {
+  assert.equal(isAllowedMatch({ league: 'الدوري الألماني للسيدات', homeTeam: 'Stuttgart', awayTeam: 'Bremen' }), false);
+  assert.equal(isAllowedMatch({ league: 'دوري أبطال أوروبا للسيدات', homeTeam: 'Chelsea', awayTeam: 'Barcelona' }), false);
+  assert.equal(isAllowedMatch({ league: 'بطولة ودية', homeTeam: 'منتخب الجزائر للسيدات', awayTeam: 'منتخب تونس للسيدات' }), false);
+  assert.equal(isAllowedMatch({ league: 'Brazilian Serie A', leagueCountry: 'Brazil', homeTeam: 'Botafogo Women', awayTeam: 'Flamengo' }), false);
+  assert.equal(isAllowedMatch({ league: 'Brazilian Serie A', leagueCountry: 'Brazil', homeTeam: 'Botafogo W', awayTeam: 'Flamengo' }), false);
+  for (const league of ["UEFA Women's Champions League", 'Serie A Femminile', 'Liga MX Femenil', 'Frauen-Bundesliga', 'Liga F']) {
+    assert.equal(isAllowedMatch({ league, homeTeam: 'Team One', awayTeam: 'Team Two' }), false, league);
+  }
 
   assert.equal(isAllowedMatch({
     league: 'الدوري المصري الممتاز',
@@ -35,12 +32,6 @@ test('allows only requested women and African competition scope', () => {
     league: 'بطولة ودية',
     homeTeam: 'منتخب المغرب',
     awayTeam: 'منتخب السنغال'
-  }), true);
-
-  assert.equal(isAllowedMatch({
-    league: 'بطولة ودية',
-    homeTeam: 'منتخب الجزائر للسيدات',
-    awayTeam: 'منتخب تونس للسيدات'
   }), true);
 });
 

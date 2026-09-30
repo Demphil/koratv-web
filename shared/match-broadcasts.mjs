@@ -24,6 +24,7 @@ const aliases = [
   ['Central African Republic', 'أفريقيا الوسطى', 'جمهورية أفريقيا الوسطى'],
   ['Czechia', 'Czech Republic', 'التشيك', 'تشيكيا'], ['Türkiye', 'Turkey', 'تركيا'],
   ['North Macedonia', 'FYR Macedonia', 'مقدونيا الشمالية'], ['Lithuania', 'ليتوانيا', 'لتوانيا'],
+  ['St. Vincent / Grenadines', 'St Vincent / Grenadines', 'Saint Vincent and the Grenadines', 'St. Vincent and the Grenadines'],
   ['Azerbaijan', 'أذربيجان', 'اذربيجان'], ['South Korea', 'Korea Republic', 'كوريا الجنوبية'],
   ['USA', 'United States', 'الولايات المتحدة الأمريكية', 'أمريكا'],
   ['Ivory Coast', "Cote D'Ivoire", 'ساحل العاج'], ['DR Congo', 'Congo DR', 'الكونغو الديمقراطية'],

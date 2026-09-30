@@ -58,6 +58,16 @@ test('joins exact bilingual opponents and kickoff, preserving API-Football detai
   assert.equal(rows[1].channel, rows[0].channel);
 });
 
+test('joins St. Vincent API naming to Kooora Arabic naming only for the same kickoff', () => {
+  const apiMatch = { ...api, home_team: 'St. Vincent / Grenadines', away_team: 'Belize' };
+  const koooraMatch = { ...kooora, home_team: 'سانت فنسنت وجزر غرينادين', away_team: 'بليز' };
+  const [row] = reconcileBroadcasts([apiMatch, koooraMatch], { checkedAt });
+  assert.equal(row.channel, 'beIN SPORTS HD 2');
+  assert.equal(row.payload.broadcast.sourceMatchId, 'event-1');
+  const [wrongTime] = reconcileBroadcasts([apiMatch, { ...koooraMatch, kickoff_time: '2026-09-27T13:16:00Z' }], { checkedAt });
+  assert.equal(wrongTime.channel, null);
+});
+
 test('different opponent, day, category, youth and Botafogo PB never borrow channels', () => {
   for (const changed of [
     { away_team: 'Albania' }, { kickoff_time: '2026-09-28T13:00:00Z' },
