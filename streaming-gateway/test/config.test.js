@@ -28,6 +28,11 @@ test('configuration accepts independent secrets and HTTPS origins', () => {
   assert.ok(config.upstreamOrigins.has('https://media.example.com'));
 });
 
+test('stream sessions default to a long live-match window', () => {
+  const { STREAM_SESSION_TTL_SECONDS, ...withoutTtl } = valid;
+  assert.equal(loadConfig(withoutTtl).sessionTtl, 10800);
+});
+
 test('configuration identifies the unsafe origin variable', () => {
   assert.throws(() => loadConfig({ ...valid, PUBLIC_API_ORIGIN: 'http://127.0.0.1:3100' }), /PUBLIC_API_ORIGIN must use HTTPS/);
   assert.ok(

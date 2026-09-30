@@ -38,6 +38,7 @@ let selectedLineupSide = 'home';
 let matchPanelRequestSequence = 0;
 let resumeAfterQualityChange = false;
 const sessionKey = 'koratv-playback-session';
+const lastMatchKey = 'koratv-last-match-id';
 const arabicTeamNames = new Map(Object.entries({
   argentina: 'الأرجنتين', australia: 'أستراليا', belgium: 'بلجيكا', brazil: 'البرازيل',
   canada: 'كندا', china: 'الصين', croatia: 'كرواتيا', denmark: 'الدنمارك',
@@ -445,6 +446,14 @@ async function start() {
   const readStoredSession = () => {
     try { return JSON.parse(sessionStorage.getItem(sessionKey)); } catch { return null; }
   };
+  const rememberMatchId = (matchId) => {
+    const value = String(matchId || '').trim().slice(0, 160);
+    if (!value) return;
+    try { localStorage.setItem(lastMatchKey, value); } catch {}
+  };
+  const readRememberedMatchId = () => {
+    try { return String(localStorage.getItem(lastMatchKey) || '').trim().slice(0, 160); } catch { return ''; }
+  };
   const isUsableSession = (value, matchId = '') => Boolean(
     value?.token
     && value.expiresAt > Date.now() + 5000
@@ -474,11 +483,13 @@ async function start() {
   };
   if (embeddedMatchId) {
     activeMatchId = embeddedMatchId;
+    rememberMatchId(activeMatchId);
     const stored = readStoredSession();
     session = isUsableSession(stored, embeddedMatchId) ? stored : await createSessionForMatch(embeddedMatchId);
     try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
   } else if (entry) {
     activeMatchId = decodeJwtPayload(entry).matchId || '';
+    rememberMatchId(activeMatchId);
     loadMatchPanel(activeMatchId);
     const stored = readStoredSession();
     if (isUsableSession(stored, activeMatchId)) {
@@ -509,14 +520,16 @@ async function start() {
   } else {
     session = readStoredSession();
     if (!isUsableSession(session)) {
-      if (!session?.matchId) throw new Error('افتح المباراة المطلوبة من الموقع للمتابعة.');
-      session = await createSessionForMatch(session.matchId);
+      const recoveredMatchId = session?.matchId || readRememberedMatchId();
+      if (!recoveredMatchId) throw new Error('افتح المباراة المطلوبة من الموقع للمتابعة.');
+      session = await createSessionForMatch(recoveredMatchId);
       try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
     }
   }
   if (!session?.token || session.expiresAt <= Date.now()) throw new Error('انتهت جلسة المشاهدة. افتح المباراة من الموقع للمتابعة.');
   hlsSessionToken = session.token;
   activeMatchId = session.matchId;
+  rememberMatchId(activeMatchId);
   sessionExpiresAt = session.expiresAt;
   availableQualities = Array.isArray(session.qualities) ? session.qualities : [];
   singleQuality = session.singleQuality === true;

@@ -35,7 +35,9 @@ test('public frames are allowed without relaxing the token issuer origin boundar
 test('session recovery never selects an arbitrary live match', () => {
   const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /recoverLiveSession|find\(\(item\) => item\.isLive/);
-  assert.match(source, /createSessionForMatch\(session\.matchId\)/);
+  assert.match(source, /createSessionForMatch\(recoveredMatchId\)/);
+  assert.match(source, /lastMatchKey = 'koratv-last-match-id'/);
+  assert.match(source, /readRememberedMatchId\(\)/);
 });
 
 test('today lists never admit yesterday matches', () => {
