@@ -133,6 +133,11 @@ export function mergeRefreshedMatch(existing, incoming, now = Date.now()) {
     && age >= 0 && age < 6 * 60 * 60_000) {
     return applyBroadcast({ ...incoming, payload }, { ...previous, stale: true });
   }
+  if (incoming.payload?.broadcast?.state === 'unassigned' && previous?.source === 'kooora'
+    && Array.isArray(previous.channels) && previous.channels.length
+    && age >= 0 && age < 24 * 60 * 60_000) {
+    return applyBroadcast({ ...incoming, payload }, { ...previous, stale: true, state: 'assigned' });
+  }
   return { ...incoming, channel: incoming.channel || null, payload: { ...payload, channel: incoming.channel || null } };
 }
 

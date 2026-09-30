@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reconcileBroadcasts, mergeRefreshedMatch, broadcastChannelCandidates, sameFixture, deduplicateSourceEvents, obsoleteMatchRows } from '../../shared/match-broadcasts.mjs';
-import { extractKoooraBroadcastChannelsFromHtml, parseKoooraMatches, persistMatchSnapshots } from '../scripts/sync-matches-from-source.js';
+import { extractKoooraBroadcastChannelsFromHtml, parseKoooraMatches, parseKoooraScheduleBroadcasts, persistMatchSnapshots } from '../scripts/sync-matches-from-source.js';
 import { findChannelNameMatch } from '../../shared/channel-name-match.mjs';
 import { matchChannels, parseM3uText } from '../scripts/import-m3u.js';
 import { liveCatalogToM3u } from '../scripts/sync-iptv-provider.js';
@@ -104,7 +104,7 @@ test('ambiguous source events fail closed instead of guessing', () => {
   assert.equal(row.payload.broadcast.state, 'ambiguous_fixture');
 });
 
-test('fresh assignments replace stale channels and fresh empty list clears stale data', () => {
+test('fresh assignments replace stale channels and temporary empty Kooora data preserves recent channels', () => {
   const [fresh] = reconcileBroadcasts([api, kooora], { checkedAt });
   const existing = { ...api, channel: 'Arryadia TNT', payload: { channel: 'Arryadia TNT', events: [{ type: 'Goal' }] } };
   const merged = mergeRefreshedMatch(existing, fresh);
@@ -112,9 +112,12 @@ test('fresh assignments replace stale channels and fresh empty list clears stale
   assert.equal(merged.payload.channel, merged.channel);
   assert.equal(merged.payload.events.length, 1);
   const [empty] = reconcileBroadcasts([api, { ...kooora, payload: { ...kooora.payload, channels: [] } }], { checkedAt });
-  const cleared = mergeRefreshedMatch(merged, empty);
-  assert.equal(cleared.channel, null);
-  assert.deepEqual(broadcastChannelCandidates(cleared), []);
+  const cleared = mergeRefreshedMatch(merged, empty, Date.parse(checkedAt) + 60_000);
+  assert.equal(cleared.channel, 'beIN SPORTS HD 2');
+  assert.equal(cleared.payload.broadcast.stale, true);
+  const expired = mergeRefreshedMatch(merged, empty, Date.parse(checkedAt) + 25 * 60 * 60_000);
+  assert.equal(expired.channel, null);
+  assert.deepEqual(broadcastChannelCandidates(expired), []);
 });
 
 test('source outage preserves only recent verified assignments, not legacy league guesses', () => {
@@ -191,6 +194,7 @@ test('Kooora scraper prefers real broadcaster names from watch cards over generi
   const [row] = parseKoooraMatches(html);
   assert.equal(row.channel, 'Abu Dhabi Sports 2');
   assert.deepEqual(row.payload.channels, ['Abu Dhabi Sports 2', 'MBC Action']);
+  assert.equal(row.payload.matchLink, 'https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D8%A7%D8%A9/real-madrid-v-barcelona/fixture-1');
 });
 
 test('Kooora match detail extractor reads visible watch-on broadcaster cards', () => {
@@ -204,4 +208,24 @@ test('Kooora match detail extractor reads visible watch-on broadcaster cards', (
     })}</script>
   </body></html>`;
   assert.deepEqual(extractKoooraBroadcastChannelsFromHtml(html), ['MBC Action']);
+});
+
+test('Kooora TV schedule parser extracts event broadcaster schedules', () => {
+  const html = `<!doctype html><html><body>
+    <script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: { pageProps: { data: { scheduleGroups: [{
+        competition: { name: 'كأس الخليج' },
+        events: [{
+          name: 'البحرين ضد اليمن',
+          startDate: kickoff_time,
+          link: { id: 'event-1', url: 'https://www.kooora.com/كرة-القدم/مباراة/البحرين-ضد-اليمن/event-1' },
+          schedule: [{ name: 'Abu Dhabi Sports 2' }, { name: 'Disney+' }, { name: 'Kuwait Sports' }]
+        }]
+      }] } } }
+    })}</script>
+  </body></html>`;
+  const [row] = parseKoooraScheduleBroadcasts(html);
+  assert.equal(row.home_team, 'البحرين');
+  assert.equal(row.away_team, 'اليمن');
+  assert.deepEqual(row.payload.channels, ['Abu Dhabi Sports 2', 'Kuwait Sports']);
 });

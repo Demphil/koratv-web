@@ -3,11 +3,12 @@ import * as cheerio from "cheerio";
 import { fileURLToPath } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
 import { isAllowedMatch, normalizeTeamName } from "../../shared/league-whitelist.mjs";
-import { reconcileBroadcasts, mergeRefreshedMatch } from "../../shared/match-broadcasts.mjs";
+import { reconcileBroadcasts, mergeRefreshedMatch, sameFixture } from "../../shared/match-broadcasts.mjs";
 import { pruneMatchData } from './prune-match-data.js';
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
+const TV_SCHEDULE_SITE_URL = process.env.KOOORA_TV_SCHEDULE_URL || "https://www.kooora.com/%D8%A3%D8%AD%D8%AF%D8%A7%D8%AB-%D8%B1%D9%8A%D8%A7%D8%B6%D9%8A%D8%A9/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85";
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
 const dryRun = process.argv.includes("--dry-run");
 const apiFootballKey = process.env.API_FOOTBALL_KEY
@@ -497,6 +498,55 @@ function koooraChannelNamesForMatch($, match) {
   ]);
 }
 
+function koooraMatchLink(match = {}) {
+  const direct = match?.link?.url;
+  if (direct) return direct.startsWith('http') ? direct : new URL(direct, 'https://www.kooora.com').href;
+  if (!match?.id) return '';
+  const slug = match?.link?.slug || matchSlug(match?.teamA?.name || 'team-a', match?.teamB?.name || 'team-b');
+  return new URL(`/كرة-القدم/مباراة/${slug}/${match.id}`, 'https://www.kooora.com').href;
+}
+
+function parseScheduleEventTeams(name = '') {
+  const parts = String(name || '').split(/\s+(?:ضد|vs\.?|v)\s+/iu).map((part) => part.trim()).filter(Boolean);
+  return parts.length >= 2 ? { homeTeam: parts[0], awayTeam: parts.slice(1).join(' ضد ') } : null;
+}
+
+export function parseKoooraScheduleBroadcasts(html) {
+  const $ = cheerio.load(html || '');
+  const raw = $('#__NEXT_DATA__').text();
+  if (!raw) return [];
+  let page;
+  try { page = JSON.parse(raw); } catch { return []; }
+  const data = page?.props?.pageProps?.data || {};
+  const groups = [
+    ...(Array.isArray(data.scheduleGroups) ? data.scheduleGroups : []),
+    { competition: null, events: Array.isArray(data.featuredEntries) ? data.featuredEntries : [] }
+  ];
+  const rows = [];
+  for (const group of groups) {
+    for (const event of group.events || []) {
+      const teams = parseScheduleEventTeams(event.name);
+      const channels = preferRealBroadcastChannels((event.schedule || []).map((item) => item?.name));
+      if (!teams || !event.startDate || !channels.length) continue;
+      rows.push({
+        match_id: `kooora_schedule_${event.link?.id || matchSlug(teams.homeTeam, teams.awayTeam)}`,
+        source: 'kooora-schedule',
+        home_team: teams.homeTeam,
+        away_team: teams.awayTeam,
+        league: group.competition?.name || event.competition?.name || '',
+        kickoff_time: event.startDate,
+        payload: {
+          sourceMatchId: event.link?.id || '',
+          channels,
+          sourceChannels: channels,
+          matchLink: event.link?.url || ''
+        }
+      });
+    }
+  }
+  return rows;
+}
+
 function normalizeLookup(value) {
   return String(value || "")
     .toLowerCase()
@@ -706,7 +756,7 @@ export function parseKoooraMatches(html) {
           sourceMatchId: match.id || '',
           homeSourceTeamId: match?.teamA?.id || null,
           awaySourceTeamId: match?.teamB?.id || null,
-          matchLink: match?.link?.slug ? `https://www.kooora.com/${match.link.slug}/${match.id}` : '',
+          matchLink: koooraMatchLink(match),
           channelSource: 'kooora-live-scores'
         },
         updated_at: new Date().toISOString()
@@ -714,6 +764,36 @@ export function parseKoooraMatches(html) {
     }
   }
 
+  return rows;
+}
+
+async function enrichKoooraRowsWithScheduleChannels(rows) {
+  let scheduleRows = [];
+  try {
+    scheduleRows = parseKoooraScheduleBroadcasts(await fetchHtml(TV_SCHEDULE_SITE_URL));
+  } catch (error) {
+    console.warn(`Kooora schedule channel lookup failed: ${error.message}`);
+    return rows;
+  }
+  if (!scheduleRows.length) return rows;
+  for (const row of rows) {
+    if (row.source !== 'kooora' || (Array.isArray(row.payload?.channels) && row.payload.channels.length)) continue;
+    const exact = scheduleRows.find((item) => item.payload?.sourceMatchId && item.payload.sourceMatchId === row.payload?.sourceMatchId);
+    const match = exact || scheduleRows.find((item) => sameFixture(row, item));
+    const channels = match?.payload?.channels || [];
+    if (!channels.length) continue;
+    const preferredChannel = normalizeKoooraChannel(
+      channels.find((name) => /beIN Sports Mena/i.test(name)) || channels[0]
+    );
+    row.channel = preferredChannel;
+    row.payload = {
+      ...row.payload,
+      channel: preferredChannel,
+      channels,
+      sourceChannels: channels,
+      scheduleChannelsFetchedAt: new Date().toISOString()
+    };
+  }
   return rows;
 }
 
@@ -891,6 +971,7 @@ export async function collectMatchRowsFromSource() {
     }
   }
 
+  await enrichKoooraRowsWithScheduleChannels(koooraRows);
   await enrichKoooraRowsWithDetailChannels(koooraRows);
   rows.push(...koooraRows);
   const uniqueRows = [...new Map(rows.map((row) => [`${String(row.kickoff_time || '').slice(0, 10)}:${row.match_id}`, row])).values()];
