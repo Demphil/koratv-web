@@ -38,6 +38,14 @@ export async function providerM3u(credentials, origin, fetchImpl = fetch) {
 
 export async function discoverProvider(credentials, origins, canonicalNames, { fetchImpl = fetch, retry = 2 } = {}) {
   const attempts = [];
+  const requestedSearches = [...new Set((canonicalNames || []).map((name) => normalizeName(name)).filter(Boolean))];
+  const matchesRequestedTarget = (entry) => {
+    if (!requestedSearches.length) return false;
+    const text = normalizeName(`${entry.name || ''} ${entry.group || ''}`);
+    if (!text) return false;
+    const words = new Set(text.split(/\s+/));
+    return requestedSearches.some((requested) => requested.split(/\s+/).every((token) => words.has(token)));
+  };
   for (const candidate of [...new Set(origins.filter(Boolean))]) {
     const origin = new URL(candidate).origin;
     let metadata;
@@ -58,10 +66,13 @@ export async function discoverProvider(credentials, origins, canonicalNames, { f
     if (Array.isArray(streams)) {
       const groupById = new Map((categories || []).filter(x => x && typeof x === 'object').map(x => [String(x.category_id), String(x.category_name || '')]));
       const sportIds = new Set([...groupById].filter(([,name]) => sport.test(name)).map(([id]) => id));
-      entries = streams.filter(x => x && typeof x === 'object' && /^\d+$/.test(String(x.stream_id))
-        && (sportIds.has(String(x.category_id)) || sport.test(String(x.name || ''))))
+      entries = streams.filter(x => x && typeof x === 'object' && /^\d+$/.test(String(x.stream_id)))
         .map(x => ({ name: String(x.name || ''), rawName: String(x.name || ''), group: groupById.get(String(x.category_id)) || '',
+          categoryId: String(x.category_id || ''),
           url: new URL(`/live/${encodeURIComponent(credentials.username)}/${encodeURIComponent(credentials.password)}/${x.stream_id}.m3u8`, origin).href }))
+        .filter(entry => sportIds.has(entry.categoryId)
+          || sport.test(`${entry.name} ${entry.group}`)
+          || matchesRequestedTarget(entry))
         .map(x => ({ ...x, search: normalizeName(`${x.name} ${x.group}`) }));
     }
     if (!entries.length) {

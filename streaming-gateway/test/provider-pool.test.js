@@ -5,6 +5,7 @@ import { basePriority } from '../priority.js';
 import { singleQualityManifest } from '../single-quality.js';
 import { selectProviderChannel, createProviderCatalog } from '../provider-catalog.js';
 import { HlsProgressMonitor } from '../hls-progress.js';
+import { matchChannels, normalizeName } from '../../shared/provider-channel-match.mjs';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -109,6 +110,30 @@ test('provider catalog skips placeholder channel rows without enabled sources', 
   assert.equal(catalog.sources('MBC Action').B, 'https://b.example/mbc-action.m3u8');
   assert.equal(catalog.resolve('Abu Dhabi Sports 2'), '[AR] ABU DHABI SPORT 2 HD');
   assert.equal(catalog.sources('Abu Dhabi Sports 2').B, 'https://b.example/ad-sports-2.m3u8');
+});
+
+test('provider channel matcher resolves current Kooora broadcaster variants', () => {
+  const entries = [
+    { name: '[AR] MBC ACTION', group: 'AR | ENTERTAINMENT', url: 'https://p.example/mbc.m3u8' },
+    { name: '[AR] ABU DHABI SPORT2 FHD', group: 'AR | ARAB SPORT', url: 'https://p.example/ad2.m3u8' },
+    { name: '[AR] OMAN SPORT TV', group: 'AR | ARAB SPORT', url: 'https://p.example/oman.m3u8' },
+    { name: '[KW] KUWAIT SPORT HD', group: 'KW | SPORT', url: 'https://p.example/kuwait.m3u8' },
+    { name: 'AR-SP| ART ALKASS 2 HD', group: 'AR | ARAB SPORT', url: 'https://p.example/kass2.m3u8' }
+  ].map((entry) => ({ ...entry, rawName: entry.name, search: normalizeName(`${entry.name} ${entry.group}`) }));
+  const matches = matchChannels([
+    'MBC Action',
+    'Abu Dhabi Sports 2',
+    'Oman Sports TV',
+    'Kuwait Sport TV',
+    'AL KASS Two'
+  ], entries);
+  assert.deepEqual(Object.fromEntries(matches.map((match) => [match.name, match.source_name])), {
+    'MBC Action': '[AR] MBC ACTION',
+    'Abu Dhabi Sports 2': '[AR] ABU DHABI SPORT2 FHD',
+    'Oman Sports TV': '[AR] OMAN SPORT TV',
+    'Kuwait Sport TV': '[KW] KUWAIT SPORT HD',
+    'AL KASS Two': 'AR-SP| ART ALKASS 2 HD'
+  });
 });
 
 test('provider catalog exposes safe direct match route state without raw URLs', t => {

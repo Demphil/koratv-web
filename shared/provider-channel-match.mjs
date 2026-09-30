@@ -26,6 +26,13 @@ export function normalizeName(name) {
     .replace(/ة/g, 'ه')
     .replace(/\bhd\s*([1-9])\b/g, '$1')
     .replace(/\bmax\s*([1-9])\b/g, 'max $1')
+    .replace(/\bone\b/g, '1')
+    .replace(/\btwo\b/g, '2')
+    .replace(/\bthree\b/g, '3')
+    .replace(/\bfour\b/g, '4')
+    .replace(/\bfive\b/g, '5')
+    .replace(/([\p{L}])([0-9])/gu, '$1 $2')
+    .replace(/([0-9])([\p{L}])/gu, '$1 $2')
     .replace(/\bar\b/g, ' ')
     .replace(/\bsp\b/g, ' ')
     .replace(/\buae\b/g, ' ')
@@ -38,6 +45,7 @@ export function normalizeName(name) {
     .replace(/\bsd\b/g, '')
     .replace(/\b0([1-9])\b/g, '$1')
     .replace(/\bsports\b/g, 'sport')
+    .replace(/\bal\s+kass\b/g, 'alkass')
     .replace(/\bbein\b/g, 'bein')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .replace(/\s+/g, ' ')
@@ -113,9 +121,19 @@ function channelRule(name) {
   if (normalized.includes('on sport') || normalized.includes('on time') || normalized.includes('اون سبورت')) {
     return { required: ['on', 'sport'], preferred: ['hd'] };
   }
-  if (normalized.includes('ad sport') || normalized.includes('ابو ظبي') || normalized.includes('ابوظبي')) {
-    const adNumber = normalized.match(/\b([12])\b/)?.[1] || '1';
-    return { required: ['ad', 'sport', adNumber], preferred: ['fhd', 'hd'] };
+  if (normalized.includes('ad sport') || normalized.includes('abu dhabi sport') || normalized.includes('ابو ظبي') || normalized.includes('ابوظبي')) {
+    const adNumber = normalized.match(/\b([1-3])\b/)?.[1] || '1';
+    const required = normalized.includes('abu dhabi')
+      ? ['abu', 'dhabi', 'sport', adNumber]
+      : ['ad', 'sport', adNumber];
+    return { required, preferred: ['fhd', 'hd'] };
+  }
+  if (normalized.includes('oman sport')) {
+    return { required: ['oman', 'sport'], preferred: ['hd'] };
+  }
+  if (normalized.includes('kuwait sport')) {
+    const kuwaitNumber = normalized.match(/\b([1-2])\b/)?.[1] || '';
+    return { required: ['kuwait', 'sport', ...(kuwaitNumber ? [kuwaitNumber] : [])], preferred: ['hd'] };
   }
   if (normalized.includes('ثمانيه') || normalized.includes('thmanyah')) {
     const thNumber = normalized.match(/\b([123])\b/)?.[1] || '1';
