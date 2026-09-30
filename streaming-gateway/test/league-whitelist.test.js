@@ -44,6 +44,12 @@ test('allows only requested women and African competition scope', () => {
   }), true);
 });
 
+test('allows Gulf Cup under Arabic and English competition names', () => {
+  for (const league of ['كأس الخليج العربي', 'كأس الخليج', 'Gulf Cup', 'Arabian Gulf Cup']) {
+    assert.equal(isAllowedMatch({ league, homeTeam: 'Iraq', awayTeam: 'Oman' }), true, league);
+  }
+});
+
 test('allows Botafogo first-team aliases but rejects similarly named lower-division clubs', () => {
   assert.equal(isAllowedMatch({
     league: 'Brazilian Serie A',
