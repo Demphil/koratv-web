@@ -42,6 +42,7 @@ const WOMEN_COMPETITION_PATTERNS = [
 ];
 
 const WOMEN_MARKERS = /سيدات|نسائي|نساء|women|women'?s|feminine|femmes/i;
+const GULF_CUP_PATTERN = /كاس الخليج(?: العربي)?|gulf cup(?: of nations)?|arabian gulf cup/i;
 const OUT_OF_SCOPE_LEAGUE_PATTERNS = [
   /canadian premier league|friendlies clubs|club friendlies|copa de la liga/i,
   /\bbotola\s*2\b|\bpremier league\s*2\b|\bbundesliga\s*2\b/i,
@@ -142,6 +143,8 @@ export function isAllowedNationalTeamException(value) {
 
 export function isAllowedMatch({ league = '', country = '', leagueCountry = '', homeTeam = '', awayTeam = '' } = {}) {
   const normalizedLeague = normalizeLeagueName(league);
+  if (GULF_CUP_PATTERN.test(normalizedLeague)
+    && [league, homeTeam, awayTeam].some((value) => WOMEN_MARKERS.test(normalizeLeagueName(value)))) return false;
   if ([homeTeam, awayTeam].some((team) => YOUTH_MARKER.test(normalizeTeamName(team)))
     && !ALLOWED_YOUTH_COMPETITION.test(normalizedLeague)) return false;
   return isAllowedApiFootballLeague(league, country || leagueCountry)
