@@ -216,3 +216,51 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.deepEqual(unavailableBody.diagnostics.requestedChannels, ['SABC Plus']);
   assert.equal(unavailableBody.diagnostics.attempts[0].providerCount, 0);
 });
+
+test('token generation refreshes the provider catalog once on source_unavailable', async (t) => {
+  let refreshes = 0;
+  const calls = [];
+  const config = {
+    secret: 'test-only-secret-with-at-least-32-bytes',
+    hmacSecret: 'test-only-separate-hmac-secret-with-32',
+    frontend: 'https://koratv.click',
+    frontendOrigins: new Set(['https://koratv.click']),
+    player: 'https://fabor.sbs',
+    api: 'https://api.example.com',
+    trustedProxies: ['loopback'],
+    upstreamOrigins: new Set(),
+    upstreamUserAgent: 'koratvProviderSync/1.0',
+    sessionTtl: 7200,
+    sourceForOrigin: () => 'kooora',
+    refreshProviderCatalog: () => { refreshes += 1; },
+    getPlaybackForSource: async (source, matchId, options = {}) => {
+      calls.push({ source, matchId, fresh: options.fresh === true });
+      return options.fresh ? {
+        is_streaming_active: true,
+        match_id: matchId,
+        channel_id: 'SABC+ HD',
+        stream_url: 'https://media.example.com/sabc.m3u8',
+      } : {
+        is_streaming_active: false,
+        reason: 'source_unavailable',
+        diagnostics: { stage: 'provider_catalog', requestedChannels: ['SABC Plus'], attempts: [] }
+      };
+    },
+    getMatchesForOrigin: async () => [],
+  };
+  const redis = { incr: async () => 1, expire: async () => 1, ping: async () => 'PONG', set: async () => 'OK', get: async () => null };
+  const server = createApp({ config, redis, fetchImpl: fetch }).listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/generate-token`, {
+    method: 'POST',
+    headers: { Origin: config.frontend, 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.1', 'User-Agent': 'Browser test' },
+    body: JSON.stringify({ matchId: 'match-1' }),
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.channelName, 'SABC+ HD');
+  assert.equal(refreshes, 1);
+  assert.deepEqual(calls.map((call) => call.fresh), [false, true]);
+  assert.equal(jwt.decode(body.token).channel, 'SABC+ HD');
+});

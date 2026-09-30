@@ -577,7 +577,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       requireOrigin(req, tokenOrigins);
       const source = config.sourceForOrigin(originFromHeader(req.headers.origin));
       const requestedMatchId = String(req.body.matchId || '');
-      const playback = await config.getPlaybackForSource(source, requestedMatchId);
+      let playback = await config.getPlaybackForSource(source, requestedMatchId);
+      if (!playback.is_streaming_active && playback.reason === 'source_unavailable' && config.refreshProviderCatalog) {
+        config.refreshProviderCatalog();
+        playback = await config.getPlaybackForSource(source, requestedMatchId, { fresh: true });
+      }
       if (!playback.is_streaming_active) return res.status(409).json({
         error: playback.reason || 'stream_unavailable',
         ...(playback.diagnostics ? { diagnostics: playback.diagnostics } : {})
