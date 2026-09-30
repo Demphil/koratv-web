@@ -319,8 +319,16 @@ function opaqueWatchId(value) {
   return String(hash).padStart(10, '0');
 }
 
-async function openSecurePlayer(matchId) {
+async function openSecurePlayer(matchId, fallbackUrl = '') {
   if (!matchId) return;
+  let publicFallbackUrl = fallbackUrl;
+  const fallbackPlayerUrl = () => {
+    if (!publicFallbackUrl) {
+      const publicId = typeof opaqueWatchId === 'function' ? opaqueWatchId(matchId) : matchId;
+      publicFallbackUrl = `${PLAYER_ORIGIN}${PLAYER_PATH}?m=${encodeURIComponent(publicId)}`;
+    }
+    return publicFallbackUrl;
+  };
   const playerTab = window.open('about:blank', '_blank');
   if (!playerTab) {
     window.openWaitModal?.('يرجى السماح بفتح تبويب جديد للمشاهدة.');
@@ -341,28 +349,22 @@ async function openSecurePlayer(matchId) {
       body: JSON.stringify({ matchId })
     });
   } catch {
-    playerTab.close();
-    window.openWaitModal?.('تعذر الاتصال بخادم البث. حاول مرة أخرى.');
+    window.closeWaitModal?.();
+    if (!playerTab.closed) playerTab.location.replace(fallbackPlayerUrl());
     return;
   }
 
   if (!response.ok) {
-    playerTab.close();
-    const payload = await response.json().catch(() => ({}));
-    const messages = {
-      upcoming: 'سيُفتح البث قبل بداية المباراة بعشرين دقيقة.',
-      ended: 'انتهت المباراة وتم إغلاق البث.',
-      channel_unavailable: 'لم تُحدد القناة الناقلة بعد.',
-      source_unavailable: 'مصدر القناة غير متوفر حالياً.'
-    };
-    window.openWaitModal?.(messages[payload.error] || 'البث غير متاح حالياً. حاول مرة أخرى لاحقاً.');
+    await response.json().catch(() => ({}));
+    window.closeWaitModal?.();
+    if (!playerTab.closed) playerTab.location.replace(fallbackPlayerUrl());
     return;
   }
 
   const { token } = await response.json().catch(() => ({}));
   if (!token) {
-    playerTab.close();
-    window.openWaitModal?.('لم يتمكن الخادم من إنشاء جلسة مشاهدة آمنة.');
+    window.closeWaitModal?.();
+    if (!playerTab.closed) playerTab.location.replace(fallbackPlayerUrl());
     return;
   }
   window.closeWaitModal?.();
@@ -377,7 +379,7 @@ function setupSecurePlayerLinks() {
     if (!link) return;
     event.preventDefault();
     const matchId = decodeURIComponent(link.dataset.secureMatchId || '');
-    openSecurePlayer(matchId);
+    openSecurePlayer(matchId, link.href);
   });
 }
 
