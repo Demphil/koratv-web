@@ -195,3 +195,30 @@ test('pooled playback resolves a Kooora broadcaster directly from provider catal
     assert.equal(playback.stream_url, 'https://pool.example/live/sabc-plus.m3u8');
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('pooled playback explains whether a Kooora channel missed the provider catalog', async () => {
+  const originalFetch = globalThis.fetch;
+  const fixture = {
+    id: 'missing-catalog-fixture', match_id: 'missing-catalog-fixture', active: true, source: 'kooora',
+    kickoff_time: new Date(Date.now() - 60000).toISOString(),
+    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: ['SABC Plus'] } },
+  };
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    return Response.json(url.pathname.endsWith('/matches') ? [fixture] : []);
+  };
+  const catalog = {
+    override: () => null,
+    resolve: () => null,
+    sources: () => ({}),
+  };
+  try {
+    const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' };
+    const playback = await createPlaybackResolver(env, 'kooora', catalog)(fixture.match_id);
+    assert.equal(playback.is_streaming_active, false);
+    assert.equal(playback.reason, 'source_unavailable');
+    assert.deepEqual(playback.diagnostics.requestedChannels, ['SABC Plus']);
+    assert.equal(playback.diagnostics.attempts[0].requestedName, 'SABC Plus');
+    assert.equal(playback.diagnostics.attempts[0].providerCount, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});

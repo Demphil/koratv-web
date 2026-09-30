@@ -217,6 +217,11 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null)
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
   const opensBeforeMs = Number(env.STREAM_OPENS_BEFORE_MINUTES || 20) * 60_000;
   const closesAfterMs = Number(env.STREAM_CLOSES_AFTER_MINUTES || 150) * 60_000;
+  const unavailable = (reason, diagnostics = null) => ({
+    is_streaming_active: false,
+    reason,
+    ...(diagnostics ? { diagnostics } : {})
+  });
 
   return async (matchId) => {
     if (typeof matchId !== 'string' || !matchId.trim() || matchId.length > 160) {
@@ -240,16 +245,32 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null)
 
     const override = catalog?.override(match.match_id || match.id);
     const candidates = override ? [override] : broadcastChannelCandidates(match);
-    if (!candidates.length) return { is_streaming_active: false, reason: 'channel_unavailable' };
+    if (!candidates.length) return unavailable('channel_unavailable', catalog ? {
+      stage: 'kooora_broadcast',
+      broadcastState: payload.broadcast?.state || null,
+      requestedChannels: []
+    } : null);
     let channel;
+    const attempts = [];
     for (const name of candidates) {
       channel = await findChannel(client, name);
       const catalogName = catalog?.resolve?.(channel?.name || name) || channel?.name || name;
-      if (!channel?.original_url && catalog && Object.keys(catalog.sources(catalogName)).length) channel = { name: catalogName, original_url: '', quality_variants: [] };
+      const providerSources = catalog ? catalog.sources(catalogName) : {};
+      if (catalog) attempts.push({
+        requestedName: name,
+        channelTableName: channel?.name || null,
+        catalogName,
+        providerCount: Object.keys(providerSources).length
+      });
+      if (!channel?.original_url && catalog && Object.keys(providerSources).length) channel = { name: catalogName, original_url: '', quality_variants: [] };
       if (catalog && Object.keys(catalog.sources(channel?.name)).length) break;
       if (!catalog && channel?.original_url) break;
     }
-    if (catalog && !Object.keys(catalog.sources(channel?.name)).length) return { is_streaming_active: false, reason: 'source_unavailable' };
+    if (catalog && !Object.keys(catalog.sources(channel?.name)).length) return unavailable('source_unavailable', {
+      stage: 'provider_catalog',
+      requestedChannels: candidates,
+      attempts
+    });
     if (!catalog && !channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
     const primaryUrl = canonicalizeXtreamHlsUrl(channel.original_url);
     const providerSources = catalog?.sources(channel.name);

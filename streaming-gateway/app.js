@@ -578,7 +578,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const source = config.sourceForOrigin(originFromHeader(req.headers.origin));
       const requestedMatchId = String(req.body.matchId || '');
       const playback = await config.getPlaybackForSource(source, requestedMatchId);
-      if (!playback.is_streaming_active) return res.status(409).json({ error: playback.reason || 'stream_unavailable' });
+      if (!playback.is_streaming_active) return res.status(409).json({
+        error: playback.reason || 'stream_unavailable',
+        ...(playback.diagnostics ? { diagnostics: playback.diagnostics } : {})
+      });
       if (playback.match_id !== requestedMatchId) return res.status(409).json({ error: 'match_mismatch' });
       const rateKey = `stream-rate:${ipHash(req)}:${Math.floor(Date.now() / 60000)}`;
       const count = await redis.incr(rateKey);

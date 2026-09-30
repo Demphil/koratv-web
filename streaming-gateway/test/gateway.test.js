@@ -199,7 +199,20 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   const health = await (await request('/healthz', config.player)).json();
   assert.ok(health.hlsCache.bytes > 0);
   assert.ok(health.hlsCache.prefetched > 0);
-  config.getPlaybackForSource = async () => ({ is_streaming_active: false, reason: 'ended' });
+  config.getPlaybackForSource = async () => ({
+    is_streaming_active: false,
+    reason: 'source_unavailable',
+    diagnostics: {
+      stage: 'provider_catalog',
+      requestedChannels: ['SABC Plus'],
+      attempts: [{ requestedName: 'SABC Plus', channelTableName: null, catalogName: 'SABC Plus', providerCount: 0 }]
+    }
+  });
   assert.equal((await request(`/api/stream.m3u8?token=${session.token}`, config.player)).status, 403);
-  assert.equal((await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).status, 409);
+  const unavailable = await request('/api/generate-token', config.frontend, { matchId: 'match-1' });
+  assert.equal(unavailable.status, 409);
+  const unavailableBody = await unavailable.json();
+  assert.equal(unavailableBody.error, 'source_unavailable');
+  assert.deepEqual(unavailableBody.diagnostics.requestedChannels, ['SABC Plus']);
+  assert.equal(unavailableBody.diagnostics.attempts[0].providerCount, 0);
 });
