@@ -1,8 +1,32 @@
 import { createClient } from 'redis';
 import { Agent, setGlobalDispatcher } from 'undici';
+import { readFileSync } from 'node:fs';
 import { loadConfig } from './config.js';
 import { createApp } from './app.js';
 
+function loadFallbackEnv(path = '/etc/koratv/gateway.env') {
+  if (process.env.JWT_SECRET && process.env.HMAC_SECRET) return;
+  let text = '';
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return;
+  }
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const index = line.indexOf('=');
+    if (index <= 0) continue;
+    const key = line.slice(0, index).trim();
+    let value = line.slice(index + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
+
+loadFallbackEnv();
 const config = loadConfig();
 const upstreamAgent = new Agent({
   connections: Math.max(8, Number(process.env.UPSTREAM_HTTP_CONNECTIONS || 32)),

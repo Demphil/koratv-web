@@ -84,6 +84,33 @@ test('provider catalog resolves Kooora broadcaster aliases against source names'
   assert.equal(catalog.sources('beIN SPORTS CONNECT').B, 'https://b.example/connect.m3u8');
 });
 
+test('provider catalog skips placeholder channel rows without enabled sources', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provider-catalog-placeholder-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const catalogPath = join(dir, 'catalog.json'), overridePath = join(dir, 'override.json');
+  writeFileSync(catalogPath, JSON.stringify({
+    providers: { B: { enabled: true } },
+    channels: {
+      'MBC Action': { sourceNames: {} },
+      '[AR] MBC ACTION': {
+        B: 'https://b.example/mbc-action.m3u8',
+        sourceNames: { B: '[AR] MBC ACTION' }
+      },
+      'Abu Dhabi Sports 2': { sourceNames: {} },
+      '[AR] ABU DHABI SPORT 2 HD': {
+        B: 'https://b.example/ad-sports-2.m3u8',
+        sourceNames: { B: '[AR] ABU DHABI SPORT 2 HD' }
+      }
+    }
+  }));
+  writeFileSync(overridePath, '{"matches":{}}');
+  const catalog = createProviderCatalog({ PROVIDER_CATALOG_PATH: catalogPath, MANUAL_BROADCAST_OVERRIDE_PATH: overridePath });
+  assert.equal(catalog.resolve('MBC Action'), '[AR] MBC ACTION');
+  assert.equal(catalog.sources('MBC Action').B, 'https://b.example/mbc-action.m3u8');
+  assert.equal(catalog.resolve('Abu Dhabi Sports 2'), '[AR] ABU DHABI SPORT 2 HD');
+  assert.equal(catalog.sources('Abu Dhabi Sports 2').B, 'https://b.example/ad-sports-2.m3u8');
+});
+
 test('provider catalog exposes safe direct match route state without raw URLs', t => {
   const dir = mkdtempSync(join(tmpdir(), 'provider-route-state-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

@@ -11,6 +11,7 @@ export function selectProviderChannel(match) {
 
 export function createProviderCatalog(env = process.env) {
   let catalog = { channels: {} }, overrides = { matches: {} }, routeState = { matches: {} }, activeCatalog = { matches: {} }, checked = 0;
+  const hasEnabledSources = (name) => PROVIDER_IDS.some((id) => catalog.providers?.[id]?.enabled && catalog.channels?.[name]?.[id]);
   const refresh = (force = false) => {
     if (!force && Date.now() - checked < 5000) return;
     checked = Date.now();
@@ -23,17 +24,18 @@ export function createProviderCatalog(env = process.env) {
     refresh();
     const requested = String(channel || '').trim();
     if (!requested) return null;
-    if (catalog.channels?.[requested]) return requested;
+    if (catalog.channels?.[requested] && hasEnabledSources(requested)) return requested;
     const matchRows = (rows) => {
       const matched = findChannelNameMatch(requested, rows.map((row) => row.alias));
       if (!matched) return null;
       const matches = rows.filter((row) => row.alias === matched);
-      const names = [...new Set(matches.map((row) => row.name))];
+      const names = [...new Set(matches.map((row) => row.name).filter(hasEnabledSources))];
       return names.length === 1 ? names[0] : null;
     };
     const sourceAliases = [];
     const channelAliases = [];
     for (const [name, entry] of Object.entries(catalog.channels || {})) {
+      if (!hasEnabledSources(name)) continue;
       channelAliases.push({ alias: name, name });
       for (const sourceName of Object.values(entry?.sourceNames || {})) {
         if (sourceName) sourceAliases.push({ alias: sourceName, name });
