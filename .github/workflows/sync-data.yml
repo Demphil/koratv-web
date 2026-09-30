@@ -200,7 +200,8 @@ jobs:
             SRC="/tmp/koratv-player-sync-${{ github.run_id }}/streaming-gateway/dist"
             test -d "$SRC"
             install -d -m 0755 /var/www/koratv-player
-            rsync -a --delete "$SRC/" /var/www/koratv-player/
+            find /var/www/koratv-player -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+            cp -a "$SRC/." /var/www/koratv-player/
             find /var/www/koratv-player -type d -exec chmod 0755 {} +
             find /var/www/koratv-player -type f -exec chmod 0644 {} +
             rm -rf "/tmp/koratv-player-sync-${{ github.run_id }}"
