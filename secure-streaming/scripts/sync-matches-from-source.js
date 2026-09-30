@@ -23,6 +23,7 @@ const standingsRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_STANDINGS
 const standingsLimit = Math.max(0, Number(process.env.API_FOOTBALL_STANDINGS_PER_SYNC || 1));
 const apiFootballTodayRefreshMs = Math.max(5, Number(process.env.API_FOOTBALL_TODAY_REFRESH_MINUTES || 10)) * 60_000;
 const apiFootballTomorrowRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_TOMORROW_REFRESH_HOURS || 12)) * 60 * 60_000;
+const koooraDetailChannelLimit = Math.max(0, Number(process.env.KOOORA_DETAIL_CHANNEL_LIMIT || 20));
 const apiFootballFixtureCache = new Map();
 
 
@@ -394,6 +395,108 @@ function normalizeKoooraChannel(value) {
   return beinNumber ? `beIN SPORTS HD ${beinNumber}` : name || null;
 }
 
+function cleanKoooraBroadcastName(value) {
+  let name = String(value || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/(?:شاهد|مشاهدة)\s+(?:المباراة\s+)?(?:مباشرة\s+)?على/giu, ' ')
+    .replace(/\bwatch\s+(?:live\s+)?(?:on|via)\b/giu, ' ')
+    .replace(/\b(?:live|stream|broadcast|channel|logo|شعار)\b/giu, ' ')
+    .replace(/^[\s:：|،,\-–—]+|[\s:：|،,\-–—]+$/g, '')
+    .trim();
+  if (!name || name.length > 64) return null;
+  if (/(?:تذاكر|اشترك|تحميل|التطبيق|google|apple|app store|مواعيد|نتائج|تفاصيل|ملخص|ترتيب)/iu.test(name)) return null;
+  return normalizeKoooraChannel(name);
+}
+
+function isGenericViewingPlatform(name) {
+  return /^(?:fubo\s*tv|disney\+?|disney\s+plus|dazn|tod(?:\s+tv)?|shahid|starzplay|apple\s+tv|paramount\+?|peacock|prime\s+video|amazon\s+prime|youtube|vidio|ais\s+play|dstv\s+now|movistar\s+plus\+?)$/iu
+    .test(String(name || '').trim());
+}
+
+function isLikelySportsBroadcaster(name) {
+  return /\b(?:bein|ssc|alkass|al\s*kass|arryadia|arriadia|snrt|abu\s*dhabi\s*sports?|dubai\s*sports?|sharjah\s*sports?|on\s*time\s*sports?|nile\s*sports?|ksa\s*sports?|saudi\s*sports?|kuwait\s*sports?|oman\s*sports?|jordan\s*sports?|super\s*sport|supersport|sabc\s*plus|cbc\s*sport|mbc\s*action|mbc\s*masr|ad\s*sports?|yas\s*sports?|riyadiya)\b/iu
+    .test(String(name || ''));
+}
+
+function uniqueChannelNames(names) {
+  const seen = new Set();
+  return names.map(cleanKoooraBroadcastName).filter(Boolean).filter((name) => {
+    const key = normalizeLookup(name);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function preferRealBroadcastChannels(names) {
+  const cleaned = uniqueChannelNames(names);
+  const sports = cleaned.filter(isLikelySportsBroadcaster);
+  if (sports.length) return sports;
+  const nonPlatform = cleaned.filter((name) => !isGenericViewingPlatform(name));
+  return nonPlatform.length ? nonPlatform : cleaned;
+}
+
+function collectKoooraDomChannelCandidates($, matchId = '') {
+  const roots = [];
+  if (matchId) {
+    const byId = $(`[data-match-id="${matchId}"],[data-event-id="${matchId}"],[data-fixture-id="${matchId}"],[href*="${matchId}"]`);
+    byId.each((_, item) => {
+      const root = $(item).closest('article,section,li,[class*="match"],[class*="fixture"],[class*="event"],div').first();
+      roots.push(root.length ? root : $(item));
+    });
+  }
+  if (!roots.length) roots.push($('body'));
+
+  const candidates = [];
+  const addCandidate = (value) => {
+    const cleaned = cleanKoooraBroadcastName(value);
+    if (cleaned) candidates.push(cleaned);
+  };
+
+  for (const root of roots) {
+    root.find('[data-channel],[data-broadcaster],[data-provider-name],[aria-label],img[alt],img[title]').each((_, item) => {
+      const element = $(item);
+      addCandidate(element.attr('data-channel') || element.attr('data-broadcaster') || element.attr('data-provider-name')
+        || element.attr('aria-label') || element.attr('alt') || element.attr('title'));
+    });
+
+    root.find('*').each((_, item) => {
+      const element = $(item);
+      const marker = `${element.attr('class') || ''} ${element.attr('id') || ''}`.toLowerCase();
+      const text = element.text();
+      if (/(?:channel|broadcast|provider|watch|tv|stream|قنوات|ناقلة|بث|شاهد)/i.test(marker)
+        || /(?:شاهد|مشاهدة)\s+(?:المباراة\s+)?(?:مباشرة\s+)?على|watch\s+(?:live\s+)?(?:on|via)/iu.test(text)) {
+        for (const line of text.split(/\n| {2,}/)) addCandidate(line);
+      }
+    });
+  }
+
+  return preferRealBroadcastChannels(candidates);
+}
+
+export function extractKoooraBroadcastChannelsFromHtml(html, matchId = '') {
+  const $ = cheerio.load(html || '');
+  const names = [];
+  const raw = $('#__NEXT_DATA__').text();
+  if (raw) {
+    try {
+      const page = JSON.parse(raw);
+      const tvChannels = page?.props?.pageProps?.data?.tvChannels;
+      if (Array.isArray(tvChannels)) names.push(...tvChannels.map((channel) => channel?.name || channel?.title || channel?.label));
+    } catch {}
+  }
+  names.push(...collectKoooraDomChannelCandidates($, matchId));
+  return preferRealBroadcastChannels(names);
+}
+
+function koooraChannelNamesForMatch($, match) {
+  return preferRealBroadcastChannels([
+    ...(Array.isArray(match.tvChannels) ? match.tvChannels.map((channel) => channel?.name || channel?.title || channel?.label) : []),
+    ...collectKoooraDomChannelCandidates($, match.id || '')
+  ]);
+}
+
 function normalizeLookup(value) {
   return String(value || "")
     .toLowerCase()
@@ -565,7 +668,7 @@ export function parseKoooraMatches(html) {
       const score = Number.isFinite(Number(homeScore)) && Number.isFinite(Number(awayScore))
         ? `${homeScore} - ${awayScore}`
         : 'VS';
-      const channelNames = (match.tvChannels || []).map((channel) => channel?.name).filter(Boolean);
+      const channelNames = koooraChannelNamesForMatch($, match);
       const preferredChannel = normalizeKoooraChannel(
         channelNames.find((name) => /beIN Sports Mena/i.test(name)) || channelNames[0]
       );
@@ -597,7 +700,7 @@ export function parseKoooraMatches(html) {
           }).format(new Date(kickoff)),
           homeLogo: match?.teamA?.image?.url || '',
           awayLogo: match?.teamB?.image?.url || '',
-          ...(Array.isArray(match.tvChannels) ? { channels: channelNames } : {}),
+          channels: channelNames,
           channel: preferredChannel,
           commentator: '',
           sourceMatchId: match.id || '',
@@ -727,6 +830,36 @@ export async function enrichApiFootballMatchDetails(rows) {
   return rows;
 }
 
+async function enrichKoooraRowsWithDetailChannels(rows) {
+  const targets = rows.filter((row) =>
+    row.source === 'kooora'
+    && !(Array.isArray(row.payload?.channels) && row.payload.channels.length)
+    && row.payload?.matchLink
+  ).slice(0, koooraDetailChannelLimit);
+
+  for (const row of targets) {
+    try {
+      const html = await fetchHtml(row.payload.matchLink);
+      const channels = extractKoooraBroadcastChannelsFromHtml(html, row.payload?.sourceMatchId || '');
+      if (!channels.length) continue;
+      const preferredChannel = normalizeKoooraChannel(
+        channels.find((name) => /beIN Sports Mena/i.test(name)) || channels[0]
+      );
+      row.channel = preferredChannel;
+      row.payload = {
+        ...row.payload,
+        channel: preferredChannel,
+        channels,
+        sourceChannels: channels,
+        detailChannelsFetchedAt: new Date().toISOString()
+      };
+    } catch (error) {
+      console.warn(`Kooora match detail channel lookup failed for ${row.match_id}: ${error.message}`);
+    }
+  }
+  return rows;
+}
+
 export async function collectMatchRowsFromSource() {
   const provider = String(process.env.MATCH_SOURCE_PROVIDER || "").trim().toLowerCase();
   let rows = [];
@@ -758,6 +891,7 @@ export async function collectMatchRowsFromSource() {
     }
   }
 
+  await enrichKoooraRowsWithDetailChannels(koooraRows);
   rows.push(...koooraRows);
   const uniqueRows = [...new Map(rows.map((row) => [`${String(row.kickoff_time || '').slice(0, 10)}:${row.match_id}`, row])).values()];
   console.log(`Parsed ${uniqueRows.length} matches from ${pages.map((page) => page.url).join(', ')}.`);

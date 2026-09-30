@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reconcileBroadcasts, mergeRefreshedMatch, broadcastChannelCandidates, sameFixture, deduplicateSourceEvents, obsoleteMatchRows } from '../../shared/match-broadcasts.mjs';
-import { persistMatchSnapshots } from '../scripts/sync-matches-from-source.js';
+import { extractKoooraBroadcastChannelsFromHtml, parseKoooraMatches, persistMatchSnapshots } from '../scripts/sync-matches-from-source.js';
 import { findChannelNameMatch } from '../../shared/channel-name-match.mjs';
 import { matchChannels, parseM3uText } from '../scripts/import-m3u.js';
 import { liveCatalogToM3u } from '../scripts/sync-iptv-provider.js';
@@ -151,4 +151,49 @@ test('provider candidates never substitute channel 12, MAX 2 or a French feed fo
   const entries = parseM3uText('#EXTM3U\n' + names.map((name, i) => `#EXTINF:-1,${name}\nhttps://example.test/${i}.m3u8`).join('\n'));
   const [match] = matchChannels(['beIN SPORTS HD 2'], entries, { candidatesPerChannel: 8 });
   assert.deepEqual(match.candidates.map((item) => item.original_url), ['https://example.test/3.m3u8']);
+});
+
+test('Kooora scraper prefers real broadcaster names from watch cards over generic platforms', () => {
+  const html = `<!doctype html><html><body>
+    <section data-match-id="fixture-1" class="match-card">
+      <div class="watch-provider">
+        <span>شاهد مباشرة على</span>
+        <img alt="Abu Dhabi Sports 2 logo">
+        <strong>Abu Dhabi Sports 2</strong>
+      </div>
+      <div class="watch-provider" data-broadcaster="MBC Action">شاهد مباشرة على MBC Action</div>
+      <div class="watch-provider">شاهد مباشرة على fuboTV</div>
+    </section>
+    <script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: { pageProps: { data: [{
+        competition: { name: 'دوري أبطال أوروبا' },
+        matches: [{
+          id: 'fixture-1',
+          startDate: '2026-09-30T20:00:00.000Z',
+          status: 'FIXTURE',
+          teamA: { name: 'Real Madrid', image: {} },
+          teamB: { name: 'Barcelona', image: {} },
+          score: {},
+          link: { slug: 'real-madrid-v-barcelona' },
+          tvChannels: [{ name: 'fuboTV' }, { name: 'Disney+' }]
+        }]
+      }] } }
+    })}</script>
+  </body></html>`;
+  const [row] = parseKoooraMatches(html);
+  assert.equal(row.channel, 'Abu Dhabi Sports 2');
+  assert.deepEqual(row.payload.channels, ['Abu Dhabi Sports 2', 'MBC Action']);
+});
+
+test('Kooora match detail extractor reads visible watch-on broadcaster cards', () => {
+  const html = `<!doctype html><html><body>
+    <div class="competition-watch">
+      <div class="provider-card" data-provider-name="MBC Action">شاهد مباشرة على MBC Action</div>
+      <div class="provider-card">شاهد مباشرة على Disney+</div>
+    </div>
+    <script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: { pageProps: { data: { tvChannels: [{ name: 'Disney+' }] } } }
+    })}</script>
+  </body></html>`;
+  assert.deepEqual(extractKoooraBroadcastChannelsFromHtml(html), ['MBC Action']);
 });
