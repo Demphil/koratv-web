@@ -633,6 +633,7 @@ function connectStream(attempt = 0) {
     }
   });
   hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    clearTimeout(loadTimer);
     setupQualityControl();
     lastReadyAt = Date.now();
     hideStatus();
@@ -644,7 +645,10 @@ function connectStream(attempt = 0) {
         video.play().catch(() => {});
       }, { once: true });
     }
-    if (video.readyState >= 3) clearTimeout(loadTimer);
+  });
+  hls.on(Hls.Events.FRAG_LOADED, () => {
+    clearTimeout(loadTimer);
+    lastReadyAt = Date.now();
   });
   hls.on(Hls.Events.LEVEL_SWITCHED, () => {
     if (!selectedManualHeight) currentQuality = '';

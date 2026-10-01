@@ -13,6 +13,15 @@ test('live controls omit seek, time and quality UI and disable keyboard seeking'
   assert.match(source, /liveButton\.addEventListener\('click', returnToLive\)/);
 });
 
+test('manifest and fragment progress cancel the initial playback timeout', () => {
+  const parsedStart = source.indexOf('hls.on(Hls.Events.MANIFEST_PARSED');
+  const parsedEnd = source.indexOf('hls.on(Hls.Events.LEVEL_SWITCHED', parsedStart);
+  const parsedBlock = source.slice(parsedStart, parsedEnd);
+  assert.match(parsedBlock, /clearTimeout\(loadTimer\)/);
+  assert.doesNotMatch(parsedBlock, /readyState\s*>=\s*3\)\s*clearTimeout\(loadTimer\)/);
+  assert.match(source, /hls\.on\(Hls\.Events\.FRAG_LOADED[\s\S]*clearTimeout\(loadTimer\)/);
+});
+
 test('live action seeks to liveSyncPosition, clamps stale edges, and tolerates an empty window', () => {
   for (const [sync, expected] of [[150, 150], [50, 100], [300, 199.9], [undefined, 199], [NaN, 199]]) {
     let played = 0;
