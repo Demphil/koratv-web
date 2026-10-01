@@ -2,6 +2,7 @@ import { createMatchesReader, createPlaybackResolver } from './supabase.js';
 import { attachApiFootballDetails } from '../shared/match-details.mjs';
 import { isAllowedMatch, isGulfCupLeague } from '../shared/league-whitelist.mjs';
 import { createProviderCatalog } from './provider-catalog.js';
+import { createProviderLiveResolver } from './provider-live-resolver.js';
 
 function sourceForOrigin(origin, { koratvOrigins, frajaOrigins }) {
   if (koratvOrigins.has(origin)) return 'kooora';
@@ -54,6 +55,9 @@ export function loadConfig(env = process.env) {
   const apiFootballSources = ['api-football'];
   const providerPoolEnabled = env.PROVIDER_POOL_ENABLED === 'true';
   const catalog = providerPoolEnabled ? createProviderCatalog(env) : null;
+  const liveResolver = catalog && env.PROVIDER_LIVE_RESOLVER_ENABLED !== 'false'
+    ? createProviderLiveResolver({ env, accounts: () => catalog.accounts() })
+    : null;
   const getKoooraMatches = createMatchesReader(env, koooraSources, catalog);
   const getApiFootballMatches = createMatchesReader(env, apiFootballSources, catalog);
   const cachedResolver = resolver => {
@@ -68,12 +72,13 @@ export function loadConfig(env = process.env) {
       return promise;
     };
   };
-  const getKoooraPlayback = cachedResolver(createPlaybackResolver(env, koooraSources, catalog));
-  const getApiFootballPlayback = cachedResolver(createPlaybackResolver(env, apiFootballSources, catalog));
+  const getKoooraPlayback = cachedResolver(createPlaybackResolver(env, koooraSources, catalog, liveResolver));
+  const getApiFootballPlayback = cachedResolver(createPlaybackResolver(env, apiFootballSources, catalog, liveResolver));
 
   return {
     secret,
     providerPoolEnabled,
+    directProviderResolutionEnabled: Boolean(liveResolver),
     providerAccounts: catalog ? () => catalog.accounts() : null,
     providerChannels: catalog ? () => catalog.channels() : null,
     refreshProviderCatalog: catalog ? () => catalog.refreshNow() : null,

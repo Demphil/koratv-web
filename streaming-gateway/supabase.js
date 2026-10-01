@@ -215,7 +215,7 @@ function normalizeQualityVariants(channel) {
     .sort((a, b) => b.height - a.height);
 }
 
-export function createPlaybackResolver(env, sourceFilter = null, catalog = null) {
+export function createPlaybackResolver(env, sourceFilter = null, catalog = null, liveResolver = null) {
   const client = createServerClient(env);
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
   const opensBeforeMs = Number(env.STREAM_OPENS_BEFORE_MINUTES || 20) * 60_000;
@@ -257,7 +257,15 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null)
     } : null);
     let channel;
     const attempts = [];
+    let liveSources = null;
+    if (catalog && liveResolver?.resolve) {
+      liveSources = await liveResolver.resolve(candidates);
+      if (liveSources?.provider_sources && Object.keys(liveSources.provider_sources).length) {
+        channel = { name: liveSources.resolvedChannel || candidates[0], original_url: '', quality_variants: [] };
+      }
+    }
     for (const name of candidates) {
+      if (liveSources?.provider_sources && Object.keys(liveSources.provider_sources).length) break;
       channel = await findChannel(client, name);
       const catalogName = catalog?.resolve?.(channel?.name || name) || channel?.name || name;
       const providerSources = catalog ? catalog.sources(catalogName) : {};
@@ -271,14 +279,18 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null)
       if (catalog && Object.keys(catalog.sources(channel?.name)).length) break;
       if (!catalog && channel?.original_url) break;
     }
-    if (catalog && !Object.keys(catalog.sources(channel?.name)).length) return unavailable('source_unavailable', {
-      stage: 'provider_catalog',
+    const resolvedProviderSources = liveSources?.provider_sources && Object.keys(liveSources.provider_sources).length
+      ? liveSources.provider_sources
+      : catalog?.sources(channel?.name);
+    if (catalog && !Object.keys(resolvedProviderSources || {}).length) return unavailable('source_unavailable', {
+      stage: liveResolver ? 'live_provider_resolution' : 'provider_catalog',
       requestedChannels: candidates,
-      attempts
+      attempts,
+      liveAttempts: liveSources?.attempts || []
     });
     if (!catalog && !channel?.original_url) return { is_streaming_active: false, reason: 'source_unavailable' };
     const primaryUrl = canonicalizeXtreamHlsUrl(channel.original_url);
-    const providerSources = catalog?.sources(channel.name);
+    const providerSources = resolvedProviderSources;
     const streamUrl = catalog ? Object.values(providerSources)[0] : primaryUrl;
     if (!catalog && env.CHECK_PLAYBACK_SOURCE_HEALTH === 'true' && !(await isPlayableHlsSource(streamUrl))) {
       return { is_streaming_active: false, reason: 'source_unavailable' };

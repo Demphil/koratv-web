@@ -129,6 +129,41 @@ test('pooled playback takes the refreshed provider URL rather than the stored ch
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('pooled playback can resolve provider sources live when the catalog is stale', async () => {
+  const originalFetch = globalThis.fetch;
+  const match = { id: 'live-resolved-match', match_id: 'live-resolved-match', active: true, source: 'kooora',
+    kickoff_time: new Date(Date.now() - 60000).toISOString(), channel: 'beIN SPORTS HD 3',
+    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: ['beIN SPORTS HD 3'] } } };
+  const channel = { id: 3, name: 'beIN SPORTS HD 3', active: true,
+    original_url: 'https://stale.example/live/old/secret/3.m3u8' };
+  globalThis.fetch = async input => {
+    const url = new URL(input);
+    return Response.json(url.pathname.endsWith('/matches') ? [match] : [channel]);
+  };
+  const catalog = {
+    override: () => null,
+    resolve: name => name,
+    sources: () => ({}),
+  };
+  const liveResolver = {
+    resolve: async (names) => ({
+      requestedChannels: names,
+      resolvedChannel: 'beIN SPORTS HD 3',
+      provider_sources: { B: 'https://fresh.example/live/direct/secret/3.m3u8' },
+      attempts: [{ provider: 'B', status: 'matched' }],
+      source: 'live-provider-resolver',
+    }),
+  };
+  try {
+    const playback = await createPlaybackResolver({ NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' }, 'kooora', catalog, liveResolver)(match.match_id);
+    assert.equal(playback.is_streaming_active, true);
+    assert.equal(playback.channel_id, 'beIN SPORTS HD 3');
+    assert.equal(playback.stream_url, 'https://fresh.example/live/direct/secret/3.m3u8');
+    assert.deepEqual(playback.provider_sources, { B: 'https://fresh.example/live/direct/secret/3.m3u8' });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test('pooled playback can use direct match route state before broadcast matching', async () => {
   const originalFetch = globalThis.fetch;
   const match = { id: 'direct-route-match', match_id: 'direct-route-match', active: true, source: 'kooora',

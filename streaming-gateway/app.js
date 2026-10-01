@@ -109,6 +109,9 @@ function normalizeMatch(row, config) {
   const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
   const playbackState = matchPlaybackState(row, config);
   const cards = payload.cards || payload.stats?.cards || {};
+  const channelName = cleanText(row.channel || payload.channel);
+  const directResolverCanAttempt = config.directProviderResolutionEnabled === true && Boolean(channelName);
+  const sourceAvailable = row.source_ready === true || directResolverCanAttempt;
   return {
     match_id: row.match_id || row.id,
     matchId: row.match_id || row.id,
@@ -124,13 +127,13 @@ function normalizeMatch(row, config) {
     time: cleanText(payload.time, moroccoPart(scheduledAt, { hourCycle: 'h23', hour: '2-digit', minute: '2-digit' })),
     score: normalizeScore(payload.score, playbackState),
     league: row.league || payload.league || '',
-    channelName: cleanText(row.channel || payload.channel),
+    channelName,
     leagueCountry: cleanText(payload.leagueCountry || payload.country || payload.league?.country),
     commentator: payload.commentator || '',
     status: cleanText(payload.status || payload.state || payload.matchStatus),
     streams: [],
-    sourceReady: row.source_ready === true && playbackState === 'live',
-    sourceAvailable: row.source_ready === true,
+    sourceReady: sourceAvailable && playbackState === 'live',
+    sourceAvailable,
     playbackState,
     isLive: playbackState === 'live',
     liveMinute: playbackState === 'live' ? clampLiveMinute(row) : null,
