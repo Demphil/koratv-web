@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { createApp } from '../app.js';
 import { createHmac } from 'node:crypto';
 
-test('pool gateway coalesces viewers, ignores quality overrides, fences old resources, and preserves the second account on 403', async t => {
+test('pool gateway coalesces viewers, ignores quality overrides, fences old resources, and preserves the second account on upstream failures', async t => {
   const store = new Map(); const calls = [];
-  let rejectA = false, includeC = false;
+  let rejectA = false, throwA = false, includeC = false;
   const config = {
     providerPoolEnabled: true, enableAntiBot: false,
     secret: 'test-pool-secret-longer-than-32-characters', hmacSecret: 'test-pool-hmac-independent-longer-than-32',
@@ -22,6 +22,7 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
     get: async key => store.get(key) };
   const app = createApp({ config, redis, fetchImpl: async url => {
     calls.push(url.href);
+    if (throwA && url.hostname === 'a.example') throw new Error('fetch failed');
     if (rejectA && url.hostname === 'a.example') return new Response('', { status: 403 });
     const response = new Response(url.pathname.endsWith('.m3u8') ? '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:6,\none.ts\n' : new Uint8Array([71,0,1]),
       { headers: { 'Content-Type': url.pathname.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t' } });
@@ -58,6 +59,15 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
   assert.ok(calls.includes('https://a.example/fresh/main.m3u8'));
   assert.ok(calls.includes('https://b.example/fresh/main.m3u8'));
   assert.equal(app.locals.providerPool.snapshot()[0].provider, 'B');
+  for (const provider of ['A','B','C']) app.locals.providerPool.revoke(provider);
+  app.locals.providerPool.demands.clear(); app.locals.providerPool.blocked.clear();
+  calls.length = 0; rejectA = false; throwA = true;
+  const network = await session('network');
+  assert.equal((await request('/api/stream.m3u8', network)).status, 200);
+  assert.ok(calls.includes('https://a.example/network/main.m3u8'));
+  assert.ok(calls.includes('https://b.example/network/main.m3u8'));
+  assert.equal(app.locals.providerPool.snapshot()[0].provider, 'B');
+  throwA = false;
   for (const provider of ['A','B','C']) app.locals.providerPool.revoke(provider);
   app.locals.providerPool.demands.clear(); app.locals.providerPool.blocked.clear();
   rejectA = false; includeC = true;

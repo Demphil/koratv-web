@@ -338,6 +338,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const upstreamDelay = (attempt) => Math.min(5000, 600 * (2 ** Math.max(0, attempt - 1)));
   const retryableStatus = (status) => status === 408 || status === 429 || status >= 500;
+  const failoverStatus = (status) => [401, 403, 408, 429, 500, 502, 503, 504].includes(Number(status));
   const fetchUpstream = async (source, options, attempts = 3) => {
     let lastError;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -675,19 +676,39 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           cacheVersion = String(descriptor.version || '');
         }
         runtimeOrigins.add(source.origin);
-        upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, cacheVersion, lease);
         const attemptedProviders = new Set();
-        while (lease && [401, 403].includes(upstream.status)) {
+        while (true) {
+          try {
+            upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, cacheVersion, lease);
+          } catch (error) {
+            if (error instanceof PoolError) throw error;
+            if (!lease || req.path !== '/api/stream.m3u8') throw error;
+            console.warn('[stream-proxy] upstream provider failed before response, trying alternate', {
+              provider: lease.provider,
+              message: error?.message || String(error),
+              source: source.origin
+            });
+            attemptedProviders.add(lease.provider);
+            providerPool.fail(lease, 503);
+            if (attemptedProviders.size >= PROVIDER_IDS.length) throw new PoolError('pool_upstream_unavailable');
+            const replacement = providerPool.acquire(playback, claims.jti);
+            lease = replacement;
+            runtimeOrigins = new Set([new URL(lease.url).origin]);
+            source = allowedUrl(lease.url, runtimeOrigins);
+            cacheVersion = '';
+            continue;
+          }
+          if (!lease || !failoverStatus(upstream.status)) break;
           await upstream.body?.cancel();
           attemptedProviders.add(lease.provider);
           providerPool.fail(lease, upstream.status);
           if (attemptedProviders.size >= PROVIDER_IDS.length) throw new PoolError('pool_upstream_unavailable');
-          const replacement = providerPool.acquire(playback, claims.jti);
           if (req.path !== '/api/stream.m3u8') throw new PoolError('pool_reassigned', 409);
+          const replacement = providerPool.acquire(playback, claims.jti);
           lease = replacement;
           runtimeOrigins = new Set([new URL(lease.url).origin]);
           source = allowedUrl(lease.url, runtimeOrigins);
-          upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, '', lease);
+          cacheVersion = '';
         }
         if (upstream.ok) {
           if (req.path === '/api/stream.m3u8' && sourceHref !== rootSource) {
