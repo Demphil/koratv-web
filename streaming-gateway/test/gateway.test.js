@@ -206,6 +206,14 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   const recoveredContent = await recoveredPlaylist.text();
   assert.ok(recoveredContent.includes('https://stream-api.koratv.click/api/resource?resource='));
   assert.ok(!recoveredContent.includes('https://fabor.sbs/api/resource?resource='));
+  const tunneledPlaylist = await request(`/api/stream.m3u8?token=${session.token}`, config.player, null, '203.0.113.1', {
+    'X-Forwarded-Host': 'fabor.sbs',
+    'X-Forwarded-Proto': 'https'
+  });
+  assert.equal(tunneledPlaylist.status, 200);
+  const tunneledContent = await tunneledPlaylist.text();
+  assert.ok(tunneledContent.includes('https://stream-api.koratv.click/api/resource?resource='));
+  assert.ok(!tunneledContent.includes('https://fabor.sbs/api/resource?resource='));
   config.api = originalApi;
   const health = await (await request('/healthz', config.player)).json();
   assert.ok(health.hlsCache.bytes > 0);

@@ -101,7 +101,12 @@ function requestOrigin(req) {
 function resourceApiOrigin(req, config) {
   const configured = config.api;
   const current = requestOrigin(req);
-  return configured === config.player && current && current !== config.player ? current : configured;
+  if (configured === config.player) {
+    if (config.resourceApi) return config.resourceApi;
+    if (current && current !== config.player) return current;
+    return 'https://stream-api.koratv.click';
+  }
+  return configured;
 }
 
 function normalizeScore(value, playbackState = '') {
