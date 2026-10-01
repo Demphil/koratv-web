@@ -22,6 +22,22 @@ test('manifest and fragment progress cancel the initial playback timeout', () =>
   assert.match(source, /hls\.on\(Hls\.Events\.FRAG_LOADED[\s\S]*clearTimeout\(loadTimer\)/);
 });
 
+test('hls resource guard allows same-origin resource proxy only', () => {
+  const start = source.indexOf('function isAllowedStreamApiUrl');
+  const end = source.indexOf('function hlsOptions', start);
+  const guardSource = source.slice(start, end);
+  const sandbox = {
+    URL,
+    location: { origin: 'https://fabor.sbs' },
+    STREAM_API_ORIGINS: new Set(['https://stream-api.koratv.click'])
+  };
+  vm.runInNewContext(`${guardSource};this.check=isAllowedStreamApiUrl;`, sandbox);
+  assert.equal(sandbox.check('https://stream-api.koratv.click/api/stream.m3u8'), true);
+  assert.equal(sandbox.check('https://fabor.sbs/api/resource?resource=opaque'), true);
+  assert.equal(sandbox.check('https://fabor.sbs/api/stream.m3u8'), false);
+  assert.equal(sandbox.check('https://example.com/api/resource?resource=opaque'), false);
+});
+
 test('live action seeks to liveSyncPosition, clamps stale edges, and tolerates an empty window', () => {
   for (const [sync, expected] of [[150, 150], [50, 100], [300, 199.9], [undefined, 199], [NaN, 199]]) {
     let played = 0;

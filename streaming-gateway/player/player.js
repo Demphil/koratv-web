@@ -549,7 +549,10 @@ async function start() {
 }
 
 function isAllowedStreamApiUrl(url) {
-  return STREAM_API_ORIGINS.has(new URL(url).origin);
+  const target = new URL(url);
+  if (STREAM_API_ORIGINS.has(target.origin)) return true;
+  const pageOrigin = globalThis.location?.origin || '';
+  return target.origin === pageOrigin && target.pathname === '/api/resource';
 }
 
 function hlsOptions() {
