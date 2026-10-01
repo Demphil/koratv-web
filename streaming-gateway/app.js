@@ -85,6 +85,25 @@ function cacheTtl(kind) {
     : Math.max(1000, Number(process.env.HLS_SEGMENT_CACHE_TTL_MS || 30000));
 }
 
+function requestOrigin(req) {
+  const forwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+  const host = forwardedHost || req.get('host');
+  if (!host) return '';
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  const protocol = forwardedProto || req.protocol || 'https';
+  try {
+    return new URL(`${protocol}://${host}`).origin;
+  } catch {
+    return '';
+  }
+}
+
+function resourceApiOrigin(req, config) {
+  const configured = config.api;
+  const current = requestOrigin(req);
+  return configured === config.player && current && current !== config.player ? current : configured;
+}
+
 function normalizeScore(value, playbackState = '') {
   const score = cleanText(value);
   if (!score || /^vs$/i.test(score) || /null|undefined/i.test(score)) return 'VS';
@@ -796,7 +815,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         const rewrite = (uri, version = '') => {
           const target = allowedUrl(new URL(uri, manifestUrl).href, runtimeOrigins);
           if (hlsResourceKind(target) === 'segment' && version) prefetch.push({ target, version });
-          const url = new URL(`${config.api}/api/resource`);
+          const url = new URL(`${resourceApiOrigin(req, config)}/api/resource`);
           url.searchParams.set('resource', seal({ url: target.href, version, ...(lease ? { leaseId: lease.id } : {}) }, claims.jti));
           url.searchParams.set('token', sessionToken);
           return url.href;
