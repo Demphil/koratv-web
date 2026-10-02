@@ -3,6 +3,7 @@
 import {
   getTodayMatches,
   getTomorrowMatches,
+  getCachedMatchSnapshot,
   getMoroccoWallClockNow,
   getMoroccoDay
 } from './api.js';
@@ -464,12 +465,7 @@ function renderSection(container, matches, message) {
   }
 }
 
-async function loadAndRenderMatches(options = {}) {
-  const [rawTodayMatches, rawTomorrowMatches] = await Promise.all([
-    getTodayMatches(options),
-    getTomorrowMatches(options)
-  ]);
-
+function renderMatchCollections(rawTodayMatches, rawTomorrowMatches) {
   hideLoading();
   const allMatches = dedupeMatches([...rawTodayMatches, ...rawTomorrowMatches]
     .filter(match => match?.homeTeam?.name && match?.awayTeam?.name && matchStartDate(match)));
@@ -509,6 +505,22 @@ async function loadAndRenderMatches(options = {}) {
   renderSection(DOM.broadcastContainer, trueTodayMatches, 'لا توجد مواجهات اليوم.');
   renderSection(DOM.todayContainer, trueTodayMatches, 'لا توجد مواجهات اليوم.');
   renderSection(DOM.tomorrowContainer, trueTomorrowMatches, 'لا توجد مواجهات غداً.');
+}
+
+async function loadAndRenderMatches(options = {}) {
+  const [rawTodayMatches, rawTomorrowMatches] = await Promise.all([
+    getTodayMatches(options),
+    getTomorrowMatches(options)
+  ]);
+
+  renderMatchCollections(rawTodayMatches, rawTomorrowMatches);
+}
+
+function renderCachedMatchesImmediately() {
+  const snapshot = getCachedMatchSnapshot();
+  if (!snapshot.today.length && !snapshot.tomorrow.length) return false;
+  renderMatchCollections(snapshot.today, snapshot.tomorrow);
+  return true;
 }
 
 window.refreshLiveMatches = () => loadAndRenderMatches({ force: true }).catch(error => {
@@ -555,6 +567,7 @@ function setupTabs() {
 document.addEventListener('DOMContentLoaded', () => {
     setupTabs();
   setupSecurePlayerLinks();
+    renderCachedMatchesImmediately();
     loadAndRenderMatches().catch(error => {
         console.error("An error occurred while loading matches:", error);
         hideLoading();

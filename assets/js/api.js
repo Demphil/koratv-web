@@ -1,6 +1,7 @@
 // --- 1. Cache Configuration ---
 
 const CACHE_EXPIRY_MS = 20 * 1000;
+const SNAPSHOT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const MATCHES_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
 
@@ -8,24 +9,33 @@ const CACHE_KEY_TODAY = 'matches_cache_today_v2';
 
 const CACHE_KEY_TOMORROW = 'matches_cache_tomorrow_v2';
 
-
-
 function setCache(key, data) {
-  // Match data must always reflect the current staging table.
-  localStorage.removeItem(key);
-
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      savedAt: Date.now(),
+      data
+    }));
+  } catch {}
 }
 
-
-
 function getCache(key) {
-  localStorage.removeItem(key);
-  return null;
-
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!parsed || !Array.isArray(parsed.data) || Date.now() - Number(parsed.savedAt || 0) > SNAPSHOT_CACHE_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    localStorage.removeItem(key);
+    return null;
+  }
 }
 
 for (const key of Object.keys(localStorage)) {
-  if (key.startsWith('matches_cache_')) localStorage.removeItem(key);
+  if (key.startsWith('matches_cache_') && ![CACHE_KEY_TODAY, CACHE_KEY_TOMORROW].includes(key)) {
+    localStorage.removeItem(key);
+  }
 }
 
 
@@ -136,7 +146,10 @@ async function getStagingMatches({ force = false } = {}) {
     stagingMatchesPromise = null;
   }
   if (!stagingMatchesPromise) {
-    stagingMatchesPromise = fetch(`${MATCHES_API_ORIGIN}/api/matches?t=${Date.now()}`, { cache: 'no-store' })
+    const endpoint = force
+      ? `${MATCHES_API_ORIGIN}/api/matches?t=${Date.now()}`
+      : `${MATCHES_API_ORIGIN}/api/matches`;
+    stagingMatchesPromise = fetch(endpoint, { cache: force ? 'no-store' : 'default' })
       .then((response) => {
         if (!response.ok) throw new Error(`Status: ${response.status}`);
         return response.json();
@@ -159,24 +172,35 @@ async function getStagingMatches({ force = false } = {}) {
 export async function getTodayMatches(options = {}) {
   try {
     const matches = await getStagingMatches(options);
-    return matches.filter((match) => {
+    const today = matches.filter((match) => {
       const day = getMoroccoDay(match.scheduledAt);
       return day === 'today';
     });
+    setCache(CACHE_KEY_TODAY, today);
+    return today;
   } catch (error) {
     console.error(`Today matches fetch failed: ${error.message}`);
-    return [];
+    return getCache(CACHE_KEY_TODAY) || [];
   }
 }
 
 export async function getTomorrowMatches(options = {}) {
   try {
     const matches = await getStagingMatches(options);
-    return matches.filter((match) => getMoroccoDay(match.scheduledAt) === 'tomorrow');
+    const tomorrow = matches.filter((match) => getMoroccoDay(match.scheduledAt) === 'tomorrow');
+    setCache(CACHE_KEY_TOMORROW, tomorrow);
+    return tomorrow;
   } catch (error) {
     console.error(`Tomorrow matches fetch failed: ${error.message}`);
-    return [];
+    return getCache(CACHE_KEY_TOMORROW) || [];
   }
+}
+
+export function getCachedMatchSnapshot() {
+  return {
+    today: getCache(CACHE_KEY_TODAY) || [],
+    tomorrow: getCache(CACHE_KEY_TOMORROW) || []
+  };
 }
 
 const HOME_TEAM_SELECTORS = [

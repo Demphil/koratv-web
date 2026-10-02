@@ -581,6 +581,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         : day === 'tomorrow'
           ? matches.filter((match) => moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === tomorrow)
           : matches.filter((match) => [today, tomorrow].includes(moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' })));
+      res.set('Cache-Control', 'public, max-age=15, s-maxage=30, stale-while-revalidate=120');
       res.json({ matches: filtered.filter(allowedMatch) });
     } catch {
       res.status(503).json({ error: 'Match service is unavailable' });
