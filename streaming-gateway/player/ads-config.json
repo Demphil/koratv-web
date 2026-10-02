@@ -8,45 +8,28 @@
     "enabled": true,
     "providers": [
       {
-        "name": "monetag-direct",
+        "name": "adsterra",
         "enabled": true,
-        "url": "https://omg10.com/4/11865233"
-      }
+        "url": "https://www.profitableratecpmnetwork.com/fmy8wx8s?key=98d446d2e90401d0d69d4d38e261833d"
+      },
+      { "name": "monetag", "enabled": false, "url": "" }
     ]
   },
   "display": [
     {
-      "name": "monetag-zone-11865231",
+      "name": "adsterra-native",
       "enabled": true,
+      "slot": "footer",
+      "height": 250,
+      "container_id": "container-16cff4ffefd13b1e8fcebbc3e802ce91",
+      "script_url": "https://pl31523880.profitableratecpmnetwork.com/16cff4ffefd13b1e8fcebbc3e802ce91/invoke.js"
+    },
+    {
+      "name": "monetag-in-page",
+      "enabled": false,
       "slot": "sidebar",
-      "height": 120,
-      "script_url": "https://al5sm.com/tag.min.js",
-      "script_attributes": {
-        "data-zone": "11865231",
-        "data-cfasync": "false"
-      }
-    },
-    {
-      "name": "monetag-zone-11865230",
-      "enabled": true,
-      "slot": "footer",
-      "height": 120,
-      "script_url": "https://al5sm.com/tag.min.js",
-      "script_attributes": {
-        "data-zone": "11865230",
-        "data-cfasync": "false"
-      }
-    },
-    {
-      "name": "quge5-zone-284665",
-      "enabled": true,
-      "slot": "footer",
-      "height": 120,
-      "script_url": "https://quge5.com/88/tag.min.js",
-      "script_attributes": {
-        "data-zone": "284665",
-        "data-cfasync": "false"
-      }
+      "height": 300,
+      "script_url": ""
     }
   ]
 }
