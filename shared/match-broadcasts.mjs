@@ -155,11 +155,30 @@ export function broadcastChannelCandidates(row) {
     .map(({ name }) => name);
 }
 
+function moroccoDateKey(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Casablanca',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts
+    .filter(({ type }) => type !== 'literal')
+    .map(({ type, value: part }) => [type, part]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 export function obsoleteMatchRows(existing, fresh, now = Date.now()) {
   const family = (row) => String(row.source).startsWith('kooora') ? 'kooora' : row.source;
   const managed = new Set(['kooora', 'metascrape', 'api-football']);
+  const todayKey = moroccoDateKey(now);
   return existing.filter((row) => {
     if (!managed.has(family(row))) return false;
+    // Keep every fixture from the current Morocco calendar day visible until 23:59,
+    // even if it finished or a newer sync did not return it.
+    if (moroccoDateKey(row.kickoff_time) === todayKey) return false;
     if (Date.parse(row.kickoff_time) < now - 24 * 60 * 60_000
       || Date.parse(row.updated_at) < now - 24 * 60 * 60_000) return true;
     return fresh.some((replacement) => replacement.match_id !== row.match_id

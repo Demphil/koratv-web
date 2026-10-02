@@ -33,11 +33,39 @@ test('retention expires 24-hour data and removes only replaced same-source fixtu
   const stale = { ...legacy, match_id: 'stale', kickoff_time: '2026-09-28T13:00:00Z', updated_at: '2026-09-26T13:59:59Z' };
   const manual = { ...expired, match_id: 'manual', source: 'manual' };
   assert.deepEqual(obsoleteMatchRows([fresh, legacy, apiCopy, other, expired, stale, manual], [fresh], now)
-    .map(row => row.match_id), ['legacy', 'expired', 'stale']);
+    .map(row => row.match_id), ['expired', 'stale']);
+  const tomorrowFresh = { ...fresh, match_id: 'tomorrow-fresh', kickoff_time: '2026-09-28T13:00:00Z' };
+  const tomorrowLegacy = { ...tomorrowFresh, match_id: 'tomorrow-legacy', updated_at: '2026-09-27T13:00:00Z' };
+  assert.deepEqual(obsoleteMatchRows([tomorrowLegacy], [tomorrowFresh], now).map(row => row.match_id), ['tomorrow-legacy']);
   const newer = { ...legacy, updated_at: '2026-09-27T14:01:00Z' };
   assert.deepEqual(obsoleteMatchRows([newer], [fresh], now), []);
-  const equal = { ...fresh, match_id: 'z-duplicate' };
-  assert.equal(obsoleteMatchRows([fresh, equal], [fresh, equal], now).length, 1);
+  const equal = { ...tomorrowFresh, match_id: 'z-duplicate' };
+  assert.equal(obsoleteMatchRows([tomorrowFresh, equal], [tomorrowFresh, equal], now).length, 1);
+});
+
+test('retention keeps finished same-day fixtures until Morocco midnight', () => {
+  const now = Date.parse('2026-09-27T22:30:00Z');
+  const todayFinished = {
+    ...kooora,
+    match_id: 'today-finished',
+    kickoff_time: '2026-09-27T13:00:00Z',
+    updated_at: '2026-09-26T20:00:00Z',
+    payload: { ...kooora.payload, isFinished: true }
+  };
+  const replacement = {
+    ...todayFinished,
+    match_id: 'today-replacement',
+    updated_at: '2026-09-27T22:00:00Z',
+    payload: { ...todayFinished.payload, broadcast: { source: 'kooora' } }
+  };
+  const yesterdayFinished = {
+    ...todayFinished,
+    match_id: 'yesterday-finished',
+    kickoff_time: '2026-09-26T13:00:00Z'
+  };
+
+  assert.deepEqual(obsoleteMatchRows([todayFinished], [replacement], now), []);
+  assert.deepEqual(obsoleteMatchRows([yesterdayFinished], [], now).map(row => row.match_id), ['yesterday-finished']);
 });
 
 test('live provider catalog validates inventory without opening scarce playback connections', () => {
