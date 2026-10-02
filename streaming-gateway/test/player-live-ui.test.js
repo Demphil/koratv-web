@@ -22,6 +22,15 @@ test('manifest and fragment progress cancel the initial playback timeout', () =>
   assert.match(source, /hls\.on\(Hls\.Events\.FRAG_LOADED[\s\S]*clearTimeout\(loadTimer\)/);
 });
 
+test('pool heartbeat keeps live leases during buffering and network recovery is tolerant', () => {
+  assert.match(source, /const MAX_NETWORK_RECOVERIES = 5/);
+  const heartbeatStart = source.indexOf('if (singleQuality) poolHeartbeatTimer');
+  const heartbeatEnd = source.indexOf('updateChannelLabel', heartbeatStart);
+  const heartbeatBlock = source.slice(heartbeatStart, heartbeatEnd);
+  assert.doesNotMatch(heartbeatBlock, /video\.paused/);
+  assert.match(source, /fragLoadingMaxRetry:\s*4/);
+});
+
 test('hls resource guard allows same-origin resource proxy only', () => {
   const start = source.indexOf('function isAllowedStreamApiUrl');
   const end = source.indexOf('function hlsOptions', start);

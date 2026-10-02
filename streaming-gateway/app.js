@@ -709,6 +709,16 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
             upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, cacheVersion, lease);
           } catch (error) {
             if (error instanceof PoolError) throw error;
+            if (lease && req.path === '/api/resource') {
+              console.warn('[stream-proxy] upstream resource failed, asking player to reconnect', {
+                provider: lease.provider,
+                message: error?.message || String(error),
+                kind: hlsResourceKind(source),
+                source: source.origin
+              });
+              providerPool.fail(lease, 503);
+              throw new PoolError('pool_reassigned', 409);
+            }
             if (!lease || req.path !== '/api/stream.m3u8') throw error;
             console.warn('[stream-proxy] upstream provider failed before response, trying alternate', {
               provider: lease.provider,

@@ -5,7 +5,7 @@ import { createHmac } from 'node:crypto';
 
 test('pool gateway coalesces viewers, ignores quality overrides, fences old resources, and preserves the second account on upstream failures', async t => {
   const store = new Map(); const calls = [];
-  let rejectA = false, throwA = false, includeC = false;
+  let rejectA = false, throwA = false, throwSegmentA = false, includeC = false;
   const config = {
     providerPoolEnabled: true, enableAntiBot: false,
     secret: 'test-pool-secret-longer-than-32-characters', hmacSecret: 'test-pool-hmac-independent-longer-than-32',
@@ -23,6 +23,7 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
   const app = createApp({ config, redis, fetchImpl: async url => {
     calls.push(url.href);
     if (throwA && url.hostname === 'a.example') throw new Error('fetch failed');
+    if (throwSegmentA && !url.pathname.endsWith('.m3u8')) throw new Error('segment fetch failed');
     if (rejectA && url.hostname === 'a.example') return new Response('', { status: 403 });
     const response = new Response(url.pathname.endsWith('.m3u8') ? '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:6,\none.ts\n' : new Uint8Array([71,0,1]),
       { headers: { 'Content-Type': url.pathname.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t' } });
@@ -68,6 +69,15 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
   assert.ok(calls.includes('https://b.example/network/main.m3u8'));
   assert.equal(app.locals.providerPool.snapshot()[0].provider, 'B');
   throwA = false;
+  for (const provider of ['A','B','C']) app.locals.providerPool.revoke(provider);
+  app.locals.providerPool.demands.clear(); app.locals.providerPool.blocked.clear();
+  calls.length = 0; throwSegmentA = true;
+  const segmentToken = await session('segment-network');
+  const segmentManifest = await request('/api/stream.m3u8', segmentToken);
+  assert.equal(segmentManifest.status, 200);
+  const segmentResource = new URL((await segmentManifest.text()).split('\n').find(line => line.startsWith('https:')));
+  assert.equal((await request(segmentResource.pathname + segmentResource.search, segmentToken)).status, 409);
+  throwSegmentA = false;
   for (const provider of ['A','B','C']) app.locals.providerPool.revoke(provider);
   app.locals.providerPool.demands.clear(); app.locals.providerPool.blocked.clear();
   rejectA = false; includeC = true;

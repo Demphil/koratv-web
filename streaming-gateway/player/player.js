@@ -54,6 +54,7 @@ const arabicTeamNames = new Map(Object.entries({
 }));
 const MAX_RECONNECT_ATTEMPTS = 3;
 const MAX_MEDIA_RECOVERIES = 2;
+const MAX_NETWORK_RECOVERIES = 5;
 const INITIAL_LOAD_TIMEOUT_MS = 18000;
 const QUALITY_STALL_TIMEOUT_MS = 7000;
 const RETRY_BASE_DELAY_MS = 900;
@@ -535,7 +536,7 @@ async function start() {
   singleQuality = session.singleQuality === true;
   clearInterval(poolHeartbeatTimer);
   if (singleQuality) poolHeartbeatTimer = setInterval(() => {
-    if (!hlsSessionToken || video.paused || sessionExpiresAt <= Date.now()) return;
+    if (!hlsSessionToken || sessionExpiresAt <= Date.now()) return;
     fetch(`${STREAM_API_ORIGIN}/api/pool-heartbeat`, { headers: { Authorization: `Bearer ${hlsSessionToken}` }, cache: 'no-store', signal: AbortSignal.timeout(4000) }).catch(() => {});
   }, 5000);
   updateChannelLabel(session.channelName);
@@ -583,10 +584,10 @@ function hlsOptions() {
     levelLoadingMaxRetry: 1,
     levelLoadingRetryDelay: 500,
     levelLoadingMaxRetryTimeout: 2500,
-    fragLoadingTimeOut: 10000,
-    fragLoadingMaxRetry: 2,
-    fragLoadingRetryDelay: 500,
-    fragLoadingMaxRetryTimeout: 3000,
+    fragLoadingTimeOut: 14000,
+    fragLoadingMaxRetry: 4,
+    fragLoadingRetryDelay: 600,
+    fragLoadingMaxRetryTimeout: 6000,
     xhrSetup(xhr, url) {
       if (!isAllowedStreamApiUrl(url)) throw new Error('Unexpected media origin');
       xhr.setRequestHeader('Authorization', `Bearer ${hlsSessionToken}`);
@@ -623,10 +624,14 @@ function connectStream(attempt = 0) {
       failPlayback('انتهت جلسة المشاهدة أو رُفض الوصول. افتح المباراة مجدداً من الموقع.', false);
     } else if (selectedManualHeight && (data.type === Hls.ErrorTypes.NETWORK_ERROR || data.type === Hls.ErrorTypes.MEDIA_ERROR)) {
       fallbackToAuto('الجودة المختارة غير مستقرة. تم الرجوع للوضع التلقائي.');
-    } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries < 2) {
+    } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries < MAX_NETWORK_RECOVERIES) {
       networkRetries += 1;
-      showLoading('البث غير متوفر حالياً - جاري المحاولة...', `إعادة تحميل المقطع ${networkRetries}/2`);
-      retryTimer = setTimeout(() => hls?.startLoad(), networkRetries * 1500);
+      const delay = Math.min(5000, networkRetries * 1200);
+      showLoading('البث غير متوفر حالياً - جاري المحاولة...', `إعادة تحميل المقطع ${networkRetries}/${MAX_NETWORK_RECOVERIES}`);
+      retryTimer = setTimeout(() => {
+        if (networkRetries >= 3) hls?.startLoad(-1);
+        else hls?.startLoad();
+      }, delay);
     } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRetries < MAX_MEDIA_RECOVERIES) {
       mediaRetries += 1;
       showLoading('جاري إصلاح البث...', `محاولة إصلاح الفيديو ${mediaRetries}/${MAX_MEDIA_RECOVERIES}`);
