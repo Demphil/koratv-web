@@ -139,6 +139,38 @@ test('reader and ticket resolver map Kooora SNRT broadcasts to Arryadia TNT', as
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('reader and ticket resolver normalize direct SNRT fallback rows without broadcast payload', async () => {
+  const originalFetch = globalThis.fetch;
+  const fixture = {
+    id: 'kooora_2026-10-02_وداد_تماره_vs_اتحاد_تواركه',
+    match_id: 'kooora_2026-10-02_وداد_تماره_vs_اتحاد_تواركه',
+    active: true,
+    source: 'kooora',
+    home_team: 'وداد تمارة',
+    away_team: 'إتحاد تواركة',
+    league: 'الدوري المغربي الممتاز',
+    kickoff_time: new Date(Date.now() - 45 * 60_000).toISOString(),
+    channel: 'SNRT Live',
+    payload: { status: 'LIVE', channel: 'SNRT Live' },
+  };
+  const channel = { id: 1, name: 'Arryadia TNT', active: true, original_url: 'https://media.example.com/live/1.m3u8' };
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    const body = url.pathname.endsWith('/matches') ? [fixture]
+      : url.searchParams.has('name') ? [] : [channel];
+    return Response.json(body);
+  };
+  try {
+    const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' };
+    const [row] = await createMatchesReader(env)();
+    assert.equal(row.source_ready, true);
+    assert.equal(row.channel, 'Arryadia TNT');
+    const playback = await createPlaybackResolver(env)(fixture.match_id);
+    assert.equal(playback.is_streaming_active, true);
+    assert.equal(playback.channel_id, 'Arryadia TNT');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test('pooled playback takes the refreshed provider URL rather than the stored channel URL', async () => {
   const originalFetch = globalThis.fetch;
   const match = { id: 'refreshed-match', match_id: 'refreshed-match', active: true, source: 'kooora',

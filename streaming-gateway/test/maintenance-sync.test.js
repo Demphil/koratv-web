@@ -64,3 +64,47 @@ test('maintenance sync writes opaque route ids without playback URLs', async () 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('maintenance sync normalizes direct SNRT fallback rows to Arryadia TNT', async () => {
+  const originalFetch = globalThis.fetch;
+  const dir = await mkdtemp(join(tmpdir(), 'active-catalog-snrt-'));
+  await writeFile(join(dir, 'provider-catalog.json'), JSON.stringify({
+    providers: { A: { enabled: true } },
+    channels: {
+      'Arryadia TNT': {
+        A: 'https://private.example/live/user/pass/456.m3u8',
+        sourceNames: { A: 'AR-SPI MA ARRYADIA TNT' },
+      },
+    },
+  }));
+  const fixture = {
+    id: 'fixture-snrt',
+    match_id: 'fixture-snrt',
+    home_team: 'وداد تمارة',
+    away_team: 'إتحاد تواركة',
+    league: 'الدوري المغربي الممتاز',
+    source: 'kooora',
+    active: true,
+    kickoff_time: '2026-10-02T18:00:00.000Z',
+    channel: 'SNRT Live',
+    payload: { status: 'LIVE', channel: 'SNRT Live' },
+  };
+  globalThis.fetch = async () => Response.json([fixture]);
+  try {
+    const summary = await runMaintenanceSync({
+      NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon',
+      PROVIDER_POOL_DIR: dir,
+      ROUTE_SYNC_DATE: '2026-10-02',
+      ROUTE_SYNC_TIMEZONE: 'UTC',
+    });
+    assert.equal(summary.activeRoutes, 1);
+    assert.equal(summary.missingRoutes, 0);
+    const routeState = JSON.parse(await readFile(join(dir, 'direct-match-route-state.json'), 'utf8'));
+    assert.deepEqual(routeState.matches['fixture-snrt'].requestedChannels, ['Arryadia TNT']);
+    assert.equal(routeState.matches['fixture-snrt'].resolvedChannel, 'Arryadia TNT');
+    assert.equal(routeState.matches['fixture-snrt'].status, 'RESOLVED');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

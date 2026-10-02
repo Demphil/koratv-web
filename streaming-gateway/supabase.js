@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { findChannelNameMatch } from '../shared/channel-name-match.mjs';
-import { broadcastChannelCandidates, deduplicateSourceEvents } from '../shared/match-broadcasts.mjs';
+import { broadcastChannelCandidates, deduplicateSourceEvents, normalizeBroadcastChannel } from '../shared/match-broadcasts.mjs';
 import { basePriority } from './priority.js';
 
 function createServerClient(env) {
@@ -111,13 +111,19 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
       const matchedName = findChannelNameMatch(name, availableChannels.map((channel) => channel.name));
       return availableChannels.find((channel) => channel.name === matchedName) || null;
     };
+    const channelCandidatesForRow = (row) => {
+      const broadcastCandidates = broadcastChannelCandidates(row);
+      if (broadcastCandidates.length) return broadcastCandidates;
+      const direct = normalizeBroadcastChannel(row.channel || row.payload?.channel);
+      return direct ? [direct] : [];
+    };
     const resolvedRows = deduplicateSourceEvents(data || []).map((row) => {
       const routeState = catalog?.matchRoute?.(row.match_id || row.id);
       const candidates = catalog?.override(row.match_id || row.id)
         ? [catalog.override(row.match_id || row.id)]
         : routeState?.resolvedChannel
           ? [routeState.resolvedChannel]
-          : broadcastChannelCandidates(row);
+          : channelCandidatesForRow(row);
       const channel = candidates.map((name) => {
         const resolved = resolveChannel(name);
         if (resolved && (!catalog || Object.keys(catalog.sources(resolved.name)).length)) return resolved;
@@ -249,7 +255,17 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
     const matchKey = match.match_id || match.id;
     const override = catalog?.override(matchKey);
     const routeState = catalog?.matchRoute?.(matchKey);
-    const candidates = override ? [override] : routeState?.resolvedChannel ? [routeState.resolvedChannel] : broadcastChannelCandidates(match);
+    const broadcastCandidates = broadcastChannelCandidates(match);
+    const fallbackChannel = normalizeBroadcastChannel(match.channel || payload.channel);
+    const candidates = override
+      ? [override]
+      : routeState?.resolvedChannel
+        ? [routeState.resolvedChannel]
+        : broadcastCandidates.length
+          ? broadcastCandidates
+          : fallbackChannel
+            ? [fallbackChannel]
+            : [];
     if (!candidates.length) return unavailable('channel_unavailable', catalog ? {
       stage: 'kooora_broadcast',
       broadcastState: payload.broadcast?.state || null,

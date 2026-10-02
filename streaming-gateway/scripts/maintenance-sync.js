@@ -129,8 +129,8 @@ async function writeRouteStateToSupabase(env, dateKey, routeStates) {
 function targetChannelsForMatch(row) {
   const candidates = broadcastChannelCandidates(row);
   if (candidates.length) return candidates;
-  const direct = row.channel || row.payload?.channel;
-  return typeof direct === 'string' && direct.trim() ? [direct.trim()] : [];
+  const direct = normalizeBroadcastChannel(row.channel || row.payload?.channel);
+  return direct ? [direct] : [];
 }
 
 export async function runMaintenanceSync(env = process.env) {
