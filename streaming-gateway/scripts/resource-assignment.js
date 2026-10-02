@@ -361,7 +361,7 @@ async function readProjectMatches(supabase, env, dateKey, timezone) {
 }
 
 async function writeProjectAssignmentsToSupabase(supabase, env, dateKey, plan) {
-  if (String(env.RESOURCE_ASSIGNMENT_WRITE_SUPABASE_STATE || '').trim().toLowerCase() !== 'true') {
+  if (String(env.RESOURCE_ASSIGNMENT_WRITE_SUPABASE_STATE || 'true').trim().toLowerCase() === 'false') {
     return { enabled: false, written: 0 };
   }
   const table = env.RESOURCE_ASSIGNMENT_TABLE || 'match_resource_assignments';
