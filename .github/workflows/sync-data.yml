@@ -105,6 +105,7 @@ jobs:
             flock -w 300 /etc/koratv/provider-catalog.lock node --env-file=.env scripts/sync-provider-pool.js
             flock -w 300 /etc/koratv/direct-match-route-state.lock node --env-file=.env scripts/maintenance-sync.js
             cd /opt/koratv/current
+            pm2 delete koratv-oracle-watch || true
             pm2 startOrReload ecosystem.oracle.config.js --env production --update-env
             pm2 save
             rm -rf "/tmp/koratv-oracle-sync-${{ github.run_id }}"
