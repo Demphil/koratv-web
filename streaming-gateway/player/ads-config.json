@@ -1,35 +1,52 @@
 {
   "enabled": true,
-  "initial_delay_seconds": 15,
-  "click_cooldown_minutes": 20,
-  "max_ads_per_session": 2,
+  "initial_delay_seconds": 5,
+  "click_cooldown_minutes": 5,
+  "max_ads_per_session": 72,
   "session_window_minutes": 360,
   "click": {
     "enabled": true,
     "providers": [
       {
-        "name": "adsterra",
+        "name": "monetag-direct",
         "enabled": true,
-        "url": "https://www.profitableratecpmnetwork.com/fmy8wx8s?key=98d446d2e90401d0d69d4d38e261833d"
-      },
-      { "name": "monetag", "enabled": false, "url": "" }
+        "url": "https://omg10.com/4/11865233"
+      }
     ]
   },
   "display": [
     {
-      "name": "adsterra-native",
+      "name": "monetag-zone-11865231",
       "enabled": true,
-      "slot": "footer",
-      "height": 250,
-      "container_id": "container-16cff4ffefd13b1e8fcebbc3e802ce91",
-      "script_url": "https://pl31523880.profitableratecpmnetwork.com/16cff4ffefd13b1e8fcebbc3e802ce91/invoke.js"
+      "slot": "sidebar",
+      "height": 120,
+      "script_url": "https://al5sm.com/tag.min.js",
+      "script_attributes": {
+        "data-zone": "11865231",
+        "data-cfasync": "false"
+      }
     },
     {
-      "name": "monetag-in-page",
-      "enabled": false,
-      "slot": "sidebar",
-      "height": 300,
-      "script_url": ""
+      "name": "monetag-zone-11865230",
+      "enabled": true,
+      "slot": "footer",
+      "height": 120,
+      "script_url": "https://al5sm.com/tag.min.js",
+      "script_attributes": {
+        "data-zone": "11865230",
+        "data-cfasync": "false"
+      }
+    },
+    {
+      "name": "quge5-zone-284665",
+      "enabled": true,
+      "slot": "footer",
+      "height": 120,
+      "script_url": "https://quge5.com/88/tag.min.js",
+      "script_attributes": {
+        "data-zone": "284665",
+        "data-cfasync": "false"
+      }
     }
   ]
 }

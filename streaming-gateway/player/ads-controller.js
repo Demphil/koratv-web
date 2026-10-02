@@ -1,22 +1,45 @@
-import { STORAGE_KEY, adDecision, consumeAd, httpsUrl } from './ads-policy.js';
+import { STORAGE_KEY, adDecision, consumeAd, httpsUrl, nextAdDelayMs } from './ads-policy.js';
 
 const container = document.getElementById('player-container');
 const video = document.getElementById('video');
+let shieldTimer = 0;
+let activeShield = null;
+
+function storedState() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch { return null; }
+}
+
+function scheduleShield(config, delay = null) {
+  window.clearTimeout(shieldTimer);
+  const wait = delay ?? nextAdDelayMs(config, storedState());
+  if (!Number.isFinite(wait)) return;
+  shieldTimer = window.setTimeout(() => installShield(config), Math.max(0, wait));
+}
 
 function installShield(config) {
-  let eligible = false;
-  try { eligible = adDecision(config, JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')).eligible; } catch {}
-  if (!eligible || !container || !video) return;
+  if (activeShield || !container || !video) return;
+  let decision = { eligible: false, nextDelayMs: Infinity };
+  try { decision = adDecision(config, storedState()); } catch {}
+  if (!decision.eligible) {
+    scheduleShield(config, decision.nextDelayMs);
+    return;
+  }
   const shield = document.createElement('button');
   shield.type = 'button';
   shield.className = 'ad-click-shield';
   shield.setAttribute('aria-label', 'تشغيل الفيديو (إعلان في علامة تبويب جديدة)');
   shield.title = 'تشغيل الفيديو';
   function remove() {
+    if (activeShield !== shield) return;
+    activeShield = null;
     shield.remove();
     window.removeEventListener('storage', onStorage);
   }
-  function onStorage(event) { if (event.key === STORAGE_KEY) remove(); }
+  function onStorage(event) {
+    if (event.key !== STORAGE_KEY) return;
+    remove();
+    scheduleShield(config);
+  }
   shield.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -26,18 +49,18 @@ function installShield(config) {
     // noopener can return null on success: never fall back to parent navigation.
     try { if (url) window.open(url, '_blank', 'noopener,noreferrer'); } catch {}
     video.play().catch(() => {});
+    scheduleShield(config);
   }, { once: true });
   window.addEventListener('storage', onStorage);
+  activeShield = shield;
   container.append(shield);
 }
 
 function installDisplayAds(config) {
-  const occupied = new Set();
   for (const item of config.display || []) {
-    if (!item.enabled || !httpsUrl(item.script_url) || !['sidebar', 'footer'].includes(item.slot) || occupied.has(item.slot)) continue;
+    if (!item.enabled || !httpsUrl(item.script_url) || !['sidebar', 'footer'].includes(item.slot)) continue;
     const slot = document.getElementById(`ad-slot-${item.slot}`);
     if (!slot) continue;
-    occupied.add(item.slot);
     const frame = document.createElement('iframe');
     frame.title = 'إعلان';
     frame.setAttribute('sandbox', 'allow-scripts');

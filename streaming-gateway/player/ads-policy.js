@@ -7,8 +7,11 @@ export function httpsUrl(value) {
   } catch { return null; }
 }
 
-export function adDecision(config, stored, now = Date.now()) {
-  const providers = (config.click?.providers || []).filter((p) => p.enabled === true && httpsUrl(p.url));
+function clickProviders(config) {
+  return (config.click?.providers || []).filter((p) => p.enabled === true && httpsUrl(p.url));
+}
+
+function clickWindow(config, stored, now = Date.now()) {
   const cooldown = Math.max(0, Number(config.click_cooldown_minutes) || 0) * 60000;
   const windowMs = Math.max(1, Number(config.session_window_minutes) || 360) * 60000;
   const max = Math.max(0, Math.floor(Number(config.max_ads_per_session) || 0));
@@ -16,9 +19,25 @@ export function adDecision(config, stored, now = Date.now()) {
     && Number.isInteger(stored.count) && stored.count >= 0;
   const state = valid && now >= stored.startedAt && now - stored.startedAt < windowMs
     ? { ...stored } : { startedAt: now, lastAt: valid ? stored.lastAt : 0, count: 0 };
+  return { cooldown, windowMs, max, state };
+}
+
+export function nextAdDelayMs(config, stored, now = Date.now()) {
+  const providers = clickProviders(config);
+  const { cooldown, windowMs, max, state } = clickWindow(config, stored, now);
+  if (config.enabled !== true || config.click?.enabled !== true || providers.length === 0 || max <= 0) return Infinity;
+  if (state.lastAt && now < state.lastAt) return Math.max(1000, state.lastAt - now + cooldown);
+  if (state.count >= max) return Math.max(1000, state.startedAt + windowMs - now);
+  if (state.lastAt && now - state.lastAt < cooldown) return Math.max(1000, cooldown - (now - state.lastAt));
+  return 0;
+}
+
+export function adDecision(config, stored, now = Date.now()) {
+  const providers = clickProviders(config);
+  const { cooldown, max, state } = clickWindow(config, stored, now);
   const eligible = config.enabled === true && config.click?.enabled === true && providers.length > 0
     && state.count < max && (!state.lastAt || now - state.lastAt >= cooldown);
-  return { eligible, state, url: eligible ? httpsUrl(providers[state.count % providers.length].url) : null };
+  return { eligible, state, nextDelayMs: nextAdDelayMs(config, stored, now), url: eligible ? httpsUrl(providers[state.count % providers.length].url) : null };
 }
 
 export function consumeAd(storage, config, now = Date.now()) {

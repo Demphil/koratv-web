@@ -1315,6 +1315,7 @@ body.tamper-lock .player-container {
 .ad-slot { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
 .ad-slot iframe { display: block; width: 100%; border: 0; background: transparent; }
 @media (max-width: 620px) {
+  body:not(.tamper-lock) .ad-slot { display: none !important; }
   .player-heading { min-height: 30px; font-size: 12px; }
   .picture-app-promo { bottom: 22%; gap: 5px; left: 20%; width: 60%; font-size: 10px; }
   .app-icon { flex-basis: 20px; height: 23px; border-radius: 4px; font-size: 14px; }

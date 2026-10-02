@@ -14,6 +14,12 @@
     script.src = url.href;
     script.async = true;
     script.dataset.cfasync = 'false';
+    if (config.script_attributes && typeof config.script_attributes === 'object') {
+      for (const [name, value] of Object.entries(config.script_attributes)) {
+        if (!/^(?:data-[a-z0-9_-]+|referrerpolicy)$/i.test(name)) continue;
+        script.setAttribute(name, String(value).slice(0, 200));
+      }
+    }
     document.body.append(script);
   });
 })();

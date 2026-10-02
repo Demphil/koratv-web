@@ -11,8 +11,9 @@ const root = resolve('dist');
 const nginx = await readFile('nginx.conf.example', 'utf8');
 const policies = [...nginx.matchAll(/add_header Content-Security-Policy "([^"]+)"/g)].map((match) => match[1]);
 const config = JSON.parse(await readFile('player/ads-config.json', 'utf8'));
+config.initial_delay_seconds = 1;
 config.click.providers = [{ name: 'fixture', enabled: true, url: 'https://ads.example.test/direct' }];
-config.display = [{ enabled: true, slot: 'footer', height: 120, script_url: 'https://ads.example.test/probe.js' }];
+config.display = [{ enabled: true, slot: 'footer', height: 120, script_url: 'https://ads.example.test/probe.js', script_attributes: { 'data-zone': 'fixture-zone' } }];
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname;
   if (path === '/embed-fixture') {
@@ -94,7 +95,7 @@ try {
   await page.locator('.plyr').hover();
   await page.locator('.player-live-button').click();
   await page.waitForFunction(() => window.adProbe !== null, null, { timeout: 20000 });
-  assert.ok(Date.now() - start >= 14500, 'display scripts must wait 15 seconds');
+  assert.ok(Date.now() - start >= 900, 'display scripts must wait for configured delay');
   assert.deepEqual(await page.evaluate(() => window.adProbe), { top: true, replace: true, dom: true, popup: true });
   assert.equal(page.url(), originalUrl);
   const artifacts = resolve('dist/qa'); await mkdir(artifacts, { recursive: true });
