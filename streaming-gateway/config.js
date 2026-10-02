@@ -6,7 +6,7 @@ import { createProviderLiveResolver } from './provider-live-resolver.js';
 
 function sourceForOrigin(origin, { koratvOrigins, frajaOrigins }) {
   if (koratvOrigins.has(origin)) return 'kooora';
-  if (frajaOrigins.has(origin)) return 'api-football';
+  if (frajaOrigins.has(origin)) return 'kooora';
   return '';
 }
 

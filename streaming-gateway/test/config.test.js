@@ -58,6 +58,12 @@ test('match identifiers pin player metadata to their originating feed', () => {
   assert.equal(sourceForMatchId('legacy-match-id'), '');
 });
 
+test('Fraja frontend uses the Kooora feed so live cards inherit verified broadcasters', () => {
+  const config = loadConfig(valid);
+  assert.equal(config.sourceForOrigin('https://fraja.online'), 'kooora');
+  assert.equal(config.sourceForOrigin('https://frajatv.fun'), 'kooora');
+});
+
 test('Kora feed keeps Kooora primary and adds only allowed Gulf Cup API fixtures', async () => {
   const originalFetch = globalThis.fetch;
   const matchSourceFilters = [];
