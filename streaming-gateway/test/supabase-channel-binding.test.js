@@ -349,3 +349,70 @@ test('pooled playback explains whether a Kooora channel missed the provider cata
     assert.equal(playback.diagnostics.attempts[0].providerCount, 0);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('pooled playback uses only the provider assigned to that match', async () => {
+  const originalFetch = globalThis.fetch;
+  const match = {
+    id: 'ukraine-match',
+    match_id: 'ukraine-match',
+    active: true,
+    source: 'kooora',
+    kickoff_time: new Date(Date.now() - 60000).toISOString(),
+    channel: 'beIN SPORTS HD 8',
+    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: ['beIN SPORTS HD 8'] } }
+  };
+  const channel = { id: 8, name: 'beIN SPORTS HD 8', active: true, original_url: 'https://stale.example/live/old/secret/8.m3u8' };
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    return Response.json(url.pathname.endsWith('/matches') ? [match] : [channel]);
+  };
+  const catalog = {
+    override: () => null,
+    matchRoute: () => ({ resolvedChannel: 'beIN SPORTS HD 8', requestedChannels: ['beIN SPORTS HD 8'], status: 'RESOLVED', providerIds: ['A', 'B'] }),
+    matchAssignment: () => ({ status: 'ASSIGNED', providerId: 'B', resolvedChannel: 'beIN SPORTS HD 8', requestedChannel: 'beIN SPORTS HD 8' }),
+    resolve: (name) => name,
+    sources: (name) => name === 'beIN SPORTS HD 8'
+      ? {
+          A: 'https://wrong.example/tennis.m3u8',
+          B: 'https://correct.example/football.m3u8'
+        }
+      : {},
+  };
+  try {
+    const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' };
+    const playback = await createPlaybackResolver(env, 'kooora', catalog)(match.match_id);
+    assert.equal(playback.is_streaming_active, true);
+    assert.equal(playback.channel_id, 'beIN SPORTS HD 8');
+    assert.deepEqual(playback.provider_sources, { B: 'https://correct.example/football.m3u8' });
+    assert.equal(playback.stream_url, 'https://correct.example/football.m3u8');
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('pooled playback does not play matches outside the assigned top resources', async () => {
+  const originalFetch = globalThis.fetch;
+  const match = {
+    id: 'low-priority-match',
+    match_id: 'low-priority-match',
+    active: true,
+    source: 'kooora',
+    kickoff_time: new Date(Date.now() - 60000).toISOString(),
+    channel: 'beIN SPORTS HD 3',
+    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: ['beIN SPORTS HD 3'] } }
+  };
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    return Response.json(url.pathname.endsWith('/matches') ? [match] : []);
+  };
+  const catalog = {
+    override: () => null,
+    matchAssignment: () => ({ status: 'WAITING', resolvedChannel: 'beIN SPORTS HD 3', priorityScore: 10 }),
+    sources: () => ({ A: 'https://pool.example/should-not-play.m3u8' }),
+  };
+  try {
+    const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' };
+    const playback = await createPlaybackResolver(env, 'kooora', catalog)(match.match_id);
+    assert.equal(playback.is_streaming_active, false);
+    assert.equal(playback.reason, 'source_unavailable');
+    assert.equal(playback.diagnostics.stage, 'resource_assignment');
+  } finally { globalThis.fetch = originalFetch; }
+});

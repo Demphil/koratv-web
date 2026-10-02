@@ -56,7 +56,12 @@ export function createProviderLiveResolver({
     const resolvedChannels = new Set();
     const attempts = [];
 
+    const allowedProviders = Array.isArray(options.providerIds) && options.providerIds.length
+      ? new Set(options.providerIds.map((id) => String(id)))
+      : null;
+
     for (const providerId of PROVIDER_IDS) {
+      if (allowedProviders && !allowedProviders.has(providerId)) continue;
       const account = providerAccounts[providerId];
       if (account && account.enabled === false) continue;
       const credentials = privateCredentials[providerId] || credentialsFromCatalog(account);

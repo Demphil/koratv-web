@@ -17,8 +17,37 @@ export function selectProviderChannel(match) {
 }
 
 export function createProviderCatalog(env = process.env) {
-  let catalog = { channels: {} }, overrides = { matches: {} }, routeState = { matches: {} }, activeCatalog = { matches: {} }, checked = 0;
+  let catalog = { channels: {} }, overrides = { matches: {} }, routeState = { matches: {} }, activeCatalog = { matches: {} }, assignments = { assignments: [], ignored: [] }, checked = 0;
   const hasEnabledSources = (name) => PROVIDER_IDS.some((id) => catalog.providers?.[id]?.enabled && catalog.channels?.[name]?.[id]);
+  const assignmentFor = (matchId) => {
+    const id = String(matchId || '').trim();
+    if (!id) return null;
+    const assigned = (assignments.assignments || []).find((item) => String(item?.matchId || '') === id);
+    if (assigned?.providerId && assigned?.resolvedChannel) {
+      return {
+        matchId: id,
+        status: 'ASSIGNED',
+        providerId: String(assigned.providerId),
+        requestedChannel: assigned.requestedChannel || null,
+        resolvedChannel: String(assigned.resolvedChannel).trim(),
+        priorityScore: Number(assigned.priorityScore || 0),
+        source: 'match-resource-assignment',
+      };
+    }
+    const ignored = (assignments.ignored || []).find((item) => String(item?.matchId || '') === id);
+    if (ignored) {
+      return {
+        matchId: id,
+        status: 'WAITING',
+        providerId: null,
+        requestedChannel: ignored.requestedChannel || null,
+        resolvedChannel: ignored.resolvedChannel || null,
+        priorityScore: Number(ignored.priorityScore || 0),
+        source: 'match-resource-assignment',
+      };
+    }
+    return null;
+  };
   const refresh = (force = false) => {
     if (!force && Date.now() - checked < 5000) return;
     checked = Date.now();
@@ -26,6 +55,7 @@ export function createProviderCatalog(env = process.env) {
     try { overrides = JSON.parse(readFileSync(env.MANUAL_BROADCAST_OVERRIDE_PATH || '/etc/koratv/manual-broadcast-override.json', 'utf8')); } catch {}
     try { routeState = JSON.parse(readFileSync(env.DIRECT_MATCH_ROUTE_STATE_PATH || '/etc/koratv/direct-match-route-state.json', 'utf8')); } catch {}
     try { activeCatalog = JSON.parse(readFileSync(env.ACTIVE_CATALOG_PATH || '/etc/koratv/active-catalog.json', 'utf8')); } catch {}
+    try { assignments = JSON.parse(readFileSync(env.MATCH_RESOURCE_ASSIGNMENT_PATH || '/etc/koratv/match-resource-assignments.json', 'utf8')); } catch {}
   };
   const resolve = (channel) => {
     refresh();
@@ -55,6 +85,10 @@ export function createProviderCatalog(env = process.env) {
     accounts() { refresh(); return catalog.providers || {}; },
     channels() { refresh(); return catalog.channels || {}; },
     resolve,
+    matchAssignment(matchId) {
+      refresh();
+      return assignmentFor(matchId);
+    },
     matchRoute(matchId) {
       refresh();
       const id = String(matchId || '').trim();
@@ -65,6 +99,7 @@ export function createProviderCatalog(env = process.env) {
           matchId: id,
           requestedChannels: Array.isArray(direct.requestedChannels) ? direct.requestedChannels : [direct.requestedChannel].filter(Boolean),
           resolvedChannel: direct.resolvedChannel.trim(),
+          providerIds: Array.isArray(direct.providerIds) ? direct.providerIds.filter(Boolean) : [],
           status: direct.status,
           source: 'direct-match-route-state',
         };

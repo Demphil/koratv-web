@@ -108,12 +108,15 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
     if (channelsResult.error) throw new Error(`Channel storage unavailable (${channelsResult.error.code || 'network'})`);
     const availableChannels = (channelsResult.data || []).filter((channel) => channel?.name && channel?.original_url);
     const catalogSourceCache = new Map();
-    const hasCatalogSources = (name) => {
+    const hasCatalogSources = (name, providerIds = []) => {
       if (!catalog) return true;
       const key = String(name || '').trim();
       if (!key) return false;
-      if (!catalogSourceCache.has(key)) catalogSourceCache.set(key, Object.keys(catalog.sources(key)).length > 0);
-      return catalogSourceCache.get(key);
+      const scopedKey = `${key}|${(providerIds || []).join(',')}`;
+      if (!catalogSourceCache.has(scopedKey)) {
+        catalogSourceCache.set(scopedKey, Object.keys(filterProviderSources(catalog.sources(key), providerIds)).length > 0);
+      }
+      return catalogSourceCache.get(scopedKey);
     };
     const resolveChannel = (name) => {
       const matchedName = findChannelNameMatch(name, availableChannels.map((channel) => channel.name));
@@ -126,17 +129,24 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
       return direct ? [direct] : [];
     };
     const resolvedRows = deduplicateSourceEvents(data || []).map((row) => {
-      const routeState = catalog?.matchRoute?.(row.match_id || row.id);
+      const matchKey = row.match_id || row.id;
+      const routeState = catalog?.matchRoute?.(matchKey);
+      const assignment = catalog?.matchAssignment?.(matchKey);
+      const assignedProviderIds = assignment?.status === 'ASSIGNED' && assignment.providerId ? [assignment.providerId] : [];
       const candidates = catalog?.override(row.match_id || row.id)
         ? [catalog.override(row.match_id || row.id)]
+        : assignment?.status === 'WAITING'
+          ? []
+        : assignment?.resolvedChannel
+          ? [assignment.resolvedChannel]
         : routeState?.resolvedChannel
           ? [routeState.resolvedChannel]
           : channelCandidatesForRow(row);
       const channel = candidates.map((name) => {
         const resolved = resolveChannel(name);
-        if (resolved && hasCatalogSources(resolved.name)) return resolved;
+        if (resolved && hasCatalogSources(resolved.name, assignedProviderIds)) return resolved;
         const catalogName = catalog?.resolve?.(name) || name;
-        return catalog && hasCatalogSources(catalogName) ? { name: catalogName } : null;
+        return catalog && hasCatalogSources(catalogName, assignedProviderIds) ? { name: catalogName } : null;
       }).find(Boolean);
       return { row, channel };
     });
@@ -149,7 +159,7 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
     const readyChannels = new Set(healthChecks
         .filter(([, ok]) => ok)
         .map(([name]) => name)
-        .filter(hasCatalogSources));
+        .filter((name) => hasCatalogSources(name)));
     return resolvedRows.map(({ row, channel }) => ({
       ...row,
       channel: channel?.name || row.channel,
@@ -229,6 +239,12 @@ function normalizeQualityVariants(channel) {
     .sort((a, b) => b.height - a.height);
 }
 
+function filterProviderSources(sources = {}, providerIds = []) {
+  const allowed = new Set((providerIds || []).map((id) => String(id)).filter(Boolean));
+  if (!allowed.size) return sources || {};
+  return Object.fromEntries(Object.entries(sources || {}).filter(([id]) => allowed.has(String(id))));
+}
+
 export function createPlaybackResolver(env, sourceFilter = null, catalog = null, liveResolver = null) {
   const client = createServerClient(env);
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
@@ -263,10 +279,23 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
     const matchKey = match.match_id || match.id;
     const override = catalog?.override(matchKey);
     const routeState = catalog?.matchRoute?.(matchKey);
+    const assignment = catalog?.matchAssignment?.(matchKey);
+    if (assignment?.status === 'WAITING') {
+      return unavailable('source_unavailable', {
+        stage: 'resource_assignment',
+        status: assignment.status,
+        resolvedChannel: assignment.resolvedChannel || null,
+      });
+    }
+    const assignedProviderIds = assignment?.status === 'ASSIGNED' && assignment.providerId
+      ? [assignment.providerId]
+      : [];
     const broadcastCandidates = broadcastChannelCandidates(match);
     const fallbackChannel = normalizeBroadcastChannel(match.channel || payload.channel);
     const candidates = override
       ? [override]
+      : assignment?.resolvedChannel
+        ? [assignment.resolvedChannel]
       : routeState?.resolvedChannel
         ? [routeState.resolvedChannel]
         : broadcastCandidates.length
@@ -283,8 +312,10 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
     const attempts = [];
     let liveSources = null;
     if (catalog && liveResolver?.resolve) {
-      liveSources = await liveResolver.resolve(candidates);
-      if (liveSources?.provider_sources && Object.keys(liveSources.provider_sources).length) {
+      liveSources = await liveResolver.resolve(candidates, { providerIds: assignedProviderIds });
+      const filteredLiveSources = filterProviderSources(liveSources?.provider_sources, assignedProviderIds);
+      liveSources = liveSources ? { ...liveSources, provider_sources: filteredLiveSources } : null;
+      if (Object.keys(filteredLiveSources).length) {
         channel = { name: liveSources.resolvedChannel || candidates[0], original_url: '', quality_variants: [] };
       }
     }
@@ -292,7 +323,7 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
       if (liveSources?.provider_sources && Object.keys(liveSources.provider_sources).length) break;
       channel = await findChannel(client, name);
       const catalogName = catalog?.resolve?.(channel?.name || name) || channel?.name || name;
-      const providerSources = catalog ? catalog.sources(catalogName) : {};
+      const providerSources = catalog ? filterProviderSources(catalog.sources(catalogName), assignedProviderIds) : {};
       if (catalog) attempts.push({
         requestedName: name,
         channelTableName: channel?.name || null,
@@ -305,10 +336,11 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
     }
     const resolvedProviderSources = liveSources?.provider_sources && Object.keys(liveSources.provider_sources).length
       ? liveSources.provider_sources
-      : catalog?.sources(channel?.name);
+      : filterProviderSources(catalog?.sources(channel?.name), assignedProviderIds);
     if (catalog && !Object.keys(resolvedProviderSources || {}).length) return unavailable('source_unavailable', {
       stage: liveResolver ? 'live_provider_resolution' : 'provider_catalog',
       requestedChannels: candidates,
+      assignedProviderIds,
       attempts,
       liveAttempts: liveSources?.attempts || []
     });

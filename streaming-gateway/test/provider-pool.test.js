@@ -170,11 +170,52 @@ test('provider catalog exposes safe direct match route state without raw URLs', 
     matchId: 'match-1',
     requestedChannels: ['MBC Action'],
     resolvedChannel: 'MBC Action',
+    providerIds: ['A'],
     status: 'RESOLVED',
     source: 'direct-match-route-state',
   });
   assert.equal(JSON.stringify(catalog.matchRoute('match-1')).includes('private.example'), false);
   assert.equal(catalog.sources(catalog.matchRoute('match-1').resolvedChannel).A, 'https://private.example/live/user/pass/777.m3u8');
+});
+
+test('provider catalog exposes safe match assignment state without raw URLs', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provider-assignment-state-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const catalogPath = join(dir, 'catalog.json');
+  const overridePath = join(dir, 'override.json');
+  const assignmentPath = join(dir, 'assignments.json');
+  writeFileSync(catalogPath, JSON.stringify({ providers: { B: { enabled: true } }, channels: {} }));
+  writeFileSync(overridePath, '{"matches":{}}');
+  writeFileSync(assignmentPath, JSON.stringify({
+    assignments: [{
+      matchId: 'match-1',
+      providerId: 'B',
+      requestedChannel: 'beIN SPORTS HD 8',
+      resolvedChannel: 'beIN SPORTS HD 8',
+      priorityScore: 1100,
+    }],
+    ignored: [{
+      matchId: 'match-2',
+      resolvedChannel: 'beIN SPORTS HD 3',
+      priorityScore: 20,
+    }],
+  }));
+  const catalog = createProviderCatalog({
+    PROVIDER_CATALOG_PATH: catalogPath,
+    MANUAL_BROADCAST_OVERRIDE_PATH: overridePath,
+    MATCH_RESOURCE_ASSIGNMENT_PATH: assignmentPath
+  });
+  assert.deepEqual(catalog.matchAssignment('match-1'), {
+    matchId: 'match-1',
+    status: 'ASSIGNED',
+    providerId: 'B',
+    requestedChannel: 'beIN SPORTS HD 8',
+    resolvedChannel: 'beIN SPORTS HD 8',
+    priorityScore: 1100,
+    source: 'match-resource-assignment',
+  });
+  assert.equal(JSON.stringify(catalog.matchAssignment('match-1')).includes('https://'), false);
+  assert.equal(catalog.matchAssignment('match-2').status, 'WAITING');
 });
 
 

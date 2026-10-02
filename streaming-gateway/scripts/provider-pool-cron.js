@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 const catalogLock = process.env.PROVIDER_CATALOG_LOCK_PATH || '/etc/koratv/provider-catalog.lock';
 const routeLock = process.env.DIRECT_MATCH_ROUTE_STATE_LOCK_PATH || '/etc/koratv/direct-match-route-state.lock';
 const assignmentLock = process.env.MATCH_RESOURCE_ASSIGNMENT_LOCK_PATH || '/etc/koratv/match-resource-assignment.lock';
+const intervalMs = Math.max(15 * 60_000, Number(process.env.PROVIDER_POOL_SYNC_INTERVAL_MS || 4 * 60 * 60_000));
 let running = false;
 
 function runLocked(lock, script) {
@@ -30,5 +31,5 @@ async function sync() {
     running = false;
   }
 }
-setInterval(sync, 10 * 60_000);
+setInterval(sync, intervalMs);
 sync();
