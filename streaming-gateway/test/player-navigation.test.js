@@ -96,6 +96,7 @@ test('match opens a tab before token fetch and preserves the original page', asy
   await vm.runInNewContext(`${source.slice(start, end)}; openSecurePlayer('match-1')`, {
     window, STREAM_API_ORIGIN: 'https://stream-api.koratv.click',
     PLAYER_ORIGIN: 'https://fabor.sbs', PLAYER_PATH: '/739184.html',
+    AbortSignal: { timeout: () => undefined },
     fetch: async () => {
       events.push('fetch');
       return { ok: true, json: async () => ({ token: 'test-ticket' }) };
@@ -104,4 +105,37 @@ test('match opens a tab before token fetch and preserves the original page', asy
   assert.deepEqual(events, ['open', 'fetch', 'https://fabor.sbs/739184.html?k=test-ticket']);
   assert.equal(window.location.href, 'https://koratv.click/');
   assert.equal(tab.opener, null);
+});
+
+test('match loading tab renders a branded waiting screen instead of blank text', async () => {
+  const source = readFileSync(new URL('../../assets/js/matches.js', import.meta.url), 'utf8');
+  const start = source.indexOf('async function openSecurePlayer(');
+  const end = source.indexOf('function setupSecurePlayerLinks()', start);
+  const writes = [];
+  const tab = {
+    document: {
+      body: {},
+      documentElement: {},
+      open: () => writes.push('open-doc'),
+      write: (html) => writes.push(html),
+      close: () => writes.push('close-doc'),
+    },
+    location: { replace: () => {} },
+    close: () => {},
+  };
+  const window = {
+    location: { href: 'https://koratv.click/' },
+    open: () => tab,
+  };
+  await vm.runInNewContext(`${source.slice(start, end)}; openSecurePlayer('match-1')`, {
+    window, STREAM_API_ORIGIN: 'https://stream-api.koratv.click',
+    PLAYER_ORIGIN: 'https://fabor.sbs', PLAYER_PATH: '/739184.html',
+    AbortSignal: { timeout: () => undefined },
+    fetch: async () => ({ ok: true, json: async () => ({ token: 'test-ticket' }) }),
+  });
+  const html = writes.find((entry) => typeof entry === 'string' && entry.includes('KORA TV'));
+  assert.match(html, /KORA TV/);
+  assert.match(html, /جاري تجهيز المشغل/);
+  assert.match(html, /لا تغلق الصفحة/);
+  assert.doesNotMatch(html, /^جاري تجهيز المشغل\.\.\.$/);
 });
