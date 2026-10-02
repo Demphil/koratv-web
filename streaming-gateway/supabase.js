@@ -107,6 +107,14 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
     if (error) throw new Error(`Match storage unavailable (${error.code || 'network'})`);
     if (channelsResult.error) throw new Error(`Channel storage unavailable (${channelsResult.error.code || 'network'})`);
     const availableChannels = (channelsResult.data || []).filter((channel) => channel?.name && channel?.original_url);
+    const catalogSourceCache = new Map();
+    const hasCatalogSources = (name) => {
+      if (!catalog) return true;
+      const key = String(name || '').trim();
+      if (!key) return false;
+      if (!catalogSourceCache.has(key)) catalogSourceCache.set(key, Object.keys(catalog.sources(key)).length > 0);
+      return catalogSourceCache.get(key);
+    };
     const resolveChannel = (name) => {
       const matchedName = findChannelNameMatch(name, availableChannels.map((channel) => channel.name));
       return availableChannels.find((channel) => channel.name === matchedName) || null;
@@ -126,9 +134,9 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
           : channelCandidatesForRow(row);
       const channel = candidates.map((name) => {
         const resolved = resolveChannel(name);
-        if (resolved && (!catalog || Object.keys(catalog.sources(resolved.name)).length)) return resolved;
+        if (resolved && hasCatalogSources(resolved.name)) return resolved;
         const catalogName = catalog?.resolve?.(name) || name;
-        return catalog && Object.keys(catalog.sources(catalogName)).length ? { name: catalogName } : null;
+        return catalog && hasCatalogSources(catalogName) ? { name: catalogName } : null;
       }).find(Boolean);
       return { row, channel };
     });
@@ -141,7 +149,7 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
     const readyChannels = new Set(healthChecks
         .filter(([, ok]) => ok)
         .map(([name]) => name)
-        .filter(name => !catalog || Object.keys(catalog.sources(name)).length > 0));
+        .filter(hasCatalogSources));
     return resolvedRows.map(({ row, channel }) => ({
       ...row,
       channel: channel?.name || row.channel,
