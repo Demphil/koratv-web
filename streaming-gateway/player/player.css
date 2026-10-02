@@ -1314,6 +1314,10 @@ body.tamper-lock .player-container {
 .ad-click-shield:focus-visible { outline: 2px solid #75e5b9; outline-offset: -3px; }
 .ad-slot { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
 .ad-slot iframe { display: block; width: 100%; border: 0; background: transparent; }
+.ad-embedded-frame {
+  position: fixed; left: 0; bottom: 0; width: 1px; height: 1px;
+  border: 0; opacity: 0.01; pointer-events: none;
+}
 @media (max-width: 620px) {
   body:not(.tamper-lock) .ad-slot { display: none !important; }
   .player-heading { min-height: 30px; font-size: 12px; }

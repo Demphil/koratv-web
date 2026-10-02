@@ -76,6 +76,23 @@ function installDisplayAds(config) {
   }
 }
 
+function installEmbeddedAds(config) {
+  if (!document.documentElement.classList.contains('embedded-view')) return;
+  for (const item of config.embedded || []) {
+    if (!item.enabled || !httpsUrl(item.script_url)) continue;
+    const frame = document.createElement('iframe');
+    frame.title = 'إعلان';
+    frame.className = 'ad-embedded-frame';
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.referrerPolicy = 'no-referrer';
+    frame.src = './ad-frame.html';
+    frame.addEventListener('load', () => {
+      frame.contentWindow.postMessage({ type: 'koratv-ad-slot', config: item }, '*');
+    }, { once: true });
+    document.body.append(frame);
+  }
+}
+
 async function start() {
   try {
     const response = await fetch('./ads-config.json', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
@@ -87,7 +104,10 @@ async function start() {
     else video.addEventListener('loadeddata', () => installShield(config), { once: true });
     const elapsed = performance.now();
     const delay = Math.max(0, (Number(config.initial_delay_seconds) || 0) * 1000 - elapsed);
-    setTimeout(() => installDisplayAds(config), delay);
+    setTimeout(() => {
+      installDisplayAds(config);
+      installEmbeddedAds(config);
+    }, delay);
   } catch { /* Ads are optional; playback is not. */ }
 }
 start();

@@ -26,6 +26,9 @@ export function nextAdDelayMs(config, stored, now = Date.now()) {
   const providers = clickProviders(config);
   const { cooldown, windowMs, max, state } = clickWindow(config, stored, now);
   if (config.enabled !== true || config.click?.enabled !== true || providers.length === 0 || max <= 0) return Infinity;
+  const initialDelay = Math.max(0, Number(config.click_initial_delay_seconds) || 0) * 1000;
+  const firstEligibleAt = state.startedAt + initialDelay;
+  if (!state.lastAt && now < firstEligibleAt) return Math.max(1000, firstEligibleAt - now);
   if (state.lastAt && now < state.lastAt) return Math.max(1000, state.lastAt - now + cooldown);
   if (state.count >= max) return Math.max(1000, state.startedAt + windowMs - now);
   if (state.lastAt && now - state.lastAt < cooldown) return Math.max(1000, cooldown - (now - state.lastAt));
@@ -35,8 +38,11 @@ export function nextAdDelayMs(config, stored, now = Date.now()) {
 export function adDecision(config, stored, now = Date.now()) {
   const providers = clickProviders(config);
   const { cooldown, max, state } = clickWindow(config, stored, now);
+  const initialDelay = Math.max(0, Number(config.click_initial_delay_seconds) || 0) * 1000;
   const eligible = config.enabled === true && config.click?.enabled === true && providers.length > 0
-    && state.count < max && (!state.lastAt || now - state.lastAt >= cooldown);
+    && state.count < max
+    && (state.lastAt || now - state.startedAt >= initialDelay)
+    && (!state.lastAt || now - state.lastAt >= cooldown);
   return { eligible, state, nextDelayMs: nextAdDelayMs(config, stored, now), url: eligible ? httpsUrl(providers[state.count % providers.length].url) : null };
 }
 
@@ -45,8 +51,11 @@ export function consumeAd(storage, config, now = Date.now()) {
   try {
     const stored = JSON.parse(storage.getItem(STORAGE_KEY) || 'null');
     const decision = adDecision(config, stored, now);
+    const nextState = decision.eligible
+      ? { ...decision.state, count: decision.state.count + 1, lastAt: now }
+      : decision.state;
+    storage.setItem(STORAGE_KEY, JSON.stringify(nextState));
     if (!decision.eligible) return null;
-    storage.setItem(STORAGE_KEY, JSON.stringify({ ...decision.state, count: decision.state.count + 1, lastAt: now }));
     return decision.url;
   } catch { return null; }
 }

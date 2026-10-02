@@ -41,6 +41,16 @@ test('cooldown remains in force across session rollover and backward clocks', ()
   assert.equal(adDecision(config, stored, now).eligible, false);
   assert.equal(adDecision(config, { ...stored, lastAt: now + 1000 }, now).eligible, false);
 });
+test('initial click delay waits before the first ad and then uses cooldown', () => {
+  const delayed = { ...config, click_initial_delay_seconds: 120, click_cooldown_minutes: 5 };
+  const state = storage();
+  const now = 100000000;
+  assert.equal(consumeAd(state, delayed, now), null);
+  assert.equal(consumeAd(state, delayed, now + 119000), null);
+  assert.equal(consumeAd(state, delayed, now + 120000), 'https://ads.example/ad');
+  assert.equal(consumeAd(state, delayed, now + 240000), null);
+  assert.equal(consumeAd(state, delayed, now + 420000), 'https://ads.example/ad');
+});
 test('player has no third-party scripts or obsolete channel overlay; ad frame is isolated', () => {
   const html = readFileSync(new URL('../player/player.html', import.meta.url), 'utf8');
   assert.doesNotMatch(html, /<script[^>]*src=["']https?:/);
