@@ -105,7 +105,6 @@ function normalizeStagingMatch(match) {
   const scheduledAt = match.scheduledAt || '';
   const homeLogo = typeof match.homeTeam === 'object' ? match.homeTeam.logo : match.homeLogo;
   const awayLogo = typeof match.awayTeam === 'object' ? match.awayTeam.logo : match.awayLogo;
-  const channelName = cleanApiText(match.channelName || match.channel || match.payload?.channel || '');
   if (!homeName || !awayName || !scheduledAt) return null;
   if (String(homeName).trim().toLocaleLowerCase('ar') === String(awayName).trim().toLocaleLowerCase('ar')) return null;
   const dateParts = zonedParts(new Date(scheduledAt), MOROCCO_TIME_ZONE);
@@ -120,10 +119,8 @@ function normalizeStagingMatch(match) {
     score: match.score || 'VS',
     league: match.league || '',
     streams: [],
-    channelName,
-    channel: channelName,
     sourceReady: match.sourceReady === true,
-    sourceAvailable: match.sourceAvailable === true || Boolean(channelName),
+    sourceAvailable: match.sourceAvailable === true,
     playbackState: match.playbackState || '',
     isLive: Boolean(match.isLive),
     commentator: match.commentator || '',
