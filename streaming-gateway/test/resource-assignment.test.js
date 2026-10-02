@@ -84,7 +84,7 @@ test('manual match selection can pin the top resources across both sites', () =>
     enabled: true,
     date: '2026-10-02',
     'koratv.click': ['kooora-manual'],
-    'frajatv.fun': [{ matchId: 'api-manual' }],
+    'fraja.online': [{ matchId: 'api-manual' }],
   }, { dateKey: '2026-10-02' });
   assert.deepEqual(manualIds, ['kooora-manual', 'api-manual']);
 

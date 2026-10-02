@@ -11,9 +11,9 @@ const validHttpsOrigin = (value) => {
   }
 };
 const requiredFrontendOrigins = [
+  'https://fraja.online',
   'https://frajatv.fun',
   'https://www.frajatv.fun',
-  'https://fraja.online',
   'https://koratv.click',
   'https://www.koratv.click'
 ];
@@ -58,7 +58,7 @@ const gatewayText = await configure(gateway, await readFile(new URL('../.env.exa
     value: 'https://stream-api.koratv.click',
     valid: (value) => value === 'https://stream-api.koratv.click'
   },
-  FRONTEND_ORIGIN: { value: 'https://frajatv.fun', valid: (value) => value === 'https://frajatv.fun' },
+  FRONTEND_ORIGIN: { value: 'https://fraja.online', valid: (value) => value === 'https://fraja.online' },
   FRONTEND_ORIGINS: { value: requiredFrontendOrigins.join(','), valid: validOriginsList },
   PLAYER_ORIGIN: { value: 'https://fabor.sbs', valid: (value) => value === 'https://fabor.sbs' },
   IPTV_UPSTREAM_USER_AGENT: { value: 'koratvProviderSync/1.0', valid: (value) => value === 'koratvProviderSync/1.0' }
