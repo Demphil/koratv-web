@@ -203,7 +203,7 @@ jobs:
           host: ${{ secrets.VPS_IP }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "streaming-gateway/dist"
+          source: "streaming-gateway/dist,streaming-gateway/nginx.conf.example,streaming-gateway/nginx.http-player.conf.example"
           target: "/tmp/koratv-player-sync-${{ github.run_id }}"
       - name: Publish player files on Njalla
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
@@ -214,11 +214,23 @@ jobs:
           command_timeout: 5m
           script: |
             set -euo pipefail
-            SRC="/tmp/koratv-player-sync-${{ github.run_id }}/streaming-gateway/dist"
+            PLAYER_DOMAIN="fabor.sbs"
+            ROOT="/tmp/koratv-player-sync-${{ github.run_id }}/streaming-gateway"
+            SRC="$ROOT/dist"
             test -d "$SRC"
+            test -f "$ROOT/nginx.conf.example"
+            test -f "$ROOT/nginx.http-player.conf.example"
             install -d -m 0755 /var/www/koratv-player
             find /var/www/koratv-player -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
             cp -a "$SRC/." /var/www/koratv-player/
             find /var/www/koratv-player -type d -exec chmod 0755 {} +
             find /var/www/koratv-player -type f -exec chmod 0644 {} +
+            if [ -f "/etc/letsencrypt/live/$PLAYER_DOMAIN/fullchain.pem" ]; then
+              install -m 0644 "$ROOT/nginx.conf.example" /etc/nginx/sites-available/koratv
+            else
+              install -m 0644 "$ROOT/nginx.http-player.conf.example" /etc/nginx/sites-available/koratv
+            fi
+            ln -sfn /etc/nginx/sites-available/koratv /etc/nginx/sites-enabled/koratv
+            nginx -t
+            systemctl reload nginx
             rm -rf "/tmp/koratv-player-sync-${{ github.run_id }}"

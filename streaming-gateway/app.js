@@ -16,7 +16,7 @@ import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mj
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
-const playerSources = "script-src 'self'; style-src 'self'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src blob:; frame-src 'self'";
+const playerSources = "script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:";
 
 function originFromHeader(value) {
   if (!value) return '';

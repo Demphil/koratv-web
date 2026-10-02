@@ -14,10 +14,22 @@ test('player embeds direct Monetag ads and local cooldown logic in the page', ()
 });
 
 test('player CSP allows only the direct ad script hosts requested by the page', () => {
+  const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  assert.match(app, /script-src 'self' 'unsafe-inline' https:\/\/nap5k\.com https:\/\/n6wxm\.com/);
+
   for (const file of ['nginx.conf.example', 'nginx.http-player.conf.example', 'nginx.oracle.conf.example']) {
     const nginx = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
     assert.match(nginx, /script-src 'self' 'unsafe-inline' https:\/\/nap5k\.com https:\/\/n6wxm\.com/);
     assert.match(nginx, /frame-src 'self' https:/);
     assert.doesNotMatch(nginx, /location = \/ad-frame\.html|sandbox allow-scripts|profitablerate|al5sm|quge5/);
   }
+});
+
+test('player redeploy applies nginx headers with the published files', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/sync-data.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /streaming-gateway\/nginx\.conf\.example/);
+  assert.match(workflow, /streaming-gateway\/nginx\.http-player\.conf\.example/);
+  assert.match(workflow, /install -m 0644 "\$ROOT\/nginx\.conf\.example" \/etc\/nginx\/sites-available\/koratv/);
+  assert.match(workflow, /nginx -t/);
+  assert.match(workflow, /systemctl reload nginx/);
 });
