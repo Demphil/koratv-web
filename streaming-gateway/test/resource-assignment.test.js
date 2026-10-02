@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAssignmentPlan, buildProjectAssignmentPlan, scoreEvent, scoreProjectMatch } from '../scripts/resource-assignment.js';
+import { buildAssignmentPlan, buildProjectAssignmentPlan, parseManualMatchSelection, scoreEvent, scoreProjectMatch } from '../scripts/resource-assignment.js';
 
 test('event scoring prioritizes national teams, VIP teams and competition tiers', () => {
   const options = { vipTeams: ['Real Madrid'], tierPoints: { 1: 300, 2: 150, 3: 50 } };
@@ -77,4 +77,45 @@ test('project assignment uses resolved route state and never assigns more than a
   assert.deepEqual(plan.assignments.map((item) => [item.matchId, item.providerId]), [['m-national', 'B'], ['m-vip', 'A']]);
   assert.deepEqual(plan.ignored.map((item) => item.matchId), ['m-low']);
   assert.equal(JSON.stringify(plan).includes('https://'), false);
+});
+
+test('manual match selection can pin the top resources across both sites', () => {
+  const manualIds = parseManualMatchSelection({
+    enabled: true,
+    date: '2026-10-02',
+    'koratv.click': ['kooora-manual'],
+    'frajatv.fun': [{ matchId: 'api-manual' }],
+  }, { dateKey: '2026-10-02' });
+  assert.deepEqual(manualIds, ['kooora-manual', 'api-manual']);
+
+  const matches = [
+    { id: 'auto-national', match_id: 'auto-national', home_team: 'Morocco', away_team: 'B', league: 'Friendly', kickoff_time: '2026-10-02T18:00:00Z', payload: { national_team: true } },
+    { id: 'kooora-manual', match_id: 'kooora-manual', home_team: 'A', away_team: 'B', league: 'Minor', kickoff_time: '2026-10-02T19:00:00Z' },
+    { id: 'api-manual', match_id: 'api-manual', home_team: 'C', away_team: 'D', league: 'Minor', kickoff_time: '2026-10-02T20:00:00Z' },
+  ];
+  const routeStates = {
+    'auto-national': { status: 'RESOLVED', resolvedChannel: 'Channel 1', requestedChannel: 'Channel 1', providerIds: ['A'] },
+    'kooora-manual': { status: 'RESOLVED', resolvedChannel: 'Channel 2', requestedChannel: 'Channel 2', providerIds: ['B'] },
+    'api-manual': { status: 'RESOLVED', resolvedChannel: 'Channel 3', requestedChannel: 'Channel 3', providerIds: ['C'] },
+  };
+  const providerCatalog = { providers: { B: { enabled: true }, C: { enabled: true }, A: { enabled: true } } };
+  const plan = buildProjectAssignmentPlan({
+    matches,
+    routeStates,
+    providerCatalog,
+    maxResources: 2,
+    manualMatchIds: manualIds,
+    now: new Date('2026-10-02T10:00:00Z'),
+  });
+  assert.deepEqual(plan.assignments.map((item) => [item.matchId, item.providerId, item.manual]), [
+    ['kooora-manual', 'B', true],
+    ['api-manual', 'C', true],
+  ]);
+  assert.deepEqual(plan.ignored.map((item) => item.matchId), []);
+  assert.equal(JSON.stringify(plan).includes('https://'), false);
+});
+
+test('manual match selection is ignored when disabled or for another date', () => {
+  assert.deepEqual(parseManualMatchSelection({ enabled: false, matches: ['a'] }, { dateKey: '2026-10-02' }), []);
+  assert.deepEqual(parseManualMatchSelection({ enabled: true, date: '2026-10-03', matches: ['a'] }, { dateKey: '2026-10-02' }), []);
 });

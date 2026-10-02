@@ -14,6 +14,7 @@ const DEFAULT_TIER_POINTS = {
 };
 const DEFAULT_POOL_DIR = '/etc/koratv';
 const DEFAULT_TIMEZONE = 'Africa/Casablanca';
+const SITE_MANUAL_KEYS = ['matches', 'koratv.click', 'koratv', 'frajatv.fun', 'frajatv', 'fraja.online', 'fraja'];
 
 function normalizeName(value) {
   return String(value || '')
@@ -30,6 +31,27 @@ function parseList(value) {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function manualMatchIdFromItem(item) {
+  if (typeof item === 'string') return item.trim();
+  if (item && typeof item === 'object') return String(item.matchId || item.match_id || item.id || '').trim();
+  return '';
+}
+
+export function parseManualMatchSelection(input = {}, { dateKey = '' } = {}) {
+  if (!input || typeof input !== 'object' || input.enabled === false) return [];
+  if (input.date && dateKey && String(input.date) !== String(dateKey)) return [];
+  const ids = [];
+  for (const key of SITE_MANUAL_KEYS) {
+    const value = input[key];
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      const id = manualMatchIdFromItem(item);
+      if (id && !ids.includes(id)) ids.push(id);
+    }
+  }
+  return ids;
 }
 
 function dateKeyFor(value, timezone = DEFAULT_TIMEZONE) {
@@ -143,10 +165,16 @@ export function buildProjectAssignmentPlan({
   routeStates = {},
   providerCatalog = {},
   maxResources = DEFAULT_MAX_RESOURCES,
+  manualMatchIds = [],
   now = new Date(),
   options = {},
 } = {}) {
   const generatedAt = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+  const manualRank = new Map(manualMatchIds
+    .map((id) => String(id || '').trim())
+    .filter(Boolean)
+    .slice(0, maxResources)
+    .map((id, index) => [id, index]));
   const enabledProviders = Object.entries(providerCatalog.providers || {})
     .filter(([, provider]) => provider?.enabled !== false)
     .map(([id]) => id)
@@ -164,11 +192,16 @@ export function buildProjectAssignmentPlan({
         match,
         state,
         providerIds,
+        manualRank: manualRank.has(matchId) ? manualRank.get(matchId) : null,
         priorityScore: scoreProjectMatch(match, state.resolvedChannel, options),
       };
     })
     .filter(Boolean)
     .sort((a, b) => {
+      const aManual = a.manualRank !== null;
+      const bManual = b.manualRank !== null;
+      if (aManual !== bManual) return aManual ? -1 : 1;
+      if (aManual && bManual && a.manualRank !== b.manualRank) return a.manualRank - b.manualRank;
       if (b.priorityScore !== a.priorityScore) return b.priorityScore - a.priorityScore;
       const aTime = Date.parse(a.match.kickoff_time || a.match.start_time || '') || Number.MAX_SAFE_INTEGER;
       const bTime = Date.parse(b.match.kickoff_time || b.match.start_time || '') || Number.MAX_SAFE_INTEGER;
@@ -197,8 +230,24 @@ export function buildProjectAssignmentPlan({
       providerId,
       candidateProviderIds: row.providerIds,
       priorityScore: row.priorityScore,
+      manual: row.manualRank !== null,
       assignedAt: generatedAt,
     });
+  }
+  const represented = new Set([...assignments.map((item) => item.matchId), ...ignored.map((item) => item.matchId)]);
+  for (const matchId of manualRank.keys()) {
+    if (!represented.has(matchId)) {
+      const match = matches.find((row) => (row.match_id || row.id) === matchId);
+      ignored.push({
+        matchId,
+        match: match || {},
+        state: routeStates[matchId] || {},
+        providerIds: [],
+        priorityScore: match ? scoreProjectMatch(match, routeStates[matchId]?.resolvedChannel || '', options) : 0,
+        manualRank: manualRank.get(matchId),
+        reason: 'manual_unresolved_route',
+      });
+    }
   }
 
   return {
@@ -218,6 +267,7 @@ export function buildProjectAssignmentPlan({
       resolvedChannel: row.state.resolvedChannel,
       candidateProviderIds: row.providerIds,
       priorityScore: row.priorityScore,
+      manual: row.manualRank !== null,
       reason: row.reason,
     })),
   };
@@ -403,17 +453,21 @@ export async function assignProjectMatchResources(env = process.env) {
   const providerCatalogPath = env.PROVIDER_CATALOG_PATH || `${dir}/provider-catalog.json`;
   const routeStatePath = env.DIRECT_MATCH_ROUTE_STATE_PATH || `${dir}/direct-match-route-state.json`;
   const outputPath = env.MATCH_RESOURCE_ASSIGNMENT_PATH || `${dir}/match-resource-assignments.json`;
+  const manualSelectionPath = env.MANUAL_MATCH_SELECTION_PATH || `${dir}/manual-match-selection.json`;
   const supabase = createSupabaseClient(env);
-  const [matches, providerCatalog, routeState] = await Promise.all([
+  const [matches, providerCatalog, routeState, manualSelection] = await Promise.all([
     readProjectMatches(supabase, env, dateKey, timezone),
     readJson(providerCatalogPath, { providers: {}, channels: {} }),
     readJson(routeStatePath, { matches: {} }),
+    readJson(manualSelectionPath, { enabled: false }),
   ]);
+  const manualMatchIds = parseManualMatchSelection(manualSelection, { dateKey });
   const plan = buildProjectAssignmentPlan({
     matches,
     routeStates: routeState.matches || {},
     providerCatalog,
     maxResources: Number(env.MAX_EVENT_RESOURCES || DEFAULT_MAX_RESOURCES),
+    manualMatchIds,
     options: {
       vipTeams: parseList(env.VIP_TEAMS || 'Real Madrid,Barcelona,Manchester City,Liverpool,Arsenal,Bayern Munich,Paris Saint-Germain,Raja Casablanca,Wydad AC,FAR Rabat,Renaissance Berkane'),
       tierPoints: DEFAULT_TIER_POINTS,
@@ -424,6 +478,11 @@ export async function assignProjectMatchResources(env = process.env) {
     date: dateKey,
     timezone,
     source: 'resource-assignment',
+    manualSelection: {
+      enabled: manualMatchIds.length > 0,
+      path: manualSelectionPath,
+      matchIds: manualMatchIds.slice(0, Number(env.MAX_EVENT_RESOURCES || DEFAULT_MAX_RESOURCES)),
+    },
   };
   await writeJsonAtomic(outputPath, output);
   const supabaseState = await writeProjectAssignmentsToSupabase(supabase, env, dateKey, output);
