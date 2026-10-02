@@ -69,6 +69,7 @@ export function sameFixture(left, right) {
 export function normalizeBroadcastChannel(name) {
   const value = String(name || '').trim();
   if (!value || /\bbadge\b/i.test(value)) return '';
+  if (/^SNRT(?:\s+Live)?$/i.test(value)) return 'Arryadia TNT';
   return value.replace(/^beIN Sports Mena\s*(\d+)$/i, 'beIN SPORTS HD $1');
 }
 

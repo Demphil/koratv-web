@@ -39,6 +39,7 @@ export function normalizeName(name) {
     .replace(/\bksa\b/g, ' ')
     .replace(/\begy\b/g, ' ')
     .replace(/\bma\b/g, ' ')
+    .replace(/\bsnrt\b/g, 'arryadia')
     .replace(/\bhevc\b/g, ' ')
     .replace(/\bfhd\b/g, ' ')
     .replace(/\bhd\b/g, '')

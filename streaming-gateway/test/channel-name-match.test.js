@@ -39,6 +39,14 @@ test('matches Arabic and Latin Arryadia aliases across IPTV prefixes', () => {
     findChannelNameMatch('Arryadia HD 3', ['AR-SPI MA ARRYADIA S/D', 'AR-SPI MA ARRYADIA TNT']),
     'AR-SPI MA ARRYADIA TNT'
   );
+  assert.equal(
+    findChannelNameMatch('SNRT', ['AR-SPI MA ARRYADIA TNT', 'AR-SPI MA ARRYADIA HD 3']),
+    'AR-SPI MA ARRYADIA TNT'
+  );
+  assert.equal(
+    findChannelNameMatch('SNRT Live', ['Arryadia TNT', 'Arryadia HD 3']),
+    'Arryadia TNT'
+  );
 });
 
 test('matches platform broadcaster aliases requested by daily route sync', () => {

@@ -118,21 +118,24 @@ test('provider channel matcher resolves current Kooora broadcaster variants', ()
     { name: '[AR] ABU DHABI SPORT2 FHD', group: 'AR | ARAB SPORT', url: 'https://p.example/ad2.m3u8' },
     { name: '[AR] OMAN SPORT TV', group: 'AR | ARAB SPORT', url: 'https://p.example/oman.m3u8' },
     { name: '[KW] KUWAIT SPORT HD', group: 'KW | SPORT', url: 'https://p.example/kuwait.m3u8' },
-    { name: 'AR-SP| ART ALKASS 2 HD', group: 'AR | ARAB SPORT', url: 'https://p.example/kass2.m3u8' }
+    { name: 'AR-SP| ART ALKASS 2 HD', group: 'AR | ARAB SPORT', url: 'https://p.example/kass2.m3u8' },
+    { name: 'AR-SPI MA ARRYADIA TNT', group: 'AR | ARAB SPORT', url: 'https://p.example/arryadia.m3u8' }
   ].map((entry) => ({ ...entry, rawName: entry.name, search: normalizeName(`${entry.name} ${entry.group}`) }));
   const matches = matchChannels([
     'MBC Action',
     'Abu Dhabi Sports 2',
     'Oman Sports TV',
     'Kuwait Sport TV',
-    'AL KASS Two'
+    'AL KASS Two',
+    'SNRT'
   ], entries);
   assert.deepEqual(Object.fromEntries(matches.map((match) => [match.name, match.source_name])), {
     'MBC Action': '[AR] MBC ACTION',
     'Abu Dhabi Sports 2': '[AR] ABU DHABI SPORT2 FHD',
     'Oman Sports TV': '[AR] OMAN SPORT TV',
     'Kuwait Sport TV': '[KW] KUWAIT SPORT HD',
-    'AL KASS Two': 'AR-SP| ART ALKASS 2 HD'
+    'AL KASS Two': 'AR-SP| ART ALKASS 2 HD',
+    'SNRT': 'AR-SPI MA ARRYADIA TNT'
   });
 });
 

@@ -24,6 +24,7 @@ function tokensFor(value) {
     .replace(/\bsport\b/g, 'sports')
     .replace(/\b0([1-9])\b/g, '$1')
     .replace(/\bbein\s+sports\s+mena\b/g, 'bein sports')
+    .replace(/\bsnrt(?:\s+live)?\b/g, 'arryadia tnt')
     .replace(/(?:الرياضيه\s+المغربيه|المغربيه\s+الرياضيه)/gu, ' arryadia ')
     .replace(/\barryadia\s+(?:hd\s*3|3\s*hd|3)\b/giu, 'arryadia tnt')
     .replace(/\b(?:arr?y?adia|arriadia)\b/giu, 'arryadia');
@@ -91,6 +92,9 @@ function explicitVariant(value) {
 }
 
 export function findChannelNameMatch(requested, candidates) {
+  if (/^SNRT(?:\s+Live)?$/i.test(String(requested || '').trim())) {
+    return findChannelNameMatch('Arryadia TNT', candidates);
+  }
   const exact = (candidates || []).find((name) => typeof name === 'string' && name.toLowerCase() === String(requested || '').toLowerCase());
   if (exact) return exact;
   let ranked = (candidates || [])
