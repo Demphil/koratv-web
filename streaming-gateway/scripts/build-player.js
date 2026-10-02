@@ -1,4 +1,4 @@
-import { cp, mkdir, writeFile } from 'node:fs/promises';
+import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -13,6 +13,7 @@ if (api.protocol !== 'https:') throw new Error('HTTPS required');
 const resourceApi = new URL(process.env.PUBLIC_API_ORIGIN || api.origin);
 if (resourceApi.protocol !== 'https:') throw new Error('HTTPS required');
 const apiOrigins = [...new Set([api.origin, resourceApi.origin])];
+await rm('dist', { recursive: true, force: true });
 await mkdir('dist', { recursive: true });
 await cp('player', 'dist', { recursive: true });
 await cp('player/player.html', 'dist/739184.html');
@@ -24,7 +25,7 @@ for (const asset of ['plyr.js', 'plyr.css', 'plyr.svg']) {
 await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\nconst STREAM_API_ORIGINS = new Set(${JSON.stringify(apiOrigins)});\n`);
 await writeFile('dist/headers.txt', [
   'Set these HTTP response headers on the player host:',
-  `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src blob:; frame-src 'self'; base-uri 'none'; form-action 'none'`,
+  `Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:; base-uri 'none'; form-action 'none'`,
   'Referrer-Policy: strict-origin-when-cross-origin',
   'Cache-Control: no-store',
   'X-Content-Type-Options: nosniff',

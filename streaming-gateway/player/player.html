@@ -13,8 +13,6 @@
 </head>
 <body>
   <div class="layout-wrapper">
-    <aside id="ad-slot-sidebar" class="ad-slot" aria-label="إعلان" hidden></aside>
-
     <main class="main-content">
       <header class="player-heading"><img class="morocco-flag" src="./flag-morocco.png" width="24" height="16" alt="المغرب"><strong dir="ltr">KORA TV</strong><span class="heading-live">مباشر</span></header>
       <section id="player-container" class="player-container" aria-live="polite">
@@ -27,8 +25,6 @@
         </div>
         <div id="status" class="player-state" role="status">جاري تحميل البث...</div>
       </section>
-      <aside id="ad-slot-footer" class="ad-slot" aria-label="إعلان" hidden></aside>
-
       <dialog id="embed-modal" class="embed-modal" aria-labelledby="embed-modal-title" hidden>
         <div class="embed-modal-backdrop" data-close-embed></div>
         <section class="embed-modal-card" role="dialog" aria-modal="true" aria-labelledby="embed-modal-title">
@@ -86,6 +82,65 @@
   <script src="./plyr.js"></script>
   <script src="./player.js"></script>
   <script src="./player-branding.js"></script>
-  <script type="module" src="./ads-controller.js"></script>
+  <script>
+    (() => {
+      const AD_START_DELAY_MS = 2 * 60 * 1000;
+      const AD_COOLDOWN_MS = 5 * 60 * 1000;
+      const AD_ACTIVE_WINDOW_MS = 45 * 1000;
+      const DIRECT_CLICK_URL = 'https://omg10.com/4/11908572';
+      const MONETAG_SCRIPTS = [
+        { zone: '11908579', src: 'https://nap5k.com/tag.min.js' },
+        { zone: '11908582', src: 'https://n6wxm.com/vignette.min.js' }
+      ];
+      const container = document.getElementById('player-container');
+      const video = document.getElementById('video');
+      let clickShield = null;
+
+      function removeMonetagScripts() {
+        document.querySelectorAll('script[data-koratv-monetag="true"]').forEach((script) => script.remove());
+      }
+
+      function injectMonetagScripts() {
+        removeMonetagScripts();
+        for (const item of MONETAG_SCRIPTS) {
+          const script = document.createElement('script');
+          script.dataset.koratvMonetag = 'true';
+          script.dataset.zone = item.zone;
+          script.dataset.cfasync = 'false';
+          script.async = true;
+          script.src = `${item.src}?kt=${Date.now()}`;
+          document.body.appendChild(script);
+        }
+      }
+
+      function runMonetagCycle() {
+        injectMonetagScripts();
+        window.setTimeout(removeMonetagScripts, AD_ACTIVE_WINDOW_MS);
+        window.setTimeout(runMonetagCycle, AD_COOLDOWN_MS);
+      }
+
+      function armClickAd() {
+        if (clickShield || !container) return;
+        const shield = document.createElement('button');
+        shield.type = 'button';
+        shield.className = 'ad-click-shield';
+        shield.setAttribute('aria-label', 'تشغيل الفيديو');
+        shield.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          clickShield = null;
+          shield.remove();
+          try { window.open(DIRECT_CLICK_URL, '_blank', 'noopener,noreferrer'); } catch {}
+          video?.play?.().catch(() => {});
+          window.setTimeout(armClickAd, AD_COOLDOWN_MS);
+        }, { once: true });
+        clickShield = shield;
+        container.appendChild(shield);
+      }
+
+      window.setTimeout(runMonetagCycle, AD_START_DELAY_MS);
+      window.setTimeout(armClickAd, AD_START_DELAY_MS);
+    })();
+  </script>
 </body>
 </html>

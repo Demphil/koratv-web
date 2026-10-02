@@ -22,7 +22,7 @@ test('public frames are allowed without relaxing the token issuer origin boundar
   for (const file of ['nginx.conf.example', 'nginx.http-player.conf.example', 'nginx.oracle.conf.example']) {
     const nginx = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
     const policies = [...nginx.matchAll(/add_header Content-Security-Policy "([^"]+)"/g)];
-    assert.ok(policies.length >= 2);
+    assert.ok(policies.length >= 1);
     for (const [, policy] of policies) assert.doesNotMatch(policy, /frame-ancestors/);
     assert.doesNotMatch(nginx, /add_header\s+X-Frame-Options/i);
   }

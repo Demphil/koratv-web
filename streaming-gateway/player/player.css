@@ -26,7 +26,6 @@ html.embedded-view body { height: 100dvh; }
 html.embedded-view .layout-wrapper,
 html.embedded-view .main-content { width: 100%; height: 100%; max-width: none; margin: 0; }
 html.embedded-view .layout-wrapper { display: block; width: 100%; height: 100%; max-width: none; margin: 0; }
-html.embedded-view .ad-slot,
 html.embedded-view .match-panel,
 html.embedded-view .watch-news-section { display: none !important; }
 html.embedded-view .player-heading { width: 100%; height: 40px; min-height: 40px; margin: 0; border-radius: 0; }
@@ -1312,14 +1311,7 @@ body.tamper-lock .player-container {
   border: 0; border-radius: 0; background: transparent; cursor: pointer;
 }
 .ad-click-shield:focus-visible { outline: 2px solid #75e5b9; outline-offset: -3px; }
-.ad-slot { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
-.ad-slot iframe { display: block; width: 100%; border: 0; background: transparent; }
-.ad-embedded-frame {
-  position: fixed; left: 0; bottom: 0; width: 1px; height: 1px;
-  border: 0; opacity: 0.01; pointer-events: none;
-}
 @media (max-width: 620px) {
-  body:not(.tamper-lock) .ad-slot { display: none !important; }
   .player-heading { min-height: 30px; font-size: 12px; }
   .picture-app-promo { bottom: 22%; gap: 5px; left: 20%; width: 60%; font-size: 10px; }
   .app-icon { flex-basis: 20px; height: 23px; border-radius: 4px; font-size: 14px; }
