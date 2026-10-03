@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
 import { isAllowedMatch, normalizeTeamName } from "../../shared/league-whitelist.mjs";
 import { reconcileBroadcasts, mergeRefreshedMatch, sameFixture } from "../../shared/match-broadcasts.mjs";
 import { pruneMatchData } from './prune-match-data.js';
+import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
@@ -120,12 +121,11 @@ async function fetchApiFootball(path, params = {}) {
 function apiFootballStatus(status = {}) {
   const short = String(status.short || "").toUpperCase();
   const elapsed = Number(status.elapsed);
-  const liveCodes = new Set(["1H", "HT", "2H", "ET", "BT", "P", "SUSP", "INT", "LIVE"]);
-  const finishedCodes = new Set(["FT", "AET", "PEN"]);
+  const state = sourceMatchState({ status: short || status.long });
   return {
     raw: short || String(status.long || "FIXTURE").toUpperCase(),
-    isLive: liveCodes.has(short),
-    isFinished: finishedCodes.has(short),
+    isLive: state === 'live',
+    isFinished: state === 'ended',
     liveMinute: Number.isFinite(elapsed) ? elapsed : null
   };
 }
@@ -740,7 +740,8 @@ export function parseKoooraMatches(html) {
         payload: {
           score,
           status,
-          isLive: status === 'LIVE',
+          isLive: sourceMatchState({ status }) === 'live',
+          isFinished: sourceMatchState({ status }) === 'ended',
           liveMinute: matchMinute(match),
           goals: events.goals,
           yellowCards: events.yellowCards,

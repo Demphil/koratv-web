@@ -108,7 +108,6 @@ export function loadConfig(env = process.env) {
     cloudflareProxies: (env.CLOUDFLARE_HEADER_TRUSTED_PROXIES || '').split(',').filter(Boolean),
     sessionTtl: Math.max(300, Number(env.STREAM_SESSION_TTL_SECONDS || 10800)),
     streamOpensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || 20),
-    streamClosesAfterMinutes: Number(env.STREAM_CLOSES_AFTER_MINUTES || 150),
     prewarmAssignedResources: String(env.STREAM_PREWARM_ENABLED || 'true').trim().toLowerCase() !== 'false',
     prewarmIntervalMs: Math.max(30_000, Number(env.STREAM_PREWARM_INTERVAL_MS || 60_000)),
     prewarmMaxResources: Math.max(1, Number(env.STREAM_PREWARM_MAX_RESOURCES || env.MAX_EVENT_RESOURCES || 8)),

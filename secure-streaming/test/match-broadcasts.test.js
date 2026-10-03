@@ -238,6 +238,21 @@ test('Kooora match detail extractor reads visible watch-on broadcaster cards', (
   assert.deepEqual(extractKoooraBroadcastChannelsFromHtml(html), ['MBC Action']);
 });
 
+test('fresh Kooora lifecycle clears a previously stored finished flag', () => {
+  for (const status of ['FIXTURE', 'LIVE', 'RESULT']) {
+    const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: { pageProps: { data: [{ competition: { name: 'La Liga' }, matches: [{
+        id: 'lifecycle-fixture', startDate: kickoff_time, status,
+        teamA: { name: 'Real Madrid' }, teamB: { name: 'Barcelona' }, score: {}
+      }] }] } }
+    })}</script>`;
+    const [fresh] = parseKoooraMatches(html);
+    const merged = mergeRefreshedMatch({ ...fresh, payload: { ...fresh.payload, isFinished: true } }, fresh);
+    assert.equal(merged.payload.isFinished, status === 'RESULT');
+    assert.equal(merged.payload.isLive, status === 'LIVE');
+  }
+});
+
 test('Kooora TV schedule parser extracts event broadcaster schedules', () => {
   const html = `<!doctype html><html><body>
     <script id="__NEXT_DATA__" type="application/json">${JSON.stringify({

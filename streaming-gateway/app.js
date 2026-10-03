@@ -13,6 +13,7 @@ import { HlsProgressMonitor } from './hls-progress.js';
 import { singleQualityManifest } from './single-quality.js';
 import { diagnosticPlayback, registerMultiview } from './multiview.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
+import { matchPlaybackState as providerPlaybackState } from '../shared/match-lifecycle.mjs';
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
@@ -38,19 +39,9 @@ function moroccoPart(value, options) {
 }
 
 function matchPlaybackState(row, config) {
-  const payload = row.payload || {};
-  const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
-  const kickoff = new Date(scheduledAt);
-  const status = String(payload.status || payload.state || payload.matchStatus || '').toLowerCase();
-  if (/result|finished|ended|full.?time|انته/.test(status)) return 'ended';
-  if (Number.isNaN(kickoff.getTime())) return 'upcoming';
-
-  const opensBeforeMs = Number(process.env.STREAM_OPENS_BEFORE_MINUTES || config.streamOpensBeforeMinutes || 20) * 60_000;
-  const closesAfterMs = Number(process.env.STREAM_CLOSES_AFTER_MINUTES || config.streamClosesAfterMinutes || 150) * 60_000;
-  const now = Date.now();
-  if (now > kickoff.getTime() + closesAfterMs) return 'ended';
-  if (now >= kickoff.getTime() - opensBeforeMs) return 'live';
-  return 'upcoming';
+  return providerPlaybackState(row, {
+    opensBeforeMinutes: Number(process.env.STREAM_OPENS_BEFORE_MINUTES || config.streamOpensBeforeMinutes || 20)
+  });
 }
 
 function clampLiveMinute(row) {

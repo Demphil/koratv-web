@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { findChannelNameMatch, createChannelNameMatcher } from '../shared/channel-name-match.mjs';
 import { broadcastChannelCandidates, deduplicateSourceEvents, normalizeBroadcastChannel } from '../shared/match-broadcasts.mjs';
 import { basePriority } from './priority.js';
+import { matchPlaybackState } from '../shared/match-lifecycle.mjs';
 
 function createServerClient(env) {
   const url = env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL;
@@ -184,11 +185,6 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
   };
 }
 
-function isEndedStatus(payload = {}) {
-  const value = String(payload.status || payload.state || payload.matchStatus || '').toLowerCase();
-  return /result|finished|ended|full.?time|انته/.test(value);
-}
-
 async function findMatch(client, table, matchId, sourceFilter = null) {
   const columns = 'id,match_id,kickoff_time,channel,source,payload,active';
   const applySourceFilter = (query) => {
@@ -294,8 +290,7 @@ function removeResolvedChannelCandidate(resolvedChannel, candidates = [], catalo
 export function createPlaybackResolver(env, sourceFilter = null, catalog = null, liveResolver = null) {
   const client = createServerClient(env);
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
-  const opensBeforeMs = Number(env.STREAM_OPENS_BEFORE_MINUTES || 20) * 60_000;
-  const closesAfterMs = Number(env.STREAM_CLOSES_AFTER_MINUTES || 150) * 60_000;
+  const opensBeforeMinutes = Number(env.STREAM_OPENS_BEFORE_MINUTES || 20);
   const unavailable = (reason, diagnostics = null) => ({
     is_streaming_active: false,
     reason,
@@ -314,13 +309,8 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
     const kickoff = new Date(match.kickoff_time || payload.scheduledAt || '');
     if (Number.isNaN(kickoff.getTime())) return { is_streaming_active: false, reason: 'invalid_kickoff' };
 
-    const now = Date.now();
-    if (isEndedStatus(payload) || now > kickoff.getTime() + closesAfterMs) {
-      return { is_streaming_active: false, reason: 'ended' };
-    }
-    if (now < kickoff.getTime() - opensBeforeMs) {
-      return { is_streaming_active: false, reason: 'upcoming' };
-    }
+    const playbackState = matchPlaybackState(match, { opensBeforeMinutes });
+    if (playbackState !== 'live') return { is_streaming_active: false, reason: playbackState };
 
     const matchKey = match.match_id || match.id;
     const override = catalog?.override(matchKey);

@@ -7,6 +7,7 @@ import {
   getMoroccoWallClockNow,
   getMoroccoDay
 } from './api.js';
+import { frontendMatchState } from '../../shared/match-lifecycle.mjs?v=20261003-source-status';
 
 const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
 const PLAYER_ORIGIN = 'https://fabor.sbs';
@@ -51,22 +52,6 @@ window.openWaitModal = function(message) {
 window.closeWaitModal = function() {
     const modal = document.getElementById('wait-modal');
     if (modal) modal.style.display = 'none';
-}
-
-// ==========================================
-// 🎯 رادار تحديد مدة المباراة الذكي
-// ==========================================
-function getMatchDuration(leagueName) {
-    if (!leagueName) return 120; // التوقيت الافتراضي للمباريات العادية
-    const name = leagueName.toLowerCase();
-    
-    // كلمات تدل على إمكانية وجود أشواط إضافية (بما فيها الربع والنصف)
-    const knockoutKeywords = ['كأس', 'نهائي', 'سوبر', 'cup', 'final', 'super', 'كوبا', 'خروج المغلوب', 'playoff', 'ربع', 'نصف', 'أبطال', 'champions'];
-    
-    const isKnockout = knockoutKeywords.some(keyword => name.includes(keyword));
-    
-    // 135 دقيقة للكؤوس والربع والنصف، و 100 دقيقة لمباريات الدوري العادية
-    return isKnockout ? 140 : 120; 
 }
 
 // تصحيح التوقيت الذكي لتجاهل أخطاء قاعدة البيانات والمسافات المخفية (مثل 12:00)
@@ -194,13 +179,10 @@ function renderMatch(match) {
       diffMins = 9999; 
   }
 
-  const matchDuration = typeof getMatchDuration === 'function' ? getMatchDuration(match.league) : 120;
-  const sourceStatus = String(match.status || match.state || match.matchStatus || '').toLowerCase();
-  const hasPlaybackState = ['live', 'ended', 'upcoming'].includes(match.playbackState);
-  const isEnded = hasPlaybackState ? match.playbackState === 'ended'
-    : /result|finished|ended|full.?time|انته/.test(sourceStatus) || diffMins < -matchDuration;
-  const isLive = hasPlaybackState ? match.playbackState === 'live'
-    : !isEnded && (match.isLive === true || (diffMins <= 0 && diffMins >= -matchDuration));
+  const lifecycleState = frontendMatchState(match, diffMins);
+  match = { ...match, playbackState: lifecycleState };
+  const isEnded = lifecycleState === 'ended';
+  const isLive = lifecycleState === 'live';
   const isSoon = diffMins > 0 && diffMins <= 60; 
   const hasKnownSource = match.sourceAvailable === true || Boolean(match.channelName);
   const canOpenSecurePlayer = isLive && !isEnded;
@@ -425,17 +407,16 @@ function renderMatchCollections(rawTodayMatches, rawTomorrowMatches) {
       if (broadcastOrder) return broadcastOrder;
       const diffA = (matchStartDate(a) - now) / 60000;
       const diffB = (matchStartDate(b) - now) / 60000;
-      const durationA = getMatchDuration(a.league);
-      const durationB = getMatchDuration(b.league);
-      const getTier = (diff, duration) => {
-          if (diff <= 0 && diff >= -duration) return 1;
+      const getTier = (match, diff) => {
+          const state = frontendMatchState(match, diff);
+          if (state === 'live') return 1;
+          if (state === 'ended') return 4;
           if (diff > 0 && diff <= 60) return 2;
-          if (diff < -duration) return 4;
           return 3;
       };
 
-      const tierA = getTier(diffA, durationA);
-      const tierB = getTier(diffB, durationB);
+      const tierA = getTier(a, diffA);
+      const tierB = getTier(b, diffB);
       if (tierA !== tierB) return tierA - tierB;
       return tierA === 1 ? matchStartDate(b) - matchStartDate(a) : matchStartDate(a) - matchStartDate(b);
   }
