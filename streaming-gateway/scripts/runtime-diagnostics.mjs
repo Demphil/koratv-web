@@ -33,12 +33,26 @@ const matchesData = await matchesResponse.json();
 const matches = Array.isArray(matchesData) ? matchesData : (matchesData.matches || []);
 const playback = createPlaybackResolver(process.env, ['kooora'], catalog);
 for (const row of matches) {
-  report('match', pick(row, ['id', 'homeTeam', 'awayTeam', 'score', 'status', 'liveMinute', 'scheduledAt', 'channelName', 'resourceAssignment', 'broadcastChannels', 'detailsUpdatedAt', 'sourceFixtureId', 'playbackState', 'playbackReady']));
+  const matchId = row.matchId || row.match_id || row.stableId || row.id;
+  report('match', { matchId, ...pick(row, ['homeTeam', 'awayTeam', 'score', 'status', 'liveMinute', 'scheduledAt', 'channelName', 'resourceAssignment', 'broadcastChannels', 'detailsUpdatedAt', 'sourceFixtureId', 'playbackState', 'playbackReady']) });
   if (row.playbackState === 'live' || row.playbackReady) {
     try {
-      const result = await playback(row.id);
-      report('preparedPlayback', { id: row.id, ...pick(result, ['is_streaming_active', 'reason', 'channel_id', 'pool_key']), providers: Object.keys(result?.provider_sources || {}) });
-    } catch { report('preparedPlayback', { id: row.id, error: 'resolver_failed' }); }
+      const result = await playback(matchId);
+      report('preparedPlayback', { id: matchId, ...pick(result, ['is_streaming_active', 'reason', 'channel_id', 'pool_key']), providers: Object.keys(result?.provider_sources || {}) });
+    } catch { report('preparedPlayback', { id: matchId, error: 'resolver_failed' }); }
+  }
+}
+for (const channel of ['Arryadia TNT', 'beIN SPORTS HD 1']) {
+  const sources = catalog.sources(channel);
+  report('channelSources', { channel, providers: Object.keys(sources) });
+  for (const [provider, url] of Object.entries(sources)) {
+    try {
+      const response = await fetch(url, { headers: { 'User-Agent': process.env.UPSTREAM_USER_AGENT || 'IPTVSmartersPlayer', Accept: '*/*' }, signal: AbortSignal.timeout(10000) });
+      const reader = response.body?.getReader();
+      const first = reader ? await reader.read() : { value: null };
+      await reader?.cancel();
+      report('mediaSample', { channel, provider, status: response.status, contentType: response.headers.get('content-type'), hls: Buffer.from(first.value || []).toString('utf8').trimStart().startsWith('#EXTM3U') });
+    } catch { report('mediaSample', { channel, provider, error: 'request_failed' }); }
   }
 }
 const health = await fetch('http://127.0.0.1:3100/healthz', { signal: AbortSignal.timeout(6000) });
