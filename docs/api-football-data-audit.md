@@ -5,7 +5,7 @@
 Read-only production comparison: GitHub Actions run 37157011513.
 
 - Raja Casablanca vs CR Khemis Zemamra: API fixture 1640792 already had 14
-  events and two statistics groups in Supabase. Kooora's Raja name was absent
+  events and two empty statistics groups in Supabase. Kooora's Raja name was absent
   from the bilingual identity map, preventing attachment to its player page.
 - CODM Meknes and Difaa El Jadida had the same identity-mapping gap.
 - Detail enrichment stopped at the first 20 rows. It treated a successful HTTP
@@ -17,6 +17,9 @@ Read-only production comparison: GitHub Actions run 37157011513.
 - Coverage for Botola Pro 2026 advertises events, lineups, and team statistics,
   but not player statistics. Several individual fixture responses still had
   empty lineups. Season-level coverage is not a per-fixture availability promise.
+- A second direct audit (37157841850) fetched Raja fixture 1640792 explicitly:
+  15 events, empty batched lineups, and empty `/fixtures/lineups` response. This
+  missing lineup was confirmed upstream, not inferred from the player UI.
 
 ## Implemented Contract
 
@@ -52,3 +55,19 @@ Tests cover name/ID orientation, delayed and unsupported coverage, 25-fixture
 batching, finished partial retries, non-destructive empty refreshes, exact-ID
 fallbacks, transient provider failures, quota exhaustion, and serialized requests.
 Availability for every world league or fixture cannot be promised by our code.
+
+## Production Verification
+
+- Runtime commit `a87067d` deployed successfully through Unified Data Refresh
+  run `37157839696`, including the Oracle metadata worker and fabor player.
+- Local suites passed: 44 secure-streaming tests and 153 gateway tests (197
+  total); player build and workflow YAML validation passed.
+- `node scripts/audit-match-details.cjs` verified both allowed frontend origins
+  against their shared gateway. Hassania, CODM, Difaa, and Raja returned their
+  exact API fixture IDs and 13, 17, 19, and 15 events respectively.
+- Raja player rendered all 15 events at 1366px and 390px widths without
+  horizontal overflow. Its lineup tab correctly reported missing provider data.
+- The two statistics groups for Raja contain no actual statistics. They are
+  pending, not proof of populated statistics. No lineup or statistic was invented.
+- This verifies metadata retrieval and rendering for these fixtures, not stream
+  playback, all global leagues, or future provider availability.
