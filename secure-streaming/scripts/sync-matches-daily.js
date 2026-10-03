@@ -2,7 +2,7 @@ import "../src/lib/loadEnv.js";
 import { pathToFileURL } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
 import { collectMatchRowsFromSource, upsertMatchRows } from "./sync-matches-from-source.js";
-import { pruneMatchData } from "./prune-match-data.js";
+import { moroccoDateKey, pruneMatchData, runDailyRolloverCleanup } from "./prune-match-data.js";
 
 const dryRun = process.argv.includes("--dry-run");
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
@@ -33,7 +33,10 @@ export async function syncMatchesDaily() {
     matches = { parsed: rows.length, upserted: 0, enriched: null };
   } else {
     const supabase = getSupabaseAdmin();
-    cleanup = { deleted: await pruneMatchData(supabase, matchesTable) };
+    const rollover = process.env.MATCH_DAILY_ROLLOVER_CLEANUP === "false"
+      ? { skipped: true }
+      : await runDailyRolloverCleanup(supabase, matchesTable, { dateKey: moroccoDateKey() });
+    cleanup = { rollover, deleted: await pruneMatchData(supabase, matchesTable) };
     matches = await upsertMatchRows(rows, { prune: false });
   }
   const result = { cleanup, matches };

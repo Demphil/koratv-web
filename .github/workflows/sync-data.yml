@@ -2,6 +2,7 @@ name: Unified Data Refresh
 
 on:
   schedule:
+    - cron: "1 0 * * *"
     - cron: "17 */4 * * *"
   workflow_dispatch:
 

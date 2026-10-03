@@ -104,6 +104,20 @@ function stableMatchId(homeTeam, awayTeam, scheduledAt = '') {
   return `${slug(homeTeam)}-${slug(awayTeam)}-${date}`;
 }
 
+function cleanApiText(value, fallback = '') {
+  const text = String(value ?? '').trim();
+  if (!text || /^null$/i.test(text) || /^undefined$/i.test(text)) return fallback;
+  return text;
+}
+
+function cleanApiScore(value) {
+  const score = cleanApiText(value);
+  if (!score || /^vs$/i.test(score) || /null|undefined/i.test(score)) return 'VS';
+  const parts = score.split('-').map((part) => cleanApiText(part));
+  if (parts.length >= 2 && parts[0] !== '' && parts[1] !== '') return `${parts[0]} - ${parts[1]}`;
+  return 'VS';
+}
+
 // --- 3. Database API ---
 
 let stagingMatchesPromise = null;
@@ -115,6 +129,7 @@ function normalizeStagingMatch(match) {
   const scheduledAt = match.scheduledAt || '';
   const homeLogo = typeof match.homeTeam === 'object' ? match.homeTeam.logo : match.homeLogo;
   const awayLogo = typeof match.awayTeam === 'object' ? match.awayTeam.logo : match.awayLogo;
+  const channelName = cleanApiText(match.channelName || match.channel || match.payload?.channel || '');
   if (!homeName || !awayName || !scheduledAt) return null;
   if (String(homeName).trim().toLocaleLowerCase('ar') === String(awayName).trim().toLocaleLowerCase('ar')) return null;
   const dateParts = zonedParts(new Date(scheduledAt), MOROCCO_TIME_ZONE);
@@ -124,13 +139,15 @@ function normalizeStagingMatch(match) {
     homeTeam: { name: homeName, logo: homeLogo || '' },
     awayTeam: { name: awayName, logo: awayLogo || '' },
     scheduledAt,
-    time: match.time || `${String(dateParts.hour).padStart(2, '0')}:${String(dateParts.minute).padStart(2, '0')}`,
+    time: cleanApiText(match.time, `${String(dateParts.hour).padStart(2, '0')}:${String(dateParts.minute).padStart(2, '0')}`),
     rawMinutes: dateParts.hour * 60 + dateParts.minute,
-    score: match.score || 'VS',
+    score: cleanApiScore(match.score),
     league: match.league || '',
     streams: [],
+    channelName,
+    channel: channelName,
     sourceReady: match.sourceReady === true,
-    sourceAvailable: match.sourceAvailable === true,
+    sourceAvailable: match.sourceAvailable === true || Boolean(channelName),
     playbackState: match.playbackState || '',
     isLive: Boolean(match.isLive),
     commentator: match.commentator || '',

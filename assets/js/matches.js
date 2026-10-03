@@ -201,7 +201,7 @@ function renderMatch(match) {
   const isSoon = diffMins > 0 && diffMins <= 60; 
   const hasReadySource = match.sourceReady === true;
   const hasKnownSource = match.sourceAvailable === true || Boolean(match.channelName);
-  const canOpenSecurePlayer = isLive && !isEnded && hasReadySource;
+  const canOpenSecurePlayer = isLive && !isEnded && (hasReadySource || hasKnownSource);
   const disabledReason = isEnded
     ? 'ended'
     : !isLive
@@ -345,7 +345,7 @@ async function openSecurePlayer(matchId) {
       .spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.18);border-top-color:#d6aa46;display:inline-block;animation:spin .9s linear infinite;margin:6px auto 18px}.error{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:#ef3340;margin:6px auto 18px;font-size:26px;font-weight:900}
       h1{font-size:23px;margin:0 0 9px}p{margin:0;color:#cdd6dd;line-height:1.75;font-size:15px}.bar{height:5px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden;margin:20px 0 0}.bar span{display:block;height:100%;width:42%;background:#d6aa46;border-radius:inherit;animation:move 1.35s ease-in-out infinite}
       button,a{display:inline-block;margin-top:20px;border:0;border-radius:999px;background:#ef3340;color:#fff;padding:12px 22px;font:inherit;font-weight:800;text-decoration:none;cursor:pointer}
-      small{display:block;margin-top:14px;color:#8fa0ad}@keyframes spin{to{transform:rotate(360deg)}}@keyframes move{0%{transform:translateX(145%)}100%{transform:translateX(-245%)}}
+      small{display:block;margin-top:14px;color:#8fa0ad}@media(max-width:480px){body{padding:14px}.card{width:min(360px,calc(100vw - 24px));padding:22px 16px;border-radius:14px}.brand{margin-bottom:14px}.spinner,.error{width:40px;height:40px;margin-bottom:14px}h1{font-size:20px}p{font-size:14px}button,a{display:block;width:100%;margin-top:14px;padding:11px 14px}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes move{0%{transform:translateX(145%)}100%{transform:translateX(-245%)}}
     </style></head><body><main class="card" role="status" aria-live="polite"><div class="brand"><span class="dot"></span><span>KORA TV</span></div>${isError ? '<div class="error">!</div>' : '<span class="spinner" aria-hidden="true"></span>'}<h1>${isError ? 'تعذر تجهيز المشغل' : 'جاري تجهيز المشغل'}</h1><p>${detail}</p>${isError ? '<button type="button" onclick="window.close()">إغلاق الصفحة</button><a href="https://koratv.click/" target="_self">العودة للمباريات</a>' : '<div class="bar" aria-hidden="true"><span></span></div><small>لا تغلق الصفحة، سيتم نقلك تلقائياً عند جاهزية الجلسة.</small>'}</main></body></html>`;
     try {
       playerTab.document.open();
