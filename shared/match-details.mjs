@@ -4,12 +4,14 @@ import { sameFixture, teamIdentity } from './match-broadcasts.mjs';
 export function attachApiFootballDetails(row, apiRows) {
   const sourceId = row.payload?.sourceMatchId;
   const candidates = apiRows.filter(candidate => candidate.source === 'api-football'
-    && sourceId && candidate.payload?.broadcast?.sourceMatchId === sourceId
+    && (!candidate.payload?.broadcast?.sourceMatchId || candidate.payload.broadcast.sourceMatchId === sourceId)
     && sameFixture(row, candidate));
   if (candidates.length !== 1) return { ...row, payload: { ...row.payload, detailsState: 'unmatched_fixture' } };
   const api = candidates[0];
   const p = api.payload || {};
-  const reverse = teamIdentity(row.home_team) !== teamIdentity(api.home_team);
+  const reverse = row.payload?.homeTeamId && p.homeTeamId
+    ? String(row.payload.homeTeamId) !== String(p.homeTeamId)
+    : teamIdentity(row.home_team) !== teamIdentity(api.home_team);
   const orient = value => reverse && value && typeof value === 'object'
     ? { home: value.away, away: value.home } : value;
   const scoreParts = String(p.score || '').match(/^(\d+)\s*-\s*(\d+)$/);
@@ -18,7 +20,8 @@ export function attachApiFootballDetails(row, apiRows) {
     ...row.payload,
     ...Object.fromEntries(['events', 'lineups', 'venue', 'venueCity', 'referee', 'standings',
       'knockout', 'knockoutUpdatedAt', 'leagueId', 'season', 'leagueType', 'leagueRound',
-      'eventDetailsLoaded', 'detailsUpdatedAt', 'standingsUpdatedAt', 'standingsVersion', 'sourceFixtureId']
+      'eventDetailsLoaded', 'detailsUpdatedAt', 'detailsCheckedAt', 'detailStates', 'apiCoverage', 'coverageUpdatedAt',
+      'standingsUpdatedAt', 'standingsVersion', 'sourceFixtureId']
       .filter(key => Object.hasOwn(p, key)).map(key => [key, p[key]])),
     ...(score && !/^\d+\s*-\s*\d+$/.test(String(row.payload?.score || '')) ? { score } : {}),
     statistics: reverse ? [...(p.statistics || [])].reverse() : p.statistics || [],
@@ -26,6 +29,6 @@ export function attachApiFootballDetails(row, apiRows) {
     goals: (p.goals || []).map(goal => ({ ...goal, team: reverse ? (goal.team === 'home' ? 'away' : goal.team === 'away' ? 'home' : goal.team) : goal.team })),
     homeTeamId: reverse ? p.awayTeamId : p.homeTeamId,
     awayTeamId: reverse ? p.homeTeamId : p.awayTeamId,
-    dataSource: 'api-football', detailsState: p.eventDetailsLoaded ? 'ready' : 'pending',
+    dataSource: 'api-football', detailsState: p.detailsState || (p.eventDetailsLoaded ? 'ready' : 'pending'),
   } };
 }

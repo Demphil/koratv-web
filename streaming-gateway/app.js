@@ -171,6 +171,8 @@ function normalizeMatch(row, config) {
     sourceFixtureId: payload.sourceFixtureId || payload.sourceMatchId || '',
     eventDetailsLoaded: payload.eventDetailsLoaded === true,
     detailsState: payload.detailsState || (payload.eventDetailsLoaded ? 'ready' : 'pending'),
+    detailStates: Object.fromEntries(['lineups', 'statistics', 'events'].map(feature => [feature,
+      ['available', 'stale', 'pending', 'not_covered'].includes(payload.detailStates?.[feature]) ? payload.detailStates[feature] : 'pending'])),
     detailsUpdatedAt: payload.detailsUpdatedAt || null,
     updatedAt: row.updated_at
   };

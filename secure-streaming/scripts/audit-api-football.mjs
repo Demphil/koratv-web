@@ -36,7 +36,8 @@ for (const fixture of moroccan) {
       lineups: row.payload?.lineups?.length, statistics: row.payload?.statistics?.length, events: row.payload?.events?.length,
       loaded: row.payload?.eventDetailsLoaded, refreshed: row.payload?.detailsUpdatedAt, updated: row.updated_at })) }));
 }
-const ids = moroccan.slice(0, 5).map(item => item.fixture.id);
+const ids = [...moroccan.filter(item => item.league?.id === 200), ...moroccan.filter(item => item.league?.id !== 200)]
+  .slice(0, 5).map(item => item.fixture.id);
 if (ids.length) {
   for (const item of await request('/fixtures', { ids: ids.join('-') })) console.log(JSON.stringify({ detail: item.fixture?.id,
     home: item.teams?.home?.name, away: item.teams?.away?.name, events: item.events?.length,
@@ -44,5 +45,11 @@ if (ids.length) {
   const league = moroccan[0].league;
   for (const item of await request('/leagues', { id: String(league.id), season: String(league.season) })) {
     console.log(JSON.stringify({ leagueCoverage: item.league, seasons: item.seasons }));
+  }
+  const selected = moroccan.find(item => /Raja/i.test(item.teams?.home?.name || ''));
+  if (selected) {
+    const lineups = await request('/fixtures/lineups', { fixture: String(selected.fixture.id) });
+    console.log(JSON.stringify({ dedicatedLineups: selected.fixture.id,
+      teams: lineups.map(item => ({ team: item.team?.id, players: item.startXI?.length })) }));
   }
 }

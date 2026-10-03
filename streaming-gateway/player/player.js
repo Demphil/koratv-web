@@ -366,7 +366,10 @@ function renderLineups(match) {
       <button type="button" data-lineup-side="home" aria-pressed="${home}">${match.homeLogo ? `<img src="${escapeHtml(match.homeLogo)}" alt="">` : ''}${escapeHtml(arabicTeamLabel(match, 'home') || match.homeTeam)}</button>
       <button type="button" data-lineup-side="away" aria-pressed="${!home}">${match.awayLogo ? `<img src="${escapeHtml(match.awayLogo)}" alt="">` : ''}${escapeHtml(arabicTeamLabel(match, 'away') || match.awayTeam)}</button>
     </div>`;
-  if (!lineup || !players.length) return `${teamButtons}<p class="empty-match-data">لم تصل التشكيلة الرسمية لهذه المباراة بعد.</p>`;
+  if (!lineup || !players.length) return `${teamButtons}<p class="empty-match-data">${match.detailStates?.lineups === 'not_covered'
+    ? 'لا يوفّر مزود البيانات التشكيلات لهذه البطولة والموسم.'
+    : match.detailsState === 'unmatched_fixture' ? 'تعذر ربط المباراة بمعرّفها لدى مزود البيانات حتى الآن.'
+      : 'لم يرسل مزود البيانات التشكيلة الرسمية لهذه المباراة بعد.'}</p>`;
   const pitch = placed.length ? `
     <div class="lineup-pitch lineup-coordinate-pitch" aria-label="تشكيلة ${escapeHtml(teamName)}">
       <div class="pitch-lines" aria-hidden="true"><i class="pitch-circle"></i><i class="pitch-box top"></i><i class="pitch-box bottom"></i></div>

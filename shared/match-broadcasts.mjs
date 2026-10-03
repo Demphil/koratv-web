@@ -41,12 +41,16 @@ const aliases = [
   ['Bayern München', 'Bayern Munich', 'بايرن ميونخ'], ['Borussia Dortmund', 'بوروسيا دورتموند'],
   ['Inter', 'Inter Milan', 'إنتر ميلان'], ['AC Milan', 'ميلان'], ['Juventus', 'يوفنتوس'],
   ['Napoli', 'نابولي'], ['AS Roma', 'روما'], ['Wydad AC', 'Wydad Casablanca', 'الوداد الرياضي'],
-  ['Widad Témara', 'Wydad Temara', 'وداد تمارة'], ['Raja Casablanca', 'Raja Club Athletic', 'الرجاء الرياضي'],
+  ['Widad Témara', 'Wydad Temara', 'وداد تمارة'], ['Raja Casablanca', 'Raja Club Athletic', 'Raja CA', 'الرجاء الرياضي', 'الرجاء البيضاوي'],
   ['FAR Rabat', 'AS FAR', 'الجيش الملكي'], ['FUS Rabat', 'الفتح الرباطي'],
   ['Renaissance Berkane', 'RSB Berkane', 'نهضة بركان'], ['Al Ahly', 'الأهلي'], ['Zamalek SC', 'Zamalek', 'الزمالك'],
   ['Moghreb Tetouan', 'المغرب التطواني'], ['Maghreb Fès', 'Maghreb Fes', 'المغرب الفاسي'],
   ['CR Khemis Zemamra', 'نهضة الزمامرة'], ['Kawkab Marrakech', 'الكوكب الرياضي المراكشي'],
   ['Hassania Agadir', 'حسنية أغادير'],
+  ['CODM Meknes', 'Meknes', 'النادي المكناسي'], ['Difaa EL Jadida', 'Difaa El Jadida', 'الدفاع الحسني الجديدي'],
+  ['Olympique Safi', 'أولمبيك آسفي'], ['Ittihad Tanger', 'اتحاد طنجة'], ['Ittihad Khemisset', 'الاتحاد الزموري للخميسات'],
+  ['Union Touarga', 'UTS Rabat', 'إتحاد تواركة', 'اتحاد تواركة'], ['Olympique Dcheira', 'أولمبيك الدشيرة'],
+  ['JS Soualem', 'Jeunesse Sportive Soualem', 'الشباب الرياضي السالمي'], ['Renaissance Zemamra', 'CR Khemis Zemamra', 'نهضة الزمامرة'],
   ['Pyramids FC', 'Pyramids', 'بيراميدز'], ['Botafogo', 'Botafogo RJ', 'بوتافوجو', 'بوتافوغو'],
   ['RB Bragantino', 'Bragantino', 'Red Bull Bragantino', 'براغانتينو', 'براغانتيـنو'],
 ];
@@ -66,6 +70,11 @@ export function sameFixture(left, right) {
   if (![left.home_team, left.away_team, right.home_team, right.away_team].every(Boolean)) return false;
   const category = (row) => /women|female|سيدات|نسائ/i.test(`${row.league} ${row.home_team} ${row.away_team}`);
   if (category(left) !== category(right)) return false;
+  const ids = row => [row.payload?.homeTeamId, row.payload?.awayTeamId].map(Number);
+  const leftIds = ids(left), rightIds = ids(right);
+  if ([...leftIds, ...rightIds].every(id => Number.isSafeInteger(id) && id > 0)) {
+    return leftIds.sort((a, b) => a - b).join(':') === rightIds.sort((a, b) => a - b).join(':');
+  }
   const a = [teamIdentity(left.home_team), teamIdentity(left.away_team)].sort();
   const b = [teamIdentity(right.home_team), teamIdentity(right.away_team)].sort();
   return a[0] === b[0] && a[1] === b[1];
@@ -148,6 +157,11 @@ export function reconcileBroadcasts(rows, { checkedAt = new Date().toISOString()
 
 export function mergeRefreshedMatch(existing, incoming, now = Date.now()) {
   const payload = { ...existing?.payload, ...incoming.payload };
+  if (incoming.source === 'api-football' && existing?.payload?.sourceFixtureId
+    && String(existing.payload.sourceFixtureId) !== String(incoming.payload?.sourceFixtureId)) {
+    for (const field of ['events', 'lineups', 'statistics', 'goals', 'yellowCards', 'redCards', 'detailStates',
+      'detailsUpdatedAt', 'detailsCheckedAt', 'eventDetailsLoaded', 'finalDetailsComplete']) delete payload[field];
+  }
   const previous = existing?.payload?.broadcast;
   const age = now - Date.parse(previous?.checkedAt);
   // Retain verified assignments briefly only on transport failure, never after an authoritative empty result.

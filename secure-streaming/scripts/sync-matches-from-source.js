@@ -7,6 +7,8 @@ import { reconcileBroadcasts, mergeRefreshedMatch, sameFixture, preferredBroadca
 import { pruneMatchData } from './prune-match-data.js';
 import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
 import { normalizeKnockoutFixtures } from '../../shared/knockout.mjs';
+import { createApiFootballClient } from './api-football-client.mjs';
+import { attachApiFootballDetails } from '../../shared/match-details.mjs';
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
@@ -19,16 +21,17 @@ const apiFootballKey = process.env.API_FOOTBALL_KEY
   || process.env.RAPIDAPI_KEY
   || "";
 const apiFootballBaseUrl = (process.env.API_FOOTBALL_BASE_URL || "https://v3.football.api-sports.io").replace(/\/+$/, "");
-const apiFootballDetailLimit = Math.min(20, Math.max(1, Number(process.env.API_FOOTBALL_DETAIL_LIMIT || 20)));
-const liveDetailsRefreshMs = Math.max(5, Number(process.env.API_FOOTBALL_LIVE_DETAILS_REFRESH_MINUTES || 5)) * 60_000;
-const lineupDetailsRefreshMs = Math.max(15, Number(process.env.API_FOOTBALL_LINEUP_DETAILS_REFRESH_MINUTES || 15)) * 60_000;
+const apiFootballDetailLimit = Math.min(500, Math.max(20, Number(process.env.API_FOOTBALL_DETAIL_LIMIT || 100)));
+const liveDetailsRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_LIVE_DETAILS_REFRESH_MINUTES || 2)) * 60_000;
+const lineupDetailsRefreshMs = Math.max(2, Number(process.env.API_FOOTBALL_LINEUP_DETAILS_REFRESH_MINUTES || 5)) * 60_000;
 const standingsRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_STANDINGS_REFRESH_HOURS || 24)) * 60 * 60_000;
 const standingsLimit = Math.max(0, Number(process.env.API_FOOTBALL_STANDINGS_PER_SYNC || 1));
 const knockoutRefreshMs = 4 * 60 * 60_000;
-const apiFootballTodayRefreshMs = Math.max(5, Number(process.env.API_FOOTBALL_TODAY_REFRESH_MINUTES || 10)) * 60_000;
+const apiFootballTodayRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_TODAY_REFRESH_MINUTES || 2)) * 60_000;
 const apiFootballTomorrowRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_TOMORROW_REFRESH_HOURS || 12)) * 60 * 60_000;
 const koooraDetailChannelLimit = Math.max(0, Number(process.env.KOOORA_DETAIL_CHANNEL_LIMIT || 20));
 const apiFootballFixtureCache = new Map();
+const apiClient = createApiFootballClient({ key: apiFootballKey, baseUrl: apiFootballBaseUrl });
 
 
 function moroccoDateParts(offsetDays = 0) {
@@ -94,30 +97,7 @@ function apiFootballEnabled() {
 }
 
 async function fetchApiFootball(path, params = {}) {
-  const url = new URL(`${apiFootballBaseUrl}${path}`);
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
-  }
-
-  const headers = {
-    "x-apisports-key": apiFootballKey,
-    "accept": "application/json"
-  };
-  if (/rapidapi/i.test(apiFootballBaseUrl) || process.env.RAPIDAPI_KEY) {
-    headers["x-rapidapi-key"] = apiFootballKey;
-    headers["x-rapidapi-host"] = process.env.API_FOOTBALL_RAPIDAPI_HOST || "v3.football.api-sports.io";
-  }
-
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error(`API-Football ${path} failed with ${response.status}`);
-  const body = await response.json();
-  if (Array.isArray(body?.errors) && body.errors.length) {
-    throw new Error(`API-Football ${path} error: ${body.errors.join(", ")}`);
-  }
-  if (body?.errors && typeof body.errors === "object" && Object.keys(body.errors).length) {
-    throw new Error(`API-Football ${path} error: ${JSON.stringify(body.errors)}`);
-  }
-  return Array.isArray(body?.response) ? body.response : [];
+  return apiClient.request(path, params);
 }
 
 function apiFootballStatus(status = {}) {
@@ -283,7 +263,6 @@ async function collectApiFootballRows() {
       const leagueCountry = fixture?.league?.country || "";
       const kickoff = fixture?.fixture?.date;
       if (!homeTeam || !awayTeam || !kickoff) continue;
-      if (!isAllowedMatch({ league, leagueCountry, homeTeam, awayTeam })) continue;
 
       const status = apiFootballStatus(fixture?.fixture?.status);
       const baseMatchId = matchSlug(homeTeam, awayTeam);
@@ -874,42 +853,126 @@ export async function persistMatchSnapshots(supabase, rows, versions) {
   return written;
 }
 
-export async function enrichApiFootballMatchDetails(rows) {
-  if (!apiFootballEnabled()) return rows;
-  const now = Date.now();
-  const targets = rows.filter((row) => {
+export function apiFootballDetailTargets(rows, now = Date.now(), limit = apiFootballDetailLimit) {
+  return rows.filter((row) => {
+    if (row.source && row.source !== 'api-football') return false;
     const fixtureId = Number(row.payload?.sourceFixtureId);
     if (!Number.isSafeInteger(fixtureId) || fixtureId <= 0) return false;
     const kickoff = new Date(row.kickoff_time).getTime();
     const age = now - kickoff;
-    const refreshedAt = new Date(row.payload?.detailsUpdatedAt || 0).getTime();
-    const hasDetails = Array.isArray(row.payload?.events) && row.payload.events.length > 0;
-    if (row.payload?.isFinished) return !row.payload?.eventDetailsLoaded;
-    if (row.payload?.isLive) return !Number.isFinite(refreshedAt) || now - refreshedAt >= liveDetailsRefreshMs;
+    const refreshedAt = Date.parse(row.payload?.detailsCheckedAt || row.payload?.detailsUpdatedAt || '') || 0;
+    if (row.payload?.isFinished) return age < 24 * 60 * 60_000 && !row.payload?.finalDetailsComplete
+      && now - refreshedAt >= 15 * 60_000;
+    if (row.payload?.isLive) return now - refreshedAt >= liveDetailsRefreshMs;
     return age >= -60 * 60_000 && age < 0
-      && ((!hasDetails && !row.payload?.detailsUpdatedAt) || now - refreshedAt >= lineupDetailsRefreshMs);
-  }).slice(0, apiFootballDetailLimit);
-  if (targets.length) {
+      && now - refreshedAt >= lineupDetailsRefreshMs;
+  }).sort((a, b) => Number(b.payload?.isLive === true) - Number(a.payload?.isLive === true)
+    || (Date.parse(a.payload?.detailsCheckedAt || a.payload?.detailsUpdatedAt || '') || 0)
+      - (Date.parse(b.payload?.detailsCheckedAt || b.payload?.detailsUpdatedAt || '') || 0))
+    .slice(0, limit);
+}
+
+async function refreshApiFootballCoverage(rows, now) {
+  const groups = new Map();
+  for (const row of rows) {
+    if (!row.payload?.leagueId || !row.payload?.season) continue;
+    const key = `${row.payload.leagueId}:${row.payload.season}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  let budget = 6;
+  for (const group of groups.values()) {
+    const cached = group.find(row => row.payload.apiCoverage && now - Date.parse(row.payload.coverageUpdatedAt || '') < 4 * 60 * 60_000);
+    if (cached) {
+      for (const row of group) Object.assign(row.payload, { apiCoverage: cached.payload.apiCoverage, coverageUpdatedAt: cached.payload.coverageUpdatedAt });
+      continue;
+    }
+    if (group.some(row => now - Date.parse(row.payload.coverageCheckedAt || '') < 15 * 60_000)) continue;
+    if (budget-- <= 0) break;
+    for (const row of group) row.payload.coverageCheckedAt = new Date(now).toISOString();
     try {
-      const fixtures = await fetchApiFootball("/fixtures", { ids: targets.map((row) => row.payload.sourceFixtureId).join("-") });
+      const response = await fetchApiFootball('/leagues', { id: group[0].payload.leagueId, season: group[0].payload.season });
+      const coverage = response.find(item => String(item.league?.id) === String(group[0].payload.leagueId))
+        ?.seasons?.find(season => String(season.year) === String(group[0].payload.season))?.coverage;
+      if (!coverage) continue;
+      const fields = coverage.fixtures || {};
+      const apiCoverage = { events: fields.events, lineups: fields.lineups,
+        statistics: fields.statistics_fixtures, players: fields.statistics_players, standings: coverage.standings };
+      for (const row of group) Object.assign(row.payload, { apiCoverage, coverageUpdatedAt: new Date(now).toISOString() });
+    } catch (error) { console.warn(`API-Football coverage unavailable: ${error.message}`); }
+  }
+}
+
+export async function enrichApiFootballMatchDetails(rows) {
+  if (!apiFootballEnabled()) return rows;
+  const now = Date.now();
+  const targets = apiFootballDetailTargets(rows, now);
+  let fallbackBudget = Math.max(0, Math.min(10, Number(process.env.API_FOOTBALL_DETAIL_FALLBACK_CALLS || 3)));
+  await refreshApiFootballCoverage(rows.filter(row => (!row.source || row.source === 'api-football')
+    && Number.isSafeInteger(Number(row.payload?.sourceFixtureId)) && Number(row.payload.sourceFixtureId) > 0), now);
+  for (let offset = 0; offset < targets.length; offset += 20) {
+    const batch = targets.slice(offset, offset + 20);
+    try {
+      const fixtures = await fetchApiFootball("/fixtures", { ids: [...new Set(batch.map(row => row.payload.sourceFixtureId))].join("-") });
       const detailsById = new Map(fixtures.map((fixture) => [String(fixture?.fixture?.id || ""), fixture]));
-      for (const row of targets) {
+      for (const row of batch) {
         const detail = detailsById.get(String(row.payload.sourceFixtureId));
-        if (!detail) continue;
+        if (!detail) {
+          row.payload = { ...row.payload, detailsCheckedAt: new Date(now).toISOString(), detailsState: 'pending' };
+          continue;
+        }
+        if (detail.teams && [row.payload.homeTeamId, row.payload.awayTeamId].every(Boolean)
+          && (String(detail.teams.home?.id) !== String(row.payload.homeTeamId)
+            || String(detail.teams.away?.id) !== String(row.payload.awayTeamId))) {
+          console.warn(`API-Football fixture identity mismatch for ${row.payload.sourceFixtureId}`);
+          continue;
+        }
         const normalizedEvents = normalizeApiFootballEvents(detail.events);
         const eventSummary = apiFootballEvents(detail.events, row.home_team, row.away_team);
+        let lineups = normalizeApiFootballLineups(detail.lineups, detail.players);
+        let statistics = normalizeApiFootballStatistics(detail.statistics);
+        for (const feature of ['lineups', 'statistics']) {
+          const available = feature === 'lineups' ? lineups.some(team => team.startXI.length)
+            : statistics.some(team => team.statistics.some(stat => stat.value != null));
+          const lastAttempt = Date.parse(row.payload.detailFallbackCheckedAt?.[feature] || '') || 0;
+          if (available || row.payload.apiCoverage?.[feature] !== true || fallbackBudget <= 0
+            || now - lastAttempt < 15 * 60_000) continue;
+          fallbackBudget--;
+          row.payload.detailFallbackCheckedAt = { ...row.payload.detailFallbackCheckedAt, [feature]: new Date(now).toISOString() };
+          try {
+            const data = await fetchApiFootball(`/fixtures/${feature}`, { fixture: row.payload.sourceFixtureId });
+            const expected = [row.payload.homeTeamId, row.payload.awayTeamId].filter(Boolean).map(String);
+            if (expected.length === 2 && data.some(team => !expected.includes(String(team.team?.id)))) continue;
+            if (feature === 'lineups') lineups = normalizeApiFootballLineups(data, detail.players);
+            else statistics = normalizeApiFootballStatistics(data);
+          } catch (error) { console.warn(`API-Football ${feature} fallback unavailable: ${error.message}`); }
+        }
+        const hasLineups = lineups.some(team => team.startXI.length > 0);
+        const hasStatistics = statistics.some(team => team.statistics.some(stat => stat.value != null));
+        const hasEvents = normalizedEvents.length > 0;
+        const featureState = (feature, available, cached) => available ? 'available' : cached ? 'stale'
+          : row.payload.apiCoverage?.[feature] === false ? 'not_covered' : 'pending';
+        const detailStates = { lineups: featureState('lineups', hasLineups, row.payload.lineups?.some(team => team.startXI?.length)),
+          statistics: featureState('statistics', hasStatistics, row.payload.statistics?.some(team => team.statistics?.some(stat => stat.value != null))),
+          events: featureState('events', hasEvents, row.payload.events?.length) };
+        const loaded = Object.values(detailStates).some(state => ['available', 'stale'].includes(state));
+        const complete = Object.values(detailStates).every(state => ['available', 'not_covered'].includes(state));
         row.payload = {
           ...row.payload,
-          ...(Array.isArray(detail.events) ? { events: normalizedEvents, ...eventSummary } : {}),
-          ...(Array.isArray(detail.lineups) ? { lineups: normalizeApiFootballLineups(detail.lineups, detail.players) } : {}),
+          ...(hasEvents ? { events: normalizedEvents, ...eventSummary } : {}),
+          ...(hasLineups ? { lineups } : {}),
           ...(detail.league ? { leagueId: detail.league.id, season: detail.league.season,
             leagueType: detail.league.type || '', leagueRound: detail.league.round || '' } : {}),
-          ...(Array.isArray(detail.statistics) ? { statistics: normalizeApiFootballStatistics(detail.statistics) } : {}),
+          ...(hasStatistics ? { statistics } : {}),
           ...(detail.fixture?.venue?.name ? { venue: String(detail.fixture.venue.name).slice(0, 120) } : {}),
           ...(detail.fixture?.venue?.city ? { venueCity: String(detail.fixture.venue.city).slice(0, 90) } : {}),
           ...(detail.fixture?.referee ? { referee: String(detail.fixture.referee).slice(0, 90) } : {}),
-          eventDetailsLoaded: true,
-          detailsUpdatedAt: new Date(now).toISOString()
+          eventDetailsLoaded: loaded,
+          detailStates,
+          detailsState: complete ? 'ready' : loaded ? 'partial' : 'pending',
+          finalDetailsComplete: row.payload.isFinished === true && complete,
+          detailsCheckedAt: new Date(now).toISOString(),
+          ...(hasEvents || hasLineups || hasStatistics ? { detailsUpdatedAt: new Date(now).toISOString() } : {})
         };
       }
     } catch (error) {
@@ -919,7 +982,8 @@ export async function enrichApiFootballMatchDetails(rows) {
 
   if (standingsLimit > 0) {
     const dueLeagues = [...new Map(rows.filter((row) => row.payload?.leagueId && row.payload?.season)
-      .filter((row) => row.payload?.standingsVersion !== 2 || now - new Date(row.payload?.standingsUpdatedAt || 0).getTime() >= standingsRefreshMs)
+      .filter(row => row.payload.apiCoverage?.standings !== false)
+      .filter(row => now - (Date.parse(row.payload.standingsCheckedAt || row.payload.standingsUpdatedAt || '') || 0) >= standingsRefreshMs)
       .map((row) => [`${row.payload.leagueId}:${row.payload.season}`, row])).values()]
       .slice(0, standingsLimit);
     for (const row of dueLeagues) {
@@ -928,7 +992,8 @@ export async function enrichApiFootballMatchDetails(rows) {
         const leagueKey = `${row.payload.leagueId}:${row.payload.season}`;
         for (const related of rows.filter((item) => `${item.payload?.leagueId}:${item.payload?.season}` === leagueKey)) {
           const standings = normalizeApiFootballStandings(response[0]?.league?.standings || [], related);
-          related.payload = { ...related.payload, standings, standingsVersion: 2, standingsUpdatedAt: new Date(now).toISOString() };
+          related.payload = { ...related.payload, standingsCheckedAt: new Date(now).toISOString(),
+            ...(standings.length ? { standings, standingsVersion: 2, standingsUpdatedAt: new Date(now).toISOString() } : {}) };
         }
       } catch (error) {
         console.warn(`API-Football standings failed for league ${row.payload.leagueId}: ${error.message}`);
@@ -1031,6 +1096,9 @@ export async function collectMatchRowsFromSource() {
 
   await enrichKoooraRowsWithScheduleChannels(koooraRows);
   await enrichKoooraRowsWithDetailChannels(koooraRows);
+  // Visibility policy must not discard a details source for an existing Kooora fixture.
+  rows = rows.filter(row => isAllowedMatch({ league: row.league, leagueCountry: row.payload?.leagueCountry,
+    homeTeam: row.home_team, awayTeam: row.away_team }) || koooraRows.some(candidate => sameFixture(row, candidate)));
   rows.push(...koooraRows);
   const uniqueRows = [...new Map(rows.map((row) => [`${String(row.kickoff_time || '').slice(0, 10)}:${row.match_id}`, row])).values()];
   console.log(`Parsed ${uniqueRows.length} matches from ${pages.map((page) => page.url).join(', ')}.`);
@@ -1041,7 +1109,8 @@ export async function upsertMatchRows(rows, { prune = true } = {}) {
   const supabase = getSupabaseAdmin();
   const withExisting = await mergeExistingChannels(supabase, rows);
   const enriched = await enrichApiFootballMatchDetails(withExisting.rows);
-  const finalRowsForUpsert = enriched;
+  const apiRows = enriched.filter(row => row.source === 'api-football');
+  const finalRowsForUpsert = enriched.map(row => row.source === 'kooora' ? attachApiFootballDetails(row, apiRows) : row);
 
   const written = await persistMatchSnapshots(supabase, finalRowsForUpsert, withExisting.versions);
   console.log(`Stored ${written}/${finalRowsForUpsert.length} match snapshots; concurrent newer snapshots preserved.`);

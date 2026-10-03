@@ -4,6 +4,7 @@ process.env.API_FOOTBALL_KEY ||= "test-only-key";
 process.env.MATCH_SOURCE_PROVIDER = "api-football";
 const {
   enrichApiFootballMatchDetails,
+  apiFootballDetailTargets,
   mergeMatchPayload,
   normalizeApiFootballEvents,
   normalizeApiFootballLineups,
@@ -47,8 +48,8 @@ test('background bracket refresh is cached four hours and does not invent missin
   try {
     await enrichApiFootballMatchDetails([row]);
     await enrichApiFootballMatchDetails([row]);
-    assert.equal(calls.length,1);
-    assert.equal(calls[0].searchParams.get('league'),'7');
+    assert.equal(calls.filter(url => url.pathname === '/fixtures').length,1);
+    assert.equal(calls.find(url => url.pathname === '/fixtures').searchParams.get('league'),'7');
     assert.equal(row.payload.knockout.rounds[0].matches.length,2);
     assert.equal(row.payload.knockout.rounds[1].matches.length,0);
   } finally {globalThis.fetch=originalFetch;}
@@ -153,4 +154,81 @@ test('standings select the fixture group before truncation, not the first 40 unr
   const wanted = [{ team: { id: 1, name: 'Gibraltar' }, rank: 2 }, { team: { id: 2, name: 'Andorra' }, rank: 3 }];
   const rows = normalizeApiFootballStandings([unrelated, wanted], { payload: { homeTeamId: 1, awayTeamId: 2 } });
   assert.deepEqual(rows.map(row => row.team), ['Gibraltar', 'Andorra']);
+});
+
+test('details scheduler retries finished partial fixtures and cannot starve rows beyond the first batch', () => {
+  const now = Date.now();
+  const rows = Array.from({ length: 25 }, (_, i) => ({ source: 'api-football', kickoff_time: new Date(now - 3600000).toISOString(),
+    payload: { sourceFixtureId: i + 1, isLive: true } }));
+  assert.equal(apiFootballDetailTargets(rows, now).length, 25);
+  const selected = apiFootballDetailTargets(rows, now, 20);
+  selected.forEach(row => { row.payload.detailsCheckedAt = new Date(now).toISOString(); });
+  assert.equal(apiFootballDetailTargets(rows, now, 20)[0].payload.sourceFixtureId, 21);
+  const finished = { ...rows[0], payload: { sourceFixtureId: 101, isFinished: true, eventDetailsLoaded: true,
+    detailsUpdatedAt: new Date(now - 3600000).toISOString() } };
+  assert.equal(apiFootballDetailTargets([finished], now).length, 1);
+  finished.payload.finalDetailsComplete = true;
+  assert.equal(apiFootballDetailTargets([finished], now).length, 0);
+});
+
+test('25 due fixtures use two bounded batches and empty refreshes preserve existing lineups', async () => {
+  const original = globalThis.fetch, requests = [];
+  const now = Date.now();
+  const rows = Array.from({ length: 25 }, (_, index) => ({ source: 'api-football', home_team: 'Home', away_team: 'Away',
+    kickoff_time: new Date(now - 600000).toISOString(), payload: { sourceFixtureId: index + 1, isLive: true,
+      lineups: [{ team: { id: 1 }, startXI: [{ id: 9, name: 'Retained player' }] }], detailsUpdatedAt: '2020-01-01T00:00:00Z' } }));
+  globalThis.fetch = async url => {
+    const parsed = new URL(url), ids = parsed.searchParams.get('ids').split('-');
+    requests.push(ids);
+    return new Response(JSON.stringify({ response: ids.map(id => ({ fixture: { id: Number(id) }, events: [], lineups: [], statistics: [] })) }));
+  };
+  try {
+    await enrichApiFootballMatchDetails(rows);
+    assert.deepEqual(requests.map(ids => ids.length), [20, 5]);
+    assert.equal(rows[0].payload.lineups[0].startXI[0].name, 'Retained player');
+    assert.equal(rows[0].payload.detailStates.lineups, 'stale');
+    assert.equal(rows[0].payload.detailsUpdatedAt, '2020-01-01T00:00:00Z');
+    assert.equal(rows[0].payload.finalDetailsComplete, false);
+  } finally { globalThis.fetch = original; }
+});
+
+test('coverage distinguishes unsupported lineups from delayed data and skips unsupported standings', async () => {
+  const original = globalThis.fetch, calls = [];
+  const now = Date.now();
+  const row = { source: 'api-football', kickoff_time: new Date(now - 600000).toISOString(), payload: {
+    sourceFixtureId: 2001, leagueId: 200, season: 2026, isLive: true } };
+  globalThis.fetch = async url => {
+    const parsed = new URL(url); calls.push(parsed.pathname);
+    return new Response(JSON.stringify({ response: parsed.pathname === '/leagues'
+      ? [{ league: { id: 200 }, seasons: [{ year: 2026, coverage: { fixtures: { lineups: false, events: true, statistics_fixtures: true }, standings: false } }] }]
+      : [{ fixture: { id: 2001 }, events: [], lineups: [], statistics: [] }] }));
+  };
+  try {
+    await enrichApiFootballMatchDetails([row]);
+    assert.equal(row.payload.detailStates.lineups, 'not_covered');
+    assert.equal(row.payload.detailStates.events, 'pending');
+    assert.equal(row.payload.eventDetailsLoaded, false);
+    assert.equal(calls.includes('/standings'), false);
+    await enrichApiFootballMatchDetails([row]);
+    assert.equal(calls.filter(path => path === '/leagues').length, 1);
+  } finally { globalThis.fetch = original; }
+});
+
+test('supported empty batch lineups use a bounded dedicated fallback by exact fixture ID', async () => {
+  const original = globalThis.fetch, now = Date.now(), calls = [];
+  const row = { source: 'api-football', kickoff_time: new Date(now - 600000).toISOString(), payload: {
+    sourceFixtureId: 991, isLive: true, homeTeamId: 1, awayTeamId: 2, apiCoverage: { lineups: true, statistics: false },
+    leagueId: 200, season: 2026, coverageUpdatedAt: new Date(now).toISOString(), standingsCheckedAt: new Date(now).toISOString() } };
+  globalThis.fetch = async url => {
+    const parsed = new URL(url); calls.push(parsed);
+    return new Response(JSON.stringify({ response: parsed.pathname === '/fixtures/lineups'
+      ? [{ team: { id: 1 }, startXI: [{ player: { id: 10, name: 'Official player' } }] }]
+      : [{ fixture: { id: 991 }, teams: { home: { id: 1 }, away: { id: 2 } }, lineups: [] }] }));
+  };
+  try {
+    await enrichApiFootballMatchDetails([row]);
+    assert.equal(row.payload.lineups[0].startXI[0].name, 'Official player');
+    assert.equal(calls.find(url => url.pathname === '/fixtures/lineups').searchParams.get('fixture'), '991');
+    assert.equal(row.payload.detailStates.lineups, 'available');
+  } finally { globalThis.fetch = original; }
 });

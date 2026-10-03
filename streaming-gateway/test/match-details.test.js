@@ -49,6 +49,23 @@ test('mismatched fixture identity and ambiguous matches cannot supply card data'
   }
 });
 
+test('Moroccan aliases join stored sports details without requiring a channel assignment', () => {
+  const kooora = { ...row, home_team: 'الرجاء البيضاوي', away_team: 'نهضة الزمامرة' };
+  const sports = { ...api, home_team: 'Raja Casablanca', away_team: 'CR Khemis Zemamra',
+    payload: { ...api.payload, broadcast: { state: 'unmatched_fixture' } } };
+  const merged = attachApiFootballDetails(kooora, [sports]);
+  assert.equal(merged.payload.sourceFixtureId, 42);
+  assert.equal(merged.channel, row.channel);
+  assert.equal(merged.match_id, row.match_id);
+});
+
+test('verified API team identifiers keep attachment orientation despite a renamed club', () => {
+  const renamed = { ...row, home_team: 'Updated local name', payload: { ...row.payload, homeTeamId: 1, awayTeamId: 2 } };
+  const merged = attachApiFootballDetails(renamed, [api]);
+  assert.equal(merged.payload.homeTeamId, 1);
+  assert.equal(merged.payload.score, '2 - 1');
+});
+
 test('pitch centers the goalkeeper and distributes defenders without overlapping columns', () => {
   const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
   const start = source.indexOf('function positionLineup(');
