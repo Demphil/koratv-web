@@ -411,6 +411,108 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     return hlsCache.load(key, { ttlMs: cacheTtl(kind) }, () => fetchLeasedUpstream(source, options, lease));
   };
 
+  const prewarmState = {
+    enabled: Boolean(providerPool && config.prewarmAssignedResources && config.providerAssignments),
+    running: false,
+    lastRunAt: null,
+    lastReason: null,
+    warmed: 0,
+    failed: 0,
+    results: []
+  };
+  app.locals.providerPrewarm = prewarmState;
+
+  const warmPlaybackManifest = async (playback, lease) => {
+    const headers = { 'User-Agent': config.upstreamUserAgent, Accept: '*/*' };
+    let url = new URL(lease.url);
+    for (let depth = 0; depth < 3; depth += 1) {
+      const response = await fetchCachedUpstream(url, { headers, redirect: 'follow' }, '', lease);
+      if (!response.ok) {
+        await response.body?.cancel();
+        if ([401, 403].includes(response.status)) providerPool.fail(lease, response.status);
+        return { ok: false, status: response.status };
+      }
+      const text = await response.text();
+      if (!text.trimStart().startsWith('#EXTM3U')) return { ok: false, error: 'invalid_manifest' };
+      const base = response.url || url.href;
+      const lines = text.split(/\r?\n/).filter((line) => line && !line.startsWith('#'));
+      if (text.includes('#EXT-X-STREAM-INF:') && lines[0]) {
+        url = new URL(lines[0], base);
+        continue;
+      }
+      const sequence = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1] || '';
+      const segment = lines.at(-1);
+      if (segment) {
+        const target = new URL(segment, base);
+        const version = sequence ? `prewarm-msn-${sequence}` : `prewarm-${createHash('sha256').update(text).digest('hex').slice(0, 12)}`;
+        hlsCache.schedulePrefetch(
+          `${lease.id}:segment:${target.href}:${version}`,
+          { ttlMs: cacheTtl('segment') },
+          () => fetchLeasedUpstream(target, { headers, redirect: 'follow' }, lease)
+        );
+      }
+      return { ok: true, channel: playback.channel_id, provider: lease.provider };
+    }
+    return { ok: false, error: 'playlist_depth' };
+  };
+
+  const prewarmAssignedResources = async (reason = 'interval', { fresh = false } = {}) => {
+    if (!prewarmState.enabled || prewarmState.running) return prewarmState;
+    prewarmState.running = true;
+    prewarmState.lastRunAt = new Date().toISOString();
+    prewarmState.lastReason = reason;
+    const results = [];
+    try {
+      const assignments = (config.providerAssignments?.().assignments || [])
+        .filter((assignment) => assignment?.matchId && assignment?.providerId)
+        .slice(0, config.prewarmMaxResources || 8);
+      for (const assignment of assignments) {
+        const result = {
+          matchId: assignment.matchId,
+          channel: assignment.resolvedChannel || null,
+          provider: assignment.providerId || null
+        };
+        try {
+          const playback = await config.getPlaybackForSource('', assignment.matchId, { fresh });
+          if (!playback?.is_streaming_active || !Object.keys(playback.provider_sources || {}).length) {
+            results.push({ ...result, ok: false, error: playback?.reason || 'stream_unavailable' });
+            continue;
+          }
+          const lease = providerPool.acquire(playback, `prewarm:${assignment.matchId}`);
+          providerPool.touch(lease, `prewarm:${assignment.matchId}`);
+          const warmed = await warmPlaybackManifest(playback, lease);
+          results.push({ ...result, ...warmed });
+        } catch (error) {
+          results.push({ ...result, ok: false, error: error instanceof PoolError ? error.code : (error?.message || 'prewarm_failed') });
+        }
+      }
+      prewarmState.results = results.slice(-config.prewarmMaxResources || -8);
+      prewarmState.warmed = results.filter((item) => item.ok).length;
+      prewarmState.failed = results.length - prewarmState.warmed;
+      return prewarmState;
+    } finally {
+      prewarmState.running = false;
+    }
+  };
+  app.locals.prewarmAssignedResources = prewarmAssignedResources;
+
+  if (prewarmState.enabled) {
+    const timer = setInterval(() => {
+      prewarmAssignedResources('interval').catch((error) => {
+        console.warn('[provider-prewarm] interval failed', { message: error?.message || String(error) });
+      });
+    }, config.prewarmIntervalMs || 60_000);
+    timer.unref();
+    app.locals.providerPrewarmTimer = timer;
+    const startupTimer = setTimeout(() => {
+      prewarmAssignedResources('startup', { fresh: true }).catch((error) => {
+        console.warn('[provider-prewarm] startup failed', { message: error?.message || String(error) });
+      });
+    }, 1500);
+    startupTimer.unref();
+    app.locals.providerPrewarmStartupTimer = startupTimer;
+  }
+
   const accountAdmin = (req, res, next) => {
     const expected = createHmac('sha256', config.hmacSecret).update('koratv-account-admin-v1').digest('hex');
     const supplied = String(req.headers.authorization || '').replace(/^Bearer /, '');
@@ -482,7 +584,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   app.get('/healthz', async (req, res) => {
     try {
       await redis.ping();
-      res.json({ status: 'ok', hlsCache: hlsCache.stats(), ...(providerPool ? { providerPool: providerPool.snapshot(), providerFailures: providerPool.failures } : {}) });
+      res.json({ status: 'ok', hlsCache: hlsCache.stats(), ...(providerPool ? { providerPool: providerPool.snapshot(), providerFailures: providerPool.failures, providerPrewarm: prewarmState } : {}) });
     } catch {
       res.status(503).json({ status: 'unavailable' });
     }
@@ -609,6 +711,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       let playback = await config.getPlaybackForSource(source, requestedMatchId);
       if (!playback.is_streaming_active && playback.reason === 'source_unavailable' && config.refreshProviderCatalog) {
         config.refreshProviderCatalog();
+        prewarmAssignedResources('urgent-source-unavailable', { fresh: true }).catch((error) => {
+          console.warn('[provider-prewarm] urgent refresh failed', { message: error?.message || String(error) });
+        });
         playback = await config.getPlaybackForSource(source, requestedMatchId, { fresh: true });
       }
       if (!playback.is_streaming_active) return res.status(409).json({

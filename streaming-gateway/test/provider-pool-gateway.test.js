@@ -102,3 +102,62 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
   assert.equal(new Set(six.results.map(r => r.channel)).size, 6);
   assert.ok(six.results.every(r => r.manifestStatus === 200 && r.segmentStatus === 200 && r.bytes > 0));
 });
+
+test('provider prewarm leases assigned resources before the first viewer', async t => {
+  const calls = [];
+  const config = {
+    providerPoolEnabled: true,
+    prewarmAssignedResources: true,
+    prewarmIntervalMs: 60_000,
+    prewarmMaxResources: 8,
+    enableAntiBot: false,
+    secret: 'test-pool-secret-longer-than-32-characters',
+    hmacSecret: 'test-pool-hmac-independent-longer-than-32',
+    frontend: 'https://koratv.click',
+    player: 'https://fabor.sbs',
+    api: 'https://api.example',
+    frontendOrigins: new Set(['https://koratv.click']),
+    upstreamOrigins: new Set(),
+    trustedProxies: [],
+    sessionTtl: 300,
+    sourceForOrigin: () => 'kooora',
+    upstreamUserAgent: 'test',
+    providerAssignments: () => ({
+      assignments: [{ matchId: 'assigned-live', providerId: 'A', resolvedChannel: 'beIN SPORTS HD 1' }],
+      ignored: []
+    }),
+    getPlaybackForSource: async (_, id) => ({
+      is_streaming_active: true,
+      match_id: id,
+      pool_key: id,
+      channel_id: 'beIN SPORTS HD 1',
+      priority_score: 100,
+      stream_url: `https://a.example/${id}/main.m3u8`,
+      provider_sources: { A: `https://a.example/${id}/main.m3u8` }
+    }),
+  };
+  const redis = {
+    ping: async () => 'PONG',
+    incr: async () => 1,
+    expire: async () => 1,
+    set: async () => 'OK',
+    get: async () => null
+  };
+  const app = createApp({ config, redis, fetchImpl: async url => {
+    calls.push(url.href);
+    const isManifest = url.pathname.endsWith('.m3u8');
+    const response = new Response(isManifest ? '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:7\n#EXTINF:6,\nseg7.ts\n' : new Uint8Array([71, 0, 1]),
+      { headers: { 'Content-Type': isManifest ? 'application/vnd.apple.mpegurl' : 'video/mp2t' } });
+    Object.defineProperty(response, 'url', { value: url.href });
+    return response;
+  } });
+  clearInterval(app.locals.providerPrewarmTimer);
+  clearTimeout(app.locals.providerPrewarmStartupTimer);
+  t.after(() => app.locals.providerPool.close());
+
+  const state = await app.locals.prewarmAssignedResources('test', { fresh: true });
+  assert.equal(state.warmed, 1);
+  assert.equal(state.failed, 0);
+  assert.ok(calls.includes('https://a.example/assigned-live/main.m3u8'));
+  assert.deepEqual(app.locals.providerPool.snapshot().map((item) => [item.provider, item.channel]), [['A', 'beIN SPORTS HD 1']]);
+});

@@ -89,6 +89,15 @@ export function createProviderCatalog(env = process.env) {
       refresh();
       return assignmentFor(matchId);
     },
+    assignments() {
+      refresh();
+      return {
+        generatedAt: assignments.generatedAt || null,
+        date: assignments.date || null,
+        assignments: Array.isArray(assignments.assignments) ? assignments.assignments : [],
+        ignored: Array.isArray(assignments.ignored) ? assignments.ignored : []
+      };
+    },
     matchRoute(matchId) {
       refresh();
       const id = String(matchId || '').trim();
