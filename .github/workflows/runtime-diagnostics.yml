@@ -1,0 +1,29 @@
+name: Read Only Runtime Diagnostics
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload read-only diagnostic
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          source: streaming-gateway/scripts/runtime-diagnostics.mjs
+          target: /tmp/koratv-diagnostics-${{ github.run_id }}
+      - name: Inspect running Oracle gateway without restarting it
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          command_timeout: 3m
+          script: |
+            set -eu
+            cd /opt/koratv/current/streaming-gateway
+            node --env-file=/etc/koratv/gateway.env /tmp/koratv-diagnostics-${{ github.run_id }}/streaming-gateway/scripts/runtime-diagnostics.mjs
