@@ -1,0 +1,50 @@
+name: Production Performance Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  oracle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          source: streaming-gateway/scripts/performance-audit.js
+          target: /tmp/koratv-performance-audit
+      - uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          command_timeout: 3m
+          script: |
+            set -eu
+            uptime
+            free -m
+            pm2 jlist | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).map(p=>({name:p.name,status:p.pm2_env.status,restarts:p.pm2_env.restart_time,cpu:p.monit.cpu,memoryMB:Math.round(p.monit.memory/1048576)}))))'
+            cd /opt/koratv/current/streaming-gateway
+            sha256sum app.js config.js supabase.js provider-pool.js
+            node --env-file=.env /tmp/koratv-performance-audit/streaming-gateway/scripts/performance-audit.js /opt/koratv/current/streaming-gateway
+            curl -sS --max-time 40 -o /dev/null -w 'gateway_matches_ttfb=%{time_starttransfer} total=%{time_total}\n' http://127.0.0.1:3100/api/matches -H 'Origin: https://koratv.click'
+  njalla:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -eu
+            uptime
+            free -m
+            systemctl show koratv-oracle-tunnel --property=NRestarts,ActiveEnterTimestamp
+            sha256sum /var/www/koratv-player/player.js /var/www/koratv-player/739184.html
+            curl -sS --max-time 40 -o /dev/null -w 'tunnel_matches_ttfb=%{time_starttransfer} total=%{time_total}\n' http://127.0.0.1:3100/api/matches -H 'Origin: https://koratv.click'
+            curl -sSI https://fabor.sbs/hls.min.js | head -n 15
