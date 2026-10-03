@@ -10,7 +10,7 @@ const copyEmbedCode = document.getElementById('copy-embed-code');
 const params = new URL(location.href).searchParams;
 const entry = params.get('k') || params.get('token');
 const embeddedMatchId = (params.get('match') || '').slice(0, 160);
-history.replaceState(null, '', location.pathname + (embeddedMatchId ? `?match=${encodeURIComponent(embeddedMatchId)}` : ''));
+replacePublicMatchUrl(embeddedMatchId || decodeJwtPayload(entry || '').matchId);
 let hls;
 let expiryTimer;
 let hlsSessionToken = "";
@@ -91,11 +91,26 @@ function randomEmbedHash(length = EMBED_HASH_LENGTH) {
   return [...bytes].map((byte) => alphabet[byte % alphabet.length]).join('');
 }
 
+function publicMatchId(value) {
+  let hash = 0xcbf29ce484222325n;
+  const text = String(value || '');
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= BigInt(text.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+  }
+  return String(hash).padStart(20, '0');
+}
+
+function replacePublicMatchUrl(matchId) {
+  const id = /^\d{20}$/.test(matchId || '') ? matchId : matchId ? publicMatchId(matchId) : '';
+  history.replaceState(null, '', location.pathname + (id ? `?match=${id}` : ''));
+}
+
 function embedSrc() {
   const matchId = activeMatchId || embeddedMatchId || decodeJwtPayload(entry || '').matchId;
   if (!matchId) return '';
   const url = new URL('/watch.html', window.location.origin);
-  url.searchParams.set('match', matchId);
+  url.searchParams.set('match', /^\d{20}$/.test(matchId) ? matchId : publicMatchId(matchId));
   return url.href;
 }
 
@@ -453,7 +468,9 @@ async function loadMatchPanel(matchId) {
     if (!response.ok) return;
     const { match } = await response.json();
     if (requestSequence !== matchPanelRequestSequence || activeMatchId !== matchId) return;
-    if (!match || match.matchId !== matchId) return;
+    if (!match || (match.matchId !== matchId && publicMatchId(match.matchId) !== matchId)) return;
+    activeMatchId = match.matchId;
+    replacePublicMatchUrl(activeMatchId);
     currentMatchInfo = match;
     const panel = document.getElementById('match-panel');
     panel.hidden = false;
@@ -533,7 +550,7 @@ async function prepareLiveUpdates(matchId) {
   renderMatchPanel();
   showLiveUpdates(match);
   clearInterval(matchTimer);
-  matchTimer = setInterval(() => { if (!document.hidden) loadMatchPanel(matchId); }, 15000);
+  matchTimer = setInterval(() => { if (!document.hidden) loadMatchPanel(activeMatchId); }, 15000);
   return true;
 }
 
@@ -581,13 +598,15 @@ async function start() {
     if (!response.ok) throw new Error('تعذر فتح جلسة المشاهدة.');
     const data = await response.json();
     if (!data.token || !(data.expiresIn > 0)) throw new Error('تعذر إنشاء جلسة المشاهدة.');
-    return { token: data.token, singleQuality: data.singleQuality === true, qualities: data.qualities || [], channelName: data.channelName || ticket.channelName || '', matchId, expiresAt: Date.now() + data.expiresIn * 1000 };
+    const resolvedMatchId = decodeJwtPayload(data.token).matchId;
+    if (!resolvedMatchId || (resolvedMatchId !== matchId && publicMatchId(resolvedMatchId) !== matchId)) throw new Error('Match identity mismatch');
+    return { token: data.token, singleQuality: data.singleQuality === true, qualities: data.qualities || [], channelName: data.channelName || ticket.channelName || '', matchId: resolvedMatchId, expiresAt: Date.now() + data.expiresIn * 1000 };
   };
   if (embeddedMatchId) {
-    activeMatchId = embeddedMatchId;
+    activeMatchId = currentMatchInfo?.matchId || embeddedMatchId;
     rememberMatchId(activeMatchId);
     const stored = readStoredSession();
-    session = isUsableSession(stored, embeddedMatchId) ? stored : await createSessionForMatch(embeddedMatchId);
+    session = isUsableSession(stored, activeMatchId) ? stored : await createSessionForMatch(activeMatchId);
     try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
   } else if (entry) {
     activeMatchId = decodeJwtPayload(entry).matchId || '';
@@ -631,6 +650,7 @@ async function start() {
   if (!session?.token || session.expiresAt <= Date.now()) throw new Error('انتهت جلسة المشاهدة. افتح المباراة من الموقع للمتابعة.');
   hlsSessionToken = session.token;
   activeMatchId = session.matchId;
+  replacePublicMatchUrl(activeMatchId);
   rememberMatchId(activeMatchId);
   sessionExpiresAt = session.expiresAt;
   availableQualities = Array.isArray(session.qualities) ? session.qualities : [];

@@ -14,6 +14,7 @@ import { singleQualityManifest } from './single-quality.js';
 import { diagnosticPlayback, registerMultiview } from './multiview.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
 import { matchPlaybackState as providerPlaybackState } from '../shared/match-lifecycle.mjs';
+import { resolvePublicMatchId } from '../shared/public-match-id.mjs';
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
@@ -697,10 +698,17 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     ].map((url) => String(url || '').trim()).filter(Boolean);
     return [...new Set(urls)];
   };
+  const resolveRequestedMatchId = async (origin, value) => {
+    const requested = String(value || '').trim();
+    if (!/^\d{20}$/.test(requested)) return requested;
+    return resolvePublicMatchId(requested, await config.getMatchesForOrigin(origin));
+  };
   app.get('/api/config', async (req, res) => {
     try {
       const source = config.sourceForOrigin(originFromHeader(req.headers.origin));
-      const playback = await config.getPlaybackForSource(source, String(req.query.matchId || ''));
+      const matchId = await resolveRequestedMatchId(originFromHeader(req.headers.origin), req.query.matchId);
+      if (req.query.matchId && !matchId) return res.status(404).json({ is_streaming_active: false });
+      const playback = await config.getPlaybackForSource(source, matchId);
       res.json({ is_streaming_active: playback.is_streaming_active, reason: playback.reason || null });
     }
     catch { res.status(503).json({ is_streaming_active: false }); }
@@ -728,9 +736,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   });
   app.get('/api/match-info', async (req, res) => {
     try {
-      const matchId = String(req.query.matchId || '').trim();
-      if (!matchId || matchId.length > 160) return res.sendStatus(400);
+      const requested = String(req.query.matchId || '').trim();
+      if (!requested || requested.length > 160) return res.sendStatus(400);
       const origin = originFromHeader(req.headers.origin) || originFromHeader(req.headers.referer);
+      const matchId = await resolveRequestedMatchId(origin, requested);
+      if (!matchId) return res.sendStatus(404);
       const match = (await config.getMatchesForOrigin(origin, matchId))
         .map((row) => normalizeMatch(row, config))
         .find((item) => (item.matchId === matchId || item.match_id === matchId) && allowedMatch(item));
@@ -744,7 +754,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       requireOrigin(req, tokenOrigins);
       const source = config.sourceForOrigin(originFromHeader(req.headers.origin));
-      const requestedMatchId = String(req.body.matchId || '');
+      const requested = String(req.body.matchId || '').trim();
+      if (!requested || requested.length > 160) return res.sendStatus(400);
+      const requestedMatchId = await resolveRequestedMatchId(originFromHeader(req.headers.origin), requested);
+      if (!requestedMatchId) return res.status(404).json({ error: 'match_unavailable' });
       let playback = await config.getPlaybackForSource(source, requestedMatchId);
       if (!playback.is_streaming_active && playback.reason === 'source_unavailable' && config.refreshProviderCatalog) {
         config.refreshProviderCatalog();

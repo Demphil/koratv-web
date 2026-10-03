@@ -2,17 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { publicMatchId } from '../../shared/public-match-id.mjs';
 
 test('public embed URLs carry match identity, never the current viewer ticket', () => {
   const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
   const block = source.slice(source.indexOf('function embedSrc()'), source.indexOf('function openEmbedModal()'));
   const code = vm.runInNewContext(`${block}; iframeCode()`, {
     activeMatchId: 'kooora_المغرب_vs_فرنسا', embeddedMatchId: '', entry: 'private-token',
-    window: { location: { origin: 'https://fabor.sbs' } }, URL,
+    window: { location: { origin: 'https://fabor.sbs' } }, URL, publicMatchId,
   });
   assert.match(code, /watch\.html\?match=/);
   assert.doesNotMatch(code, /private-token|[?&]k=/);
-  assert.equal(new URL(code.match(/src="([^"]+)"/)[1]).searchParams.get('match'), 'kooora_المغرب_vs_فرنسا');
+  assert.equal(new URL(code.match(/src="([^"]+)"/)[1]).searchParams.get('match'), publicMatchId('kooora_المغرب_vs_فرنسا'));
+  assert.doesNotMatch(code, /kooora_|المغرب|فرنسا/);
 });
 
 test('public frames are allowed without relaxing the token issuer origin boundary', () => {
@@ -28,8 +30,8 @@ test('public frames are allowed without relaxing the token issuer origin boundar
   }
   assert.match(app, /requireOrigin\(req, tokenOrigins\)/);
   const player = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
-  assert.match(player, /createSessionForMatch\(embeddedMatchId\)/);
-  assert.match(player, /isUsableSession\(stored, embeddedMatchId\)/);
+  assert.match(player, /createSessionForMatch\(activeMatchId\)/);
+  assert.match(player, /isUsableSession\(stored, activeMatchId\)/);
 });
 
 test('session recovery never selects an arbitrary live match', () => {
@@ -86,11 +88,12 @@ test('both frontends navigate straight to the player with the exact match identi
     const end = text.indexOf('function setupSecurePlayerLinks()', start);
     const id = 'kooora_2026-10-03_كرواتيا_vs_انجلترا';
     const result = vm.runInNewContext(text.slice(start, end) + ';playerUrlForMatch(id)', {
-      URL, id, PLAYER_ORIGIN: 'https://fabor.sbs', PLAYER_PATH: '/739184.html'
+      URL, id, opaqueWatchId: publicMatchId, PLAYER_ORIGIN: 'https://fabor.sbs', PLAYER_PATH: '/739184.html'
     });
     const url = new URL(result);
     assert.equal(url.origin, 'https://fabor.sbs');
-    assert.equal(url.searchParams.get('match'), id);
+    assert.equal(url.searchParams.get('match'), publicMatchId(id));
+    assert.match(url.searchParams.get('match'), /^\d{20}$/);
     assert.doesNotMatch(text, /about:blank|playerTab\.document|api\/generate-token/);
     assert.match(text, /target="_blank" rel="noopener noreferrer" data-secure-match-id/);
   }

@@ -308,18 +308,18 @@ function matchIdentity(match) {
 }
 
 function opaqueWatchId(value) {
-  let hash = 0x811c9dc5;
+  let hash = 0xcbf29ce484222325n;
   const text = String(value || '');
   for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
+    hash ^= BigInt(text.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
   }
-  return String(hash).padStart(10, '0');
+  return String(hash).padStart(20, '0');
 }
 
 function playerUrlForMatch(matchId) {
   const url = new URL(PLAYER_PATH, PLAYER_ORIGIN);
-  url.searchParams.set('match', matchId);
+  url.searchParams.set('match', opaqueWatchId(matchId));
   return url.href;
 }
 

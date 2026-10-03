@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 import { createApp } from '../app.js';
+import { publicMatchId } from '../../shared/public-match-id.mjs';
 
 test('a known channel is not advertised as ready until its resource is prepared', async t => {
   const config = { secret: 'test-secret-longer-than-32-characters', hmacSecret: 'independent-hmac-longer-than-32-characters',
@@ -164,6 +165,15 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   const entry = await (await request('/api/generate-token', config.frontend, { matchId: 'match-1' })).json();
   assert.equal((await request('/api/generate-token', config.frontend, { matchId: 'different-match' })).status, 409);
   assert.equal((await request('/api/generate-token', config.player, { matchId: 'match-1' })).status, 200);
+  const numericId = publicMatchId('match-1');
+  const numericInfo = await request(`/api/match-info?matchId=${numericId}`, config.player);
+  assert.equal(numericInfo.status, 200);
+  assert.equal((await numericInfo.json()).match.matchId, 'match-1');
+  const numericTicket = await request('/api/generate-token', config.player, { matchId: numericId });
+  assert.equal(numericTicket.status, 200);
+  assert.equal(jwt.decode((await numericTicket.json()).token).matchId, 'match-1');
+  assert.equal((await request('/api/match-info?matchId=00000000000000000000', config.player)).status, 404);
+  assert.equal((await request('/api/generate-token', config.player, { matchId: '00000000000000000000' })).status, 404);
   assert.equal(entry.expiresIn, 300);
   assert.equal(jwt.decode(entry.token).stream_url, undefined);
   assert.equal((await request('/api/redeem-token', config.player, { token: entry.token }, '203.0.113.2')).status, 403);
