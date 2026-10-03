@@ -57,6 +57,18 @@ function entrySearchText(entry) {
   return normalizeName(`${entry.name} ${entry.group || ''}`);
 }
 
+export const CHANNEL_MATCH_POLICY_VERSION = 2;
+
+export function beinRegion(value) {
+  const text = String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/\b(?:fr|fra|france|french|francais)\b/.test(text)) return 'fr';
+  if (/\b(?:eng|english|en|uk|gb)\b/.test(text)) return 'en';
+  if (/\b(?:tr|tur|turkey|turkish)\b/.test(text)) return 'tr';
+  if (/\b(?:us|usa|ca|canada|au|australia|es|spain|id|indonesia|th|thailand|hk|hong kong)\b/.test(text)) return 'other';
+  if (/\b(?:ar|arab|arabic|mena|qa|qatar|sa|ksa)\b|عربي|العربي/.test(text)) return 'ar';
+  return '';
+}
+
 export function parseM3uText(text) {
   const lines = text.split(/\r?\n/);
   const entries = [];
@@ -89,14 +101,20 @@ export function parseM3uText(text) {
 
 function channelRule(name) {
   const normalized = normalizeName(name);
-  const number = normalized.match(/\b([1-9])\b/)?.[1];
-  const maxNumber = normalized.match(/\bmax\s*([1-9])\b/)?.[1] || (normalized.includes('max') ? number : '');
+  const number = normalized.match(/\b(\d{1,2})\b/)?.[1];
+  const maxNumber = normalized.match(/\bmax\s*(\d{1,2})\b/)?.[1] || (normalized.includes('max') ? number : '');
 
   if (normalized.includes('bein') && normalized.includes('max') && maxNumber) {
     return { required: ['bein', 'sport', 'max', maxNumber], preferred: ['hd', 'arab'] };
   }
   if (normalized.includes('bein') && normalized.includes('xtra')) {
-    return { required: ['bein', 'sport', 'xtra'], preferred: [number || '1'] };
+    return { required: ['bein', 'sport', 'xtra', ...(number ? [number] : [])], preferred: ['hd'] };
+  }
+  if (normalized.includes('bein') && normalized.includes('premium') && number) {
+    return { required: ['bein', 'sport', 'premium', number], preferred: ['hd'] };
+  }
+  if (normalized.includes('bein') && normalized.includes('connect')) {
+    return { required: ['bein', 'connect'], preferred: ['hd'] };
   }
   if (normalized.includes('bein') && number) {
     return { required: ['bein', 'sport', number], preferred: ['hd'] };
@@ -160,8 +178,8 @@ function channelRule(name) {
   return null;
 }
 
-function scoreEntry(entry, rule) {
-  const text = entry.search;
+function scoreEntry(entry, rule, requestedName = '') {
+  const text = entry.search || entrySearchText(entry);
   const raw = `${entry.rawName || entry.name} ${entry.group || ''}`.toLowerCase();
   const words = new Set(text.split(/\s+/));
   if (!rule.required.every((token) => words.has(token))) return -1;
@@ -169,15 +187,17 @@ function scoreEntry(entry, rule) {
     const nameWords = new Set(normalizeName(entry.name).split(/\s+/));
     const number = rule.required.find((token) => /^\d+$/.test(token));
     if (number && !nameWords.has(number)) return -1;
-    for (const variant of ['max', 'xtra', 'premium', 'eng', 'english']) {
+    for (const variant of ['max', 'xtra', 'premium', 'connect']) {
       if (nameWords.has(variant) !== rule.required.includes(variant)) return -1;
     }
-    if (/\b(?:france|french|turkey|turkish|usa|canada|australia)\b/i.test(raw)
-      || /^(?:fr|tr|us|ca|au)\s*[|:-]/i.test(entry.rawName || entry.name)) return -1;
+    const requestedRegion = beinRegion(requestedName) || 'ar';
+    const sourceRegion = beinRegion(raw);
+    if (sourceRegion !== requestedRegion) return -1;
   }
   if (rule.channelVariant === 'tnt' && !/\btnt\b/i.test(raw)) return -1;
   if (rule.channelVariant === 'sd' && !/(?:\bs\s*\/\s*d\b|\bsd\b)/i.test(raw)) return -1;
   let score = rule.required.length * 10;
+  if (rule.required.includes('bein') && beinRegion(raw) === 'ar') score += 100;
   for (const token of rule.preferred || []) {
     if (text.includes(token)) score += 3;
   }
@@ -198,7 +218,7 @@ function findByRule(name, entries) {
   let best = null;
   let bestScore = -1;
   for (const entry of entries) {
-    const score = scoreEntry(entry, rule);
+    const score = scoreEntry(entry, rule, name);
     if (score > bestScore) {
       best = entry;
       bestScore = score;
@@ -211,7 +231,7 @@ function findByRuleCandidates(name, entries, limit = 8) {
   const rule = channelRule(name);
   if (!rule) return [];
   return entries
-    .map((entry) => ({ entry, score: scoreEntry(entry, rule) }))
+    .map((entry) => ({ entry, score: scoreEntry(entry, rule, name) }))
     .filter((item) => item.score >= 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
@@ -221,6 +241,22 @@ function findByRuleCandidates(name, entries, limit = 8) {
 function pushUniqueEntry(target, entry) {
   if (!entry || target.some((item) => item.url === entry.url)) return;
   target.push(entry);
+}
+
+export function isProviderChannelCompatible(name, entry) {
+  const rule = channelRule(name);
+  if (rule?.required.includes('bein')) return scoreEntry(entry, rule, name) >= 0;
+  return true;
+}
+
+export function isCatalogChannelSourceVerified(name, row, providerId) {
+  const sourceName = row?.sourceNames?.[providerId] || '';
+  if (!/\bbein\b/i.test(`${name} ${sourceName}`)) return true;
+  // Old mappings lost the provider category, so their region cannot be trusted.
+  if (row?.sourcePolicyVersions?.[providerId] !== CHANNEL_MATCH_POLICY_VERSION) return false;
+  return Boolean(sourceName) && isProviderChannelCompatible(name, {
+    name: sourceName, rawName: sourceName, group: row.sourceGroups?.[providerId] || ''
+  });
 }
 
 export function matchChannels(streamNames, m3uEntries, options = {}) {
@@ -253,8 +289,9 @@ export function matchChannels(streamNames, m3uEntries, options = {}) {
       const rule = channelRule(name);
       if (rule?.required.includes('bein')) {
         for (let index = candidates.length - 1; index >= 0; index -= 1) {
-          if (scoreEntry(candidates[index], rule) < 0) candidates.splice(index, 1);
+          if (scoreEntry(candidates[index], rule, name) < 0) candidates.splice(index, 1);
         }
+        candidates.sort((a, b) => scoreEntry(b, rule, name) - scoreEntry(a, rule, name));
       }
       const entry = candidates[0] || findByRule(name, m3uEntries);
       if (!entry) return null;

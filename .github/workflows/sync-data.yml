@@ -139,7 +139,7 @@ jobs:
                 const apps=JSON.parse(execFileSync("pm2",["jlist"],{encoding:"utf8"}));
                 for(const app of apps){
                   const env=app.pm2_env||{};
-                  if(env.pm_cwd==="/home/ubuntu/iptv-system/secure-streaming" && /[\\/]match-sync-cron\.js$/.test(env.pm_exec_path||""))
+                  if(env.pm_exec_path==="/home/ubuntu/iptv-system/secure-streaming/scripts/match-sync-cron.js")
                     execFileSync("pm2",["restart",String(app.pm_id)],{stdio:"inherit"});
                 }
               '
@@ -151,6 +151,7 @@ jobs:
             ln -s /etc/koratv/gateway.env .env
             npm ci --omit=dev --no-audit --fund=false
             flock -w 300 /etc/koratv/provider-catalog.lock node --env-file=.env scripts/sync-provider-pool.js
+            node --env-file=.env scripts/verify-channel-mappings.mjs
             flock -w 300 /etc/koratv/direct-match-route-state.lock node --env-file=.env scripts/maintenance-sync.js
             flock -w 300 /etc/koratv/match-resource-assignment.lock bash -c '
               set -e

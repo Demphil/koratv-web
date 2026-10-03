@@ -68,7 +68,8 @@ test('catalog refresh invalidates negative name matches without discarding healt
   const catalog = createProviderCatalog({ PROVIDER_CATALOG_PATH: path });
   assert.equal(catalog.resolve('beIN SPORTS HD 1'), null);
   writeFileSync(path, JSON.stringify({ providers: { A: { enabled: true } },
-    channels: { 'Sports One': { A: 'https://provider.example/live.m3u8', sourceNames: { A: 'beIN SPORTS HD 1' } } } }));
+    channels: { 'Sports One': { A: 'https://provider.example/live.m3u8', sourceNames: { A: 'beIN SPORTS HD 1' },
+      sourceGroups: { A: 'AR | SPORTS' }, sourcePolicyVersions: { A: 2 } } } }));
   catalog.refreshNow();
   assert.equal(catalog.resolve('beIN SPORTS HD 1'), 'Sports One');
   writeFileSync(path, '{');
@@ -89,7 +90,8 @@ test('provider catalog resolves Kooora broadcaster aliases against source names'
       },
       'beIN Connect HD': {
         B: 'https://b.example/connect.m3u8',
-        sourceNames: { B: 'AR | beIN SPORTS CONNECT FHD' }
+        sourceNames: { B: 'AR | beIN SPORTS CONNECT FHD' },
+        sourceGroups: { B: 'AR | SPORTS' }, sourcePolicyVersions: { B: 2 }
       }
     }
   }));

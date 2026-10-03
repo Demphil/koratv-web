@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import { findChannelNameMatch, createChannelNameMatcher } from '../shared/channel-name-match.mjs';
-import { normalizeName } from '../shared/provider-channel-match.mjs';
+import { normalizeName, beinRegion, isProviderChannelCompatible, isCatalogChannelSourceVerified } from '../shared/provider-channel-match.mjs';
 import { PROVIDER_IDS } from './provider-pool.js';
 
 export function selectProviderChannel(match) {
@@ -12,8 +12,11 @@ export function selectProviderChannel(match) {
     return requestedWords.length > 0 && requestedWords.every((word) => sourceWords.has(word));
   };
   return [...(match.candidates || [])]
-    .filter(candidate => providerNameMatches(candidate.source_name))
-    .sort((a, b) => qualityRank(a) - qualityRank(b) || a.source_name.localeCompare(b.source_name))[0] || null;
+    .filter(candidate => providerNameMatches(candidate.source_name)
+      && isProviderChannelCompatible(match.name, { name: candidate.source_name, group: candidate.group || '' }))
+    .sort((a, b) => Number(beinRegion(`${b.source_name} ${b.group || ''}`) === 'ar')
+      - Number(beinRegion(`${a.source_name} ${a.group || ''}`) === 'ar')
+      || qualityRank(a) - qualityRank(b) || a.source_name.localeCompare(b.source_name))[0] || null;
 }
 
 export function createProviderCatalog(env = process.env) {
@@ -32,7 +35,8 @@ export function createProviderCatalog(env = process.env) {
       return value;
     } catch { return previous; }
   };
-  const hasEnabledSources = (name) => PROVIDER_IDS.some((id) => catalog.providers?.[id]?.enabled && catalog.channels?.[name]?.[id]);
+  const hasEnabledSources = (name) => PROVIDER_IDS.some((id) => catalog.providers?.[id]?.enabled
+    && catalog.channels?.[name]?.[id] && isCatalogChannelSourceVerified(name, catalog.channels[name], id));
   const assignmentFor = (matchId) => {
     const id = String(matchId || '').trim();
     if (!id) return null;
@@ -77,8 +81,9 @@ export function createProviderCatalog(env = process.env) {
       for (const [name, entry] of Object.entries(catalog.channels || {})) {
         if (!hasEnabledSources(name)) continue;
         channelAliases.push({ alias: name, name });
-        for (const sourceName of Object.values(entry?.sourceNames || {})) {
-          if (sourceName) sourceAliases.push({ alias: sourceName, name });
+        for (const [id, sourceName] of Object.entries(entry?.sourceNames || {})) {
+          if (sourceName && catalog.providers?.[id]?.enabled && entry[id]
+            && isCatalogChannelSourceVerified(name, entry, id)) sourceAliases.push({ alias: sourceName, name });
         }
       }
       sourceMatcher = createChannelNameMatcher(sourceAliases.map(row => row.alias));
@@ -161,7 +166,10 @@ export function createProviderCatalog(env = process.env) {
     sources(channel) {
       refresh(); const resolved = resolve(channel), sources = {};
       for (const id of PROVIDER_IDS) {
-        if (resolved && catalog.providers?.[id]?.enabled && catalog.channels?.[resolved]?.[id]) sources[id] = catalog.channels[resolved][id];
+        if (resolved && catalog.providers?.[id]?.enabled && catalog.channels?.[resolved]?.[id]
+          && isCatalogChannelSourceVerified(resolved, catalog.channels[resolved], id)
+          && isProviderChannelCompatible(channel, { name: catalog.channels[resolved].sourceNames?.[id] || resolved,
+            group: catalog.channels[resolved].sourceGroups?.[id] || '' })) sources[id] = catalog.channels[resolved][id];
       }
       return sources;
     },

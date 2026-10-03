@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findChannelNameMatch } from '../../shared/channel-name-match.mjs';
 import { broadcastChannelCandidates, normalizeBroadcastChannel } from '../../shared/match-broadcasts.mjs';
+import { isCatalogChannelSourceVerified } from '../../shared/provider-channel-match.mjs';
 
 const DEFAULT_POOL_DIR = '/etc/koratv';
 const DEFAULT_TIMEZONE = 'Africa/Casablanca';
@@ -48,7 +49,8 @@ export function buildAvailableRoutes(providerCatalog = {}) {
   return Object.entries(providerCatalog.channels || {})
     .map(([catalogName, entry]) => {
       const providerIds = Object.keys(entry || {})
-        .filter((key) => key !== 'sourceNames' && providers[key]?.enabled && entry[key]);
+        .filter((key) => providers[key]?.enabled && entry[key]
+          && isCatalogChannelSourceVerified(catalogName, entry, key));
       if (!providerIds.length) return null;
       const sourceNames = Object.fromEntries(providerIds
         .map((id) => [id, entry.sourceNames?.[id] || catalogName]));

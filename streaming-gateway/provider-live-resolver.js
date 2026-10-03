@@ -47,14 +47,13 @@ export function createProviderLiveResolver({
     const names = uniqueNames(requestedNames);
     if (!names.length) return null;
 
-    const cacheKey = `${names.map((name) => name.toLowerCase()).sort().join('|')}::${[...(options.providerIds || [])].sort().join(',')}`;
+    const cacheKey = `${names.map((name) => name.toLowerCase()).join('|')}::${[...(options.providerIds || [])].sort().join(',')}`;
     const cached = cache.get(cacheKey);
     if (!options.fresh && cached && cached.expiresAt > Date.now()) return cached.value;
 
     const providerAccounts = typeof accounts === 'function' ? accounts() || {} : {};
     const privateCredentials = loadPrivateCredentials();
-    const providerSources = {};
-    const resolvedChannels = new Set();
+    const sourcesByChannel = new Map();
     const attempts = [];
 
     const allowedProviders = Array.isArray(options.providerIds) && options.providerIds.length
@@ -79,14 +78,16 @@ export function createProviderLiveResolver({
       try {
         const result = await discoverProvider(credentials, origins, names, { fetchImpl, retry: 1 });
         const chosen = result.selected?.[0]?.chosen;
-        if (chosen?.url) {
-          providerSources[providerId] = chosen.url;
-          resolvedChannels.add(result.selected[0].name || chosen.name);
+        for (const selected of result.selected || []) {
+          if (!selected.chosen?.original_url) continue;
+          const sources = sourcesByChannel.get(selected.name) || {};
+          sources[providerId] = selected.chosen.original_url;
+          sourcesByChannel.set(selected.name, sources);
         }
         attempts.push({
           provider: providerId,
-          status: chosen?.url ? 'matched' : 'unmatched',
-          matched: chosen?.name || null,
+          status: chosen?.original_url ? 'matched' : 'unmatched',
+          matched: chosen?.source_name || null,
           upstreamAttempts: (result.attempts || []).map((attempt) => ({
             origin: attempt.origin,
             status: attempt.status || null,
@@ -103,10 +104,12 @@ export function createProviderLiveResolver({
       if (staggerMs > 0) await sleep(staggerMs);
     }
 
+    const resolvedChannel = names.find(name => Object.keys(sourcesByChannel.get(name) || {}).length) || null;
+    const providerSources = sourcesByChannel.get(resolvedChannel) || {};
     const value = Object.keys(providerSources).length
       ? {
           requestedChannels: names,
-          resolvedChannel: [...resolvedChannels][0] || names[0],
+          resolvedChannel,
           provider_sources: providerSources,
           attempts,
           source: 'live-provider-resolver',
@@ -120,7 +123,7 @@ export function createProviderLiveResolver({
 
   return {
     resolve(requestedNames, options = {}) {
-      const key = `${uniqueNames(requestedNames).map(name => name.toLowerCase()).sort().join('|')}::${[...(options.providerIds || [])].sort().join(',')}`;
+      const key = `${uniqueNames(requestedNames).map(name => name.toLowerCase()).join('|')}::${[...(options.providerIds || [])].sort().join(',')}`;
       if (inflight.has(key)) return inflight.get(key);
       const promise = discover(requestedNames, options).finally(() => {
         if (inflight.get(key) === promise) inflight.delete(key);

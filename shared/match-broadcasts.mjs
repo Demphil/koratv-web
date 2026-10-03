@@ -1,4 +1,5 @@
 import { normalizeTeamName } from './league-whitelist.mjs';
+import { beinRegion } from './provider-channel-match.mjs';
 
 const normalize = (name) => normalizeTeamName(name).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const identities = new Map();
@@ -77,6 +78,22 @@ export function normalizeBroadcastChannel(name) {
   return value.replace(/^beIN Sports Mena\s*(\d+)$/i, 'beIN SPORTS HD $1');
 }
 
+export function preferredBroadcastChannels(names) {
+  const isArabic = (name) => {
+    if (/\bbein\b/i.test(name)) {
+      const region = beinRegion(name);
+      return region === 'ar' || (!region && !/\bconnect\b/i.test(name));
+    }
+    return /[\u0600-\u06ff]/u.test(name)
+      || /\b(?:arryadia|arriadia|snrt|ssc|al.?kass|abu dhabi sports|dubai sports|on time sports|nile sports|saudi sports|ksa sports|kuwait sports|oman sports|jordan sports|mbc action)\b/i.test(name);
+  };
+  return [...new Set((names || []).filter(name => typeof name === 'string' && name.trim())
+    .map(normalizeBroadcastChannel).filter(Boolean))]
+    .map((name, index) => ({ name, index, arabic: isArabic(name) }))
+    .sort((a, b) => Number(b.arabic) - Number(a.arabic) || a.index - b.index)
+    .map(({ name }) => name);
+}
+
 export function broadcastSnapshot(row, checkedAt = new Date().toISOString()) {
   const names = row.payload?.channels ?? row.payload?.sourceChannels;
   if (!Array.isArray(names)) return null;
@@ -93,7 +110,7 @@ export function broadcastSnapshot(row, checkedAt = new Date().toISOString()) {
 
 function applyBroadcast(row, broadcast) {
   const channels = broadcast?.channels || [];
-  const preferred = channels.find((name) => /beIN Sports Mena/i.test(name)) || channels[0];
+  const preferred = preferredBroadcastChannels(channels)[0];
   const channel = normalizeBroadcastChannel(preferred) || null;
   return {
     ...row, channel,
@@ -149,14 +166,7 @@ export function mergeRefreshedMatch(existing, incoming, now = Date.now()) {
 export function broadcastChannelCandidates(row) {
   const snapshot = row.payload?.broadcast;
   if (snapshot?.source !== 'kooora') return [];
-  const names = snapshot.channels;
-  const isArabicBroadcaster = (name) => /[\u0600-\u06ff]/u.test(name)
-    || (/\bbein\b/i.test(name) && !/\b(?:eng|english|fr|french|turkish)\b/i.test(name))
-    || /\b(?:arryadia|arriadia|snrt|ssc|al.?kass|abu dhabi sports|dubai sports|on time sports|nile sports|saudi sports|ksa sports|kuwait sports|oman sports|jordan sports)\b/i.test(name);
-  return [...new Set((names || []).filter((name) => typeof name === 'string' && name.trim()).map(normalizeBroadcastChannel))]
-    .map((name, index) => ({ name, index, arabic: isArabicBroadcaster(name) }))
-    .sort((left, right) => Number(right.arabic) - Number(left.arabic) || left.index - right.index)
-    .map(({ name }) => name);
+  return preferredBroadcastChannels(snapshot.channels);
 }
 
 function moroccoDateKey(value) {

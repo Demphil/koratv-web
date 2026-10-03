@@ -9,8 +9,8 @@ test('route matcher ignores quality labels while preserving channel numbers', ()
   const routes = buildAvailableRoutes({
     providers: { A: { enabled: true }, B: { enabled: true } },
     channels: {
-      'beIN SPORTS HD 1': { A: 'hidden', sourceNames: { A: 'AR beIN Sports 1 FHD' } },
-      'beIN SPORTS HD 2': { B: 'hidden', sourceNames: { B: 'AR beIN Sports 2 4K' } },
+      'beIN SPORTS HD 1': { A: 'hidden', sourceNames: { A: 'AR beIN Sports 1 FHD' }, sourceGroups: { A: 'AR' }, sourcePolicyVersions: { A: 2 } },
+      'beIN SPORTS HD 2': { B: 'hidden', sourceNames: { B: 'AR beIN Sports 2 4K' }, sourceGroups: { B: 'AR' }, sourcePolicyVersions: { B: 2 } },
     },
   });
   assert.equal(resolveRouteName('beIN Sports Mena 1', routes).matchedName, 'beIN SPORTS HD 1');

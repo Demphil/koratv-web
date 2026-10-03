@@ -3,7 +3,7 @@ import * as cheerio from "cheerio";
 import { fileURLToPath } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
 import { isAllowedMatch, normalizeTeamName } from "../../shared/league-whitelist.mjs";
-import { reconcileBroadcasts, mergeRefreshedMatch, sameFixture } from "../../shared/match-broadcasts.mjs";
+import { reconcileBroadcasts, mergeRefreshedMatch, sameFixture, preferredBroadcastChannels } from "../../shared/match-broadcasts.mjs";
 import { pruneMatchData } from './prune-match-data.js';
 import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
 import { normalizeKnockoutFixtures } from '../../shared/knockout.mjs';
@@ -728,7 +728,7 @@ export function parseKoooraMatches(html) {
         : 'VS';
       const channelNames = koooraChannelNamesForMatch($, match);
       const preferredChannel = normalizeKoooraChannel(
-        channelNames.find((name) => /beIN Sports Mena/i.test(name)) || channelNames[0]
+        preferredBroadcastChannels(channelNames)[0]
       );
       const date = String(kickoff).slice(0, 10);
       const baseMatchId = matchSlug(homeTeam, awayTeam);
@@ -792,7 +792,7 @@ async function enrichKoooraRowsWithScheduleChannels(rows) {
     const channels = match?.payload?.channels || [];
     if (!channels.length) continue;
     const preferredChannel = normalizeKoooraChannel(
-      channels.find((name) => /beIN Sports Mena/i.test(name)) || channels[0]
+      preferredBroadcastChannels(channels)[0]
     );
     row.channel = preferredChannel;
     row.payload = {
@@ -958,7 +958,7 @@ async function enrichKoooraRowsWithDetailChannels(rows) {
       const channels = extractKoooraBroadcastChannelsFromHtml(html, row.payload?.sourceMatchId || '');
       if (!channels.length) continue;
       const preferredChannel = normalizeKoooraChannel(
-        channels.find((name) => /beIN Sports Mena/i.test(name)) || channels[0]
+        preferredBroadcastChannels(channels)[0]
       );
       row.channel = preferredChannel;
       row.payload = {
