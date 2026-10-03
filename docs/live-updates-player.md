@@ -29,3 +29,18 @@ Validation:
 The browser test uses synthetic match metadata, checks 1366, 390, and 320-pixel
 viewports, captures standalone and embedded screenshots, and rejects any
 streaming-session or provider-resource request in text mode.
+
+Production verification on 2026-10-03:
+
+- Gateway/player deployment: Unified Data Refresh run `37146512256`, all jobs passed.
+- Fraja static deployment: run `37146503817`, passed.
+- Both public frontends provided exact-ID links for an unprepared live fixture.
+- Desktop and mobile text coverage appeared in 985-1384 ms, refreshed its
+  metadata, had no horizontal overflow, and issued zero streaming-resource calls.
+- Current unprepared fixtures had no upstream event details yet; the player
+  explicitly showed the pending-data message instead of inventing events.
+- A separate prepared Spain/Czechia broadcast decoded 1187 frames over a
+  49-second smoke test, with all playlist and media responses successful.
+  This is not a full-match reliability guarantee.
+
+`node scripts/audit-live-updates.cjs` repeats the public read-only checks.
