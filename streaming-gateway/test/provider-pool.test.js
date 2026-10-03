@@ -210,6 +210,7 @@ test('provider catalog exposes safe match assignment state without raw URLs', t 
       requestedChannel: 'beIN SPORTS HD 8',
       resolvedChannel: 'beIN SPORTS HD 8',
       priorityScore: 1100,
+      manual: true,
     }],
     ignored: [{
       matchId: 'match-2',
@@ -229,11 +230,14 @@ test('provider catalog exposes safe match assignment state without raw URLs', t 
     requestedChannel: 'beIN SPORTS HD 8',
     resolvedChannel: 'beIN SPORTS HD 8',
     priorityScore: 1100,
+    broadcastRank: 1,
+    manual: true,
     source: 'match-resource-assignment',
   });
   assert.equal(JSON.stringify(catalog.matchAssignment('match-1')).includes('https://'), false);
   assert.equal(catalog.matchAssignment('api-alias').providerId, 'B');
   assert.equal(catalog.matchAssignment('api-alias').matchId, 'api-alias');
+  assert.equal(catalog.matchAssignment('api-alias').broadcastRank, 1);
   assert.equal(catalog.matchAssignment('match-2').status, 'WAITING');
 });
 

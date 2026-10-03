@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, readFile, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { installManualSelection } from '../scripts/install-manual-selection.mjs';
+
+test('manual publication is validated, backed up, and can return to automatic mode', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'manual-choice-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const input = join(dir, 'input.json'), target = join(dir, 'selection.json');
+  const env = { MANUAL_MATCH_SELECTION_PATH: target, MANUAL_SELECTION_BACKUP_DIR: join(dir, 'backups') };
+  const legacy = { enabled: true, matches: ['legacy'] };
+  await writeFile(target, JSON.stringify(legacy));
+  const choice = { enabled: false, source: 'repository-manual-selection', date: '2026-10-03', matches: [] };
+  await writeFile(input, JSON.stringify(choice));
+  assert.equal((await installManualSelection(input, env)).preservedLegacySelection, true);
+  assert.deepEqual(JSON.parse(await readFile(target)), legacy);
+  choice.enabled = true; choice.matches = ['chosen'];
+  await writeFile(input, JSON.stringify(choice));
+  assert.equal((await installManualSelection(input, env)).selectedCount, 1);
+  assert.deepEqual(JSON.parse(await readFile(target)).matches, ['chosen']);
+  assert.equal((await readdir(env.MANUAL_SELECTION_BACKUP_DIR)).length, 1);
+  choice.matches = Array(9).fill('bad');
+  await writeFile(input, JSON.stringify(choice));
+  await assert.rejects(installManualSelection(input, env), /Invalid/);
+  assert.deepEqual(JSON.parse(await readFile(target)).matches, ['chosen']);
+  choice.enabled = false; choice.matches = [];
+  await writeFile(input, JSON.stringify(choice));
+  assert.equal((await installManualSelection(input, env)).enabled, false);
+});

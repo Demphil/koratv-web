@@ -74,10 +74,13 @@ test('match info exposes assignment and text mode without invoking playback reso
   assert.equal(match.resourceStatus, 'WAITING');
   assert.equal(match.sourceReady, false);
   assert.equal(match.events.length, 1);
-  row.source_ready = true; row.resource_status = 'ASSIGNED';
+  row.source_ready = true; row.resource_status = 'ASSIGNED'; row.broadcast_rank = 2; row.manually_selected = true;
   response = await fetch(`${base}/api/match-info?matchId=exact-match`);
   ({ match } = await response.json());
   assert.equal(match.viewingMode, 'stream');
   assert.equal(match.sourceReady, true);
+  assert.equal(match.broadcastRank, 2);
+  assert.equal(match.manuallySelected, true);
+  assert.equal(match.providerId, undefined);
   assert.equal((await fetch(`${base}/api/match-info?matchId=wrong-match`)).status, 404);
 });

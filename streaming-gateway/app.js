@@ -158,6 +158,8 @@ function normalizeMatch(row, config) {
     sourceReady: sourceAvailable && playbackState === 'live',
     sourceAvailable,
     resourceStatus: row.resource_status || null,
+    broadcastRank: row.broadcast_rank || null,
+    manuallySelected: row.manually_selected === true,
     viewingMode: playbackState === 'live' ? (sourceAvailable ? 'stream' : 'live_updates') : playbackState,
     playbackState,
     isLive: playbackState === 'live',
@@ -257,6 +259,7 @@ function normalizeMatchName(value) {
 
 function matchCompletenessScore(match) {
   let score = 0;
+  if (match.resourceStatus === 'ASSIGNED') score += 100;
   if (match.sourceReady) score += 20;
   if (match.sourceAvailable) score += 10;
   if (match.playbackState === 'live') score += 12;

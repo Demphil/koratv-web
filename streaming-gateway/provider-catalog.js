@@ -36,7 +36,8 @@ export function createProviderCatalog(env = process.env) {
   const assignmentFor = (matchId) => {
     const id = String(matchId || '').trim();
     if (!id) return null;
-    const assigned = (assignments.assignments || []).find((item) => String(item?.matchId || '') === id || item?.aliases?.includes(id));
+    const assignedIndex = (assignments.assignments || []).findIndex((item) => String(item?.matchId || '') === id || item?.aliases?.includes(id));
+    const assigned = assignments.assignments?.[assignedIndex];
     if (assigned?.providerId && assigned?.resolvedChannel) {
       return {
         matchId: id,
@@ -45,6 +46,8 @@ export function createProviderCatalog(env = process.env) {
         requestedChannel: assigned.requestedChannel || null,
         resolvedChannel: String(assigned.resolvedChannel).trim(),
         priorityScore: Number(assigned.priorityScore || 0),
+        broadcastRank: assignedIndex + 1,
+        manual: assigned.manual === true,
         source: 'match-resource-assignment',
       };
     }

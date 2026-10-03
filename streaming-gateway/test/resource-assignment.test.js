@@ -120,6 +120,23 @@ test('manual match selection is ignored when disabled or for another date', () =
   assert.deepEqual(parseManualMatchSelection({ enabled: true, date: '2026-10-03', matches: ['a'] }, { dateKey: '2026-10-02' }), []);
 });
 
+test('eight manual matches take all eight resources ahead of higher automatic scores', () => {
+  const providers = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+  const matches = Array.from({ length: 9 }, (_, index) => ({
+    match_id: `match-${index}`, home_team: `Home ${index}`, away_team: `Away ${index}`,
+    kickoff_time: '2026-10-03T19:00:00Z', payload: { national_team: index === 8 },
+  }));
+  const routeStates = Object.fromEntries(matches.map((match, index) => [match.match_id,
+    { status: 'RESOLVED', resolvedChannel: `Channel ${index}`, providerIds: providers }]));
+  const manualMatchIds = matches.slice(0, 8).map(match => match.match_id).reverse();
+  const plan = buildProjectAssignmentPlan({ matches, routeStates, manualMatchIds,
+    providerCatalog: { providers: Object.fromEntries(providers.map(id => [id, { enabled: true }])) }, maxResources: 8 });
+  assert.deepEqual(plan.assignments.map(item => item.matchId), manualMatchIds);
+  assert.equal(plan.assignments.every(item => item.manual), true);
+  assert.equal(new Set(plan.assignments.map(item => item.providerId)).size, 8);
+  assert.equal(plan.ignored[0].matchId, 'match-8');
+});
+
 test('bilingual feeds share one worker while manual selection and channel identity remain exact', () => {
   const matches = [
     { match_id: 'api-croatia', source: 'api-football', home_team: 'Croatia', away_team: 'England', kickoff_time: '2026-10-03T16:00:00Z' },

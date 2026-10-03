@@ -1,0 +1,58 @@
+name: Apply Manual Match Selection
+
+on:
+  push:
+    branches: [main]
+    paths: [manual-match-selection.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unified-data-sync
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate and merge choices from both projects
+        run: |
+          set -euo pipefail
+          node --test scripts/merge-manual-matches.test.cjs
+          mkdir -p _manual-sync
+          curl --fail --silent --show-error --retry 2 --max-time 15 \
+            https://raw.githubusercontent.com/Demphil/foottv6/main/manual-match-selection.json \
+            -o /tmp/fraja-manual-selection.json
+          node scripts/merge-manual-matches.cjs manual-match-selection.json \
+            /tmp/fraja-manual-selection.json _manual-sync/manual-match-selection.json
+          cp streaming-gateway/scripts/install-manual-selection.mjs _manual-sync/
+      - uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          source: _manual-sync
+          target: /tmp/koratv-manual-${{ github.run_id }}
+      - name: Apply shared choice without restarting streaming services
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          command_timeout: 7m
+          script: |
+            set -euo pipefail
+            STAGING="/tmp/koratv-manual-${{ github.run_id }}/_manual-sync"
+            cd /opt/koratv/current/streaming-gateway
+            flock -w 300 /etc/koratv/match-resource-assignment.lock bash -c '
+              set -e
+              node --env-file=.env "$1/install-manual-selection.mjs" "$1/manual-match-selection.json"
+              node --env-file=.env scripts/resource-assignment.js
+            ' bash "$STAGING"

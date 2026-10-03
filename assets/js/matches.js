@@ -294,6 +294,7 @@ function matchCanonicalKey(match) {
 
 function matchCompletenessScore(match) {
   let score = 0;
+  if (match.resourceStatus === 'ASSIGNED') score += 100;
   if (match.playbackState === 'live') score += 14;
   if (match.playbackState === 'ended') score += 8;
   if (match.homeTeam?.logo) score += 4;
@@ -391,6 +392,19 @@ function renderSection(container, matches, message) {
   }
 }
 
+function compareBroadcastPriority(a, b) {
+  const group = match => match.playbackState === 'ended' ? 3
+    : match.resourceStatus === 'ASSIGNED' ? 0
+    : match.sourceReady === true ? 1 : 2;
+  const difference = group(a) - group(b);
+  if (difference) return difference;
+  if (group(a) === 0) {
+    const rank = match => Number(match.broadcastRank) > 0 ? Number(match.broadcastRank) : Number.MAX_SAFE_INTEGER;
+    return rank(a) - rank(b);
+  }
+  return 0;
+}
+
 function renderMatchCollections(rawTodayMatches, rawTomorrowMatches) {
   hideLoading();
   const allMatches = dedupeMatches([...rawTodayMatches, ...rawTomorrowMatches]
@@ -407,6 +421,8 @@ function renderMatchCollections(rawTodayMatches, rawTomorrowMatches) {
   });
 
   function sortMatches(a, b) {
+      const broadcastOrder = compareBroadcastPriority(a, b);
+      if (broadcastOrder) return broadcastOrder;
       const diffA = (matchStartDate(a) - now) / 60000;
       const diffB = (matchStartDate(b) - now) / 60000;
       const durationA = getMatchDuration(a.league);

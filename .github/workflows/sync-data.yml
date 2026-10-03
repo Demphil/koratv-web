@@ -54,6 +54,11 @@ jobs:
           set -euo pipefail
           rm -rf _oracle-sync
           mkdir -p _oracle-sync
+          curl --fail --silent --show-error --retry 2 --max-time 15 \
+            https://raw.githubusercontent.com/Demphil/foottv6/main/manual-match-selection.json \
+            -o /tmp/fraja-manual-selection.json
+          node scripts/merge-manual-matches.cjs manual-match-selection.json \
+            /tmp/fraja-manual-selection.json _oracle-sync/manual-match-selection.json
           rsync -a streaming-gateway/ _oracle-sync/streaming-gateway/ \
             --exclude node_modules \
             --exclude dist \
@@ -110,7 +115,11 @@ jobs:
             npm ci --omit=dev --no-audit --fund=false
             flock -w 300 /etc/koratv/provider-catalog.lock node --env-file=.env scripts/sync-provider-pool.js
             flock -w 300 /etc/koratv/direct-match-route-state.lock node --env-file=.env scripts/maintenance-sync.js
-            flock -w 300 /etc/koratv/match-resource-assignment.lock node --env-file=.env scripts/resource-assignment.js
+            flock -w 300 /etc/koratv/match-resource-assignment.lock bash -c '
+              set -e
+              node --env-file=.env scripts/install-manual-selection.mjs "$1"
+              node --env-file=.env scripts/resource-assignment.js
+            ' bash "$STAGING/manual-match-selection.json"
             cd /opt/koratv/current
             pm2 delete iptv-app || true
             pm2 startOrReload ecosystem.oracle.config.js --env production --update-env

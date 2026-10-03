@@ -161,7 +161,7 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
         const catalogName = catalog?.resolve?.(name) || name;
         return catalog && hasCatalogSources(catalogName, assignedProviderIds) ? { name: catalogName } : null;
       }).find(Boolean);
-      return { row, channel, resourceStatus: assignmentIsCurrent ? assignment?.status : null };
+      return { row, channel, assignment: assignmentIsCurrent ? assignment : null };
     });
     const usedChannelNames = [...new Set(resolvedRows
       .map(({ channel }) => channel?.name)
@@ -173,11 +173,13 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
         .filter(([, ok]) => ok)
         .map(([name]) => name)
         .filter((name) => hasCatalogSources(name)));
-    return resolvedRows.map(({ row, channel, resourceStatus }) => ({
+    return resolvedRows.map(({ row, channel, assignment }) => ({
       ...row,
       channel: channel?.name || row.channel,
       source_ready: Boolean(channel && readyChannels.has(channel.name)),
-      resource_status: resourceStatus || null
+      resource_status: assignment?.status || null,
+      broadcast_rank: assignment?.status === 'ASSIGNED' ? assignment.broadcastRank || null : null,
+      manually_selected: assignment?.status === 'ASSIGNED' && assignment.manual === true
     }));
   };
 }
