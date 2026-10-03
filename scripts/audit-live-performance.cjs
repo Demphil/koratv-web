@@ -45,6 +45,10 @@ const output = path.resolve(__dirname, '../streaming-gateway/dist/qa-live');
       const url = new URL(response.url());
       if (['/api/stream.m3u8', '/api/resource', '/api/generate-token', '/api/redeem-token'].includes(url.pathname)) {
         media.push({ path: url.pathname, status: response.status() });
+        if (response.status() === 409 || response.status() === 503) {
+          const body = await response.json().catch(() => ({}));
+          console.log(JSON.stringify({ relayReset: { path: url.pathname, status: response.status(), reason: body.error } }));
+        }
       }
       if (url.pathname === '/api/stream.m3u8' && response.status() === 200) {
         const text = await response.text().catch(() => '');
@@ -57,9 +61,17 @@ const output = path.resolve(__dirname, '../streaming-gateway/dist/qa-live');
     await page.goto(watchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.exposeFunction('recordHlsError', value => console.log(JSON.stringify({ hlsError: value })));
     await page.waitForFunction(() => typeof hls !== 'undefined' && hls, { timeout: 30000 });
-    await page.evaluate(() => hls.on(Hls.Events.ERROR, (_, data) => recordHlsError({
-      type: data.type, details: data.details, fatal: data.fatal, code: data.response?.code, sn: data.frag?.sn,
-    })));
+    await page.evaluate(() => {
+      const observed = new WeakSet();
+      const observe = () => {
+        if (!hls || observed.has(hls)) return;
+        observed.add(hls);
+        hls.on(Hls.Events.ERROR, (_, data) => recordHlsError({
+          type: data.type, details: data.details, fatal: data.fatal, code: data.response?.code, sn: data.frag?.sn,
+        }));
+      };
+      observe(); setInterval(observe, 500);
+    });
     await page.evaluate(() => { const video = document.querySelector('video'); video.muted = true; video.play().catch(() => {}); });
     const state = () => page.evaluate(() => {
       const video = document.querySelector('video');
@@ -84,6 +96,10 @@ const output = path.resolve(__dirname, '../streaming-gateway/dist/qa-live');
         lastFrames = sample.frames;
         if (stagnantSamples >= 2) process.exitCode = 1;
         console.log(JSON.stringify({ playerSample: sample }));
+        if (i === 3 && process.env.PLAYER_TEST_RECOVERY === '1') {
+          await page.evaluate(() => scheduleReconnect('اختبار استعادة اتصال المشغل'));
+          console.log(JSON.stringify({ recoveryInjected: true, ms: sample.ms }));
+        }
       }
     } catch {
       console.log(JSON.stringify({ playerFailure: await state() }));
