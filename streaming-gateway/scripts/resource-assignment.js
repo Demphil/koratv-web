@@ -14,7 +14,19 @@ const DEFAULT_TIER_POINTS = {
 };
 const DEFAULT_POOL_DIR = '/etc/koratv';
 const DEFAULT_TIMEZONE = 'Africa/Casablanca';
-const SITE_MANUAL_KEYS = ['matches', 'koratv.click', 'koratv', 'frajatv.fun', 'frajatv', 'fraja.online', 'fraja'];
+const SITE_MANUAL_KEYS = [
+  'matches',
+  'koratv.click',
+  'koratv',
+  'fraja.online',
+  'www.fraja.online',
+  'frajatv.online',
+  'www.frajatv.online',
+  'frajatv.fun',
+  'www.frajatv.fun',
+  'frajatv',
+  'fraja'
+];
 
 function normalizeName(value) {
   return String(value || '')

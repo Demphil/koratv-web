@@ -12,6 +12,9 @@ const validHttpsOrigin = (value) => {
 };
 const requiredFrontendOrigins = [
   'https://fraja.online',
+  'https://www.fraja.online',
+  'https://frajatv.online',
+  'https://www.frajatv.online',
   'https://frajatv.fun',
   'https://www.frajatv.fun',
   'https://koratv.click',

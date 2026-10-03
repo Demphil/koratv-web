@@ -38,8 +38,11 @@ export function loadConfig(env = process.env) {
     .map((item) => item.trim())
     .filter(Boolean)
     .map((item) => publicOrigin(name, item)));
-  const koratvOrigins = publicOrigins('KORATV_FRONTEND_ORIGINS', env.KORATV_FRONTEND_ORIGINS || 'https://koratv.click,https://www.koratv.click');
-  const frajaOrigins = publicOrigins('FRAJA_FRONTEND_ORIGINS', env.FRAJA_FRONTEND_ORIGINS || 'https://fraja.online,https://www.fraja.online,https://frajatv.online,https://www.frajatv.online,https://frajatv.fun,https://www.frajatv.fun');
+  const mergeOriginLists = (...values) => values.filter(Boolean).join(',');
+  const defaultKoratvOrigins = 'https://koratv.click,https://www.koratv.click';
+  const defaultFrajaOrigins = 'https://fraja.online,https://www.fraja.online,https://frajatv.online,https://www.frajatv.online,https://frajatv.fun,https://www.frajatv.fun';
+  const koratvOrigins = publicOrigins('KORATV_FRONTEND_ORIGINS', mergeOriginLists(defaultKoratvOrigins, env.KORATV_FRONTEND_ORIGINS));
+  const frajaOrigins = publicOrigins('FRAJA_FRONTEND_ORIGINS', mergeOriginLists(defaultFrajaOrigins, env.FRAJA_FRONTEND_ORIGINS));
   const upstreamOrigin = (value) => {
     let url;
     try {
@@ -87,7 +90,7 @@ export function loadConfig(env = process.env) {
     hmacSecret,
     enableAntiBot: String(env.ENABLE_ANTI_BOT || 'true').trim().toLowerCase() !== 'false',
     frontend: publicOrigin('FRONTEND_ORIGIN', env.FRONTEND_ORIGIN || 'https://koratv.click'),
-    frontendOrigins: publicOrigins('FRONTEND_ORIGINS', env.FRONTEND_ORIGINS || env.FRONTEND_ORIGIN || 'https://fraja.online,https://www.fraja.online,https://frajatv.online,https://www.frajatv.online,https://frajatv.fun,https://www.frajatv.fun,https://koratv.click,https://www.koratv.click'),
+    frontendOrigins: publicOrigins('FRONTEND_ORIGINS', mergeOriginLists(defaultFrajaOrigins, defaultKoratvOrigins, env.FRONTEND_ORIGINS || env.FRONTEND_ORIGIN)),
     koratvOrigins,
     frajaOrigins,
     player: publicOrigin('PLAYER_ORIGIN', env.PLAYER_ORIGIN || 'https://fabor.sbs'),

@@ -66,6 +66,18 @@ test('Fraja frontend uses the Kooora feed so live cards inherit verified broadca
   assert.equal(config.sourceForOrigin('https://frajatv.fun'), 'kooora');
 });
 
+test('built-in frontend origins survive older Oracle environment overrides', () => {
+  const config = loadConfig({
+    ...valid,
+    FRONTEND_ORIGINS: 'https://koratv.click,https://frajatv.fun',
+    FRAJA_FRONTEND_ORIGINS: 'https://frajatv.fun'
+  });
+  assert.ok(config.frontendOrigins.has('https://fraja.online'));
+  assert.ok(config.frontendOrigins.has('https://frajatv.online'));
+  assert.equal(config.sourceForOrigin('https://fraja.online'), 'kooora');
+  assert.equal(config.sourceForOrigin('https://frajatv.online'), 'kooora');
+});
+
 test('Kora feed keeps Kooora primary and adds only allowed Gulf Cup API fixtures', async () => {
   const originalFetch = globalThis.fetch;
   const matchSourceFilters = [];
