@@ -132,16 +132,19 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
       const matchKey = row.match_id || row.id;
       const routeState = catalog?.matchRoute?.(matchKey);
       const assignment = catalog?.matchAssignment?.(matchKey);
-      const assignedProviderIds = assignment?.status === 'ASSIGNED' && assignment.providerId ? [assignment.providerId] : [];
+      const rowCandidates = channelCandidatesForRow(row);
+      const assignmentIsCurrent = resolvedChannelIsCurrentOrFallback(assignment?.resolvedChannel, rowCandidates, catalog);
+      const routeStateIsCurrent = resolvedChannelIsCurrentOrFallback(routeState?.resolvedChannel, rowCandidates, catalog);
+      const assignedProviderIds = assignment?.status === 'ASSIGNED' && assignmentIsCurrent && assignment.providerId ? [assignment.providerId] : [];
       const candidates = catalog?.override(row.match_id || row.id)
         ? [catalog.override(row.match_id || row.id)]
-        : assignment?.status === 'WAITING'
+        : assignment?.status === 'WAITING' && assignmentIsCurrent
           ? []
-        : assignment?.resolvedChannel
+        : assignment?.resolvedChannel && assignmentIsCurrent
           ? [assignment.resolvedChannel]
-        : routeState?.resolvedChannel
+        : routeState?.resolvedChannel && routeStateIsCurrent
           ? [routeState.resolvedChannel]
-          : channelCandidatesForRow(row);
+          : rowCandidates;
       const channel = candidates.map((name) => {
         const resolved = resolveChannel(name);
         if (resolved && hasCatalogSources(resolved.name, assignedProviderIds)) return resolved;
@@ -245,6 +248,24 @@ function filterProviderSources(sources = {}, providerIds = []) {
   return Object.fromEntries(Object.entries(sources || {}).filter(([id]) => allowed.has(String(id))));
 }
 
+function resolvedChannelMatchesCandidates(resolvedChannel, candidates = [], catalog = null) {
+  const expected = normalizeBroadcastChannel(resolvedChannel);
+  if (!expected) return false;
+  const expectedCatalogName = catalog?.resolve?.(expected) || expected;
+  return (candidates || []).some((candidate) => {
+    const normalized = normalizeBroadcastChannel(candidate);
+    if (!normalized) return false;
+    const catalogName = catalog?.resolve?.(normalized) || normalized;
+    return normalized === expected || catalogName === expectedCatalogName;
+  });
+}
+
+function resolvedChannelIsCurrentOrFallback(resolvedChannel, candidates = [], catalog = null) {
+  if (!normalizeBroadcastChannel(resolvedChannel)) return false;
+  if (!candidates.length) return true;
+  return resolvedChannelMatchesCandidates(resolvedChannel, candidates, catalog);
+}
+
 export function createPlaybackResolver(env, sourceFilter = null, catalog = null, liveResolver = null) {
   const client = createServerClient(env);
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
@@ -280,29 +301,32 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
     const override = catalog?.override(matchKey);
     const routeState = catalog?.matchRoute?.(matchKey);
     const assignment = catalog?.matchAssignment?.(matchKey);
-    if (assignment?.status === 'WAITING') {
+    const broadcastCandidates = broadcastChannelCandidates(match);
+    const fallbackChannel = normalizeBroadcastChannel(match.channel || payload.channel);
+    const currentCandidates = broadcastCandidates.length
+      ? broadcastCandidates
+      : fallbackChannel
+        ? [fallbackChannel]
+        : [];
+    const assignmentIsCurrent = resolvedChannelIsCurrentOrFallback(assignment?.resolvedChannel, currentCandidates, catalog);
+    const routeStateIsCurrent = resolvedChannelIsCurrentOrFallback(routeState?.resolvedChannel, currentCandidates, catalog);
+    if (assignment?.status === 'WAITING' && assignmentIsCurrent) {
       return unavailable('source_unavailable', {
         stage: 'resource_assignment',
         status: assignment.status,
         resolvedChannel: assignment.resolvedChannel || null,
       });
     }
-    const assignedProviderIds = assignment?.status === 'ASSIGNED' && assignment.providerId
+    const assignedProviderIds = assignment?.status === 'ASSIGNED' && assignmentIsCurrent && assignment.providerId
       ? [assignment.providerId]
       : [];
-    const broadcastCandidates = broadcastChannelCandidates(match);
-    const fallbackChannel = normalizeBroadcastChannel(match.channel || payload.channel);
     const candidates = override
       ? [override]
-      : assignment?.resolvedChannel
+      : assignment?.resolvedChannel && assignmentIsCurrent
         ? [assignment.resolvedChannel]
-      : routeState?.resolvedChannel
+      : routeState?.resolvedChannel && routeStateIsCurrent
         ? [routeState.resolvedChannel]
-        : broadcastCandidates.length
-          ? broadcastCandidates
-          : fallbackChannel
-            ? [fallbackChannel]
-            : [];
+        : currentCandidates;
     if (!candidates.length) return unavailable('channel_unavailable', catalog ? {
       stage: 'kooora_broadcast',
       broadcastState: payload.broadcast?.state || null,
