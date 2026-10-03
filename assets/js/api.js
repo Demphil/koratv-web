@@ -122,6 +122,7 @@ function cleanApiScore(value) {
 
 let stagingMatchesPromise = null;
 let stagingMatchesExpiresAt = 0;
+let stagingMatchesPending = false;
 
 function normalizeStagingMatch(match) {
   const homeName = typeof match.homeTeam === 'object' ? match.homeTeam.name : match.homeTeam;
@@ -159,14 +160,15 @@ function normalizeStagingMatch(match) {
 }
 
 async function getStagingMatches({ force = false } = {}) {
-  if (force || Date.now() >= stagingMatchesExpiresAt) {
+  if (!stagingMatchesPending && (force || Date.now() >= stagingMatchesExpiresAt)) {
     stagingMatchesPromise = null;
   }
   if (!stagingMatchesPromise) {
+    stagingMatchesPending = true;
     const endpoint = force
       ? `${MATCHES_API_ORIGIN}/api/matches?t=${Date.now()}`
       : `${MATCHES_API_ORIGIN}/api/matches`;
-    stagingMatchesPromise = fetch(endpoint, { cache: force ? 'no-store' : 'default' })
+    stagingMatchesPromise = fetch(endpoint, { cache: force ? 'no-store' : 'default', signal: AbortSignal.timeout(8000) })
       .then((response) => {
         if (!response.ok) throw new Error(`Status: ${response.status}`);
         return response.json();
@@ -179,7 +181,7 @@ async function getStagingMatches({ force = false } = {}) {
       .catch((error) => {
         stagingMatchesPromise = null;
         throw error;
-      });
+      }).finally(() => { stagingMatchesPending = false; });
   }
   return stagingMatchesPromise;
 }

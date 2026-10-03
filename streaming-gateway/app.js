@@ -422,6 +422,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   };
   const prewarmKeepalive = new Map();
   app.locals.providerPrewarm = prewarmState;
+  if (config.primeMatchSnapshots) {
+    const primeTimer = setTimeout(() => config.primeMatchSnapshots().catch(() => {}), 100);
+    primeTimer.unref();
+    app.locals.matchSnapshotStartupTimer = primeTimer;
+  }
 
   const warmPlaybackManifest = async (playback, lease) => {
     const headers = { 'User-Agent': config.upstreamUserAgent, Accept: '*/*' };
@@ -441,11 +446,12 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         url = new URL(lines[0], base);
         continue;
       }
-      const sequence = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)?.[1] || '';
-      const segment = lines.at(-1);
-      if (segment) {
-        const target = new URL(segment, base);
-        const version = sequence ? `prewarm-msn-${sequence}` : `prewarm-${createHash('sha256').update(text).digest('hex').slice(0, 12)}`;
+      const sequence = Number(text.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/m)?.[1]);
+      const hasSequence = Number.isSafeInteger(sequence) && sequence >= 0;
+      const hash = hasSequence ? '' : createHash('sha256').update(text).digest('hex').slice(0, 16);
+      for (let index = Math.max(0, lines.length - 4); index < lines.length; index += 1) {
+        const target = new URL(lines[index], base);
+        const version = hasSequence ? `msn-${sequence + index}` : `mf-${hash}-${index}`;
         hlsCache.schedulePrefetch(
           `${lease.id}:segment:${target.href}:${version}`,
           { ttlMs: cacheTtl('segment') },
@@ -483,15 +489,15 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           const lease = providerPool.acquire(playback, `prewarm:${assignment.matchId}`);
           const viewerId = `prewarm:${assignment.matchId}`;
           providerPool.touch(lease, viewerId);
-          prewarmKeepalive.set(playback.pool_key || playback.match_id, viewerId);
-          currentKeys.add(playback.pool_key || playback.match_id);
+          prewarmKeepalive.set(lease.key, viewerId);
+          currentKeys.add(lease.key);
           const warmed = await warmPlaybackManifest(playback, lease);
           results.push({ ...result, ...warmed });
         } catch (error) {
           results.push({ ...result, ok: false, error: error instanceof PoolError ? error.code : (error?.message || 'prewarm_failed') });
         }
       }
-      prewarmState.results = results.slice(-config.prewarmMaxResources || -8);
+      prewarmState.results = results.slice(-(config.prewarmMaxResources || 8));
       prewarmState.warmed = results.filter((item) => item.ok).length;
       prewarmState.failed = results.length - prewarmState.warmed;
       for (const key of [...prewarmKeepalive.keys()]) {

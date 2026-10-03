@@ -4,6 +4,7 @@ import { sameFixture } from '../shared/match-broadcasts.mjs';
 import { isAllowedMatch, isGulfCupLeague } from '../shared/league-whitelist.mjs';
 import { createProviderCatalog } from './provider-catalog.js';
 import { createProviderLiveResolver } from './provider-live-resolver.js';
+import { createSnapshotReader } from './snapshot-cache.js';
 
 function sourceForOrigin(origin, { koratvOrigins, frajaOrigins }) {
   if (koratvOrigins.has(origin)) return 'kooora';
@@ -62,17 +63,21 @@ export function loadConfig(env = process.env) {
   const liveResolver = catalog && env.PROVIDER_LIVE_RESOLVER_ENABLED !== 'false'
     ? createProviderLiveResolver({ env, accounts: () => catalog.accounts() })
     : null;
-  const getKoooraMatches = createMatchesReader(env, koooraSources, catalog);
-  const getApiFootballMatches = createMatchesReader(env, apiFootballSources, catalog);
+  const getKoooraMatches = createSnapshotReader(createMatchesReader(env, koooraSources, catalog));
+  const getApiFootballMatches = createSnapshotReader(createMatchesReader(env, apiFootballSources, catalog));
   const cachedResolver = resolver => {
     const cache = new Map();
     return (matchId, { fresh = false } = {}) => {
-      if (fresh) cache.delete(matchId);
       const entry = cache.get(matchId);
-      if (entry && entry.until > Date.now()) return entry.promise;
+      if (entry && ((!fresh && entry.until > Date.now()) || (fresh && entry.fresh && entry.until === Infinity))) return entry.promise;
       if (cache.size >= 500) cache.delete(cache.keys().next().value);
-      const promise = resolver(matchId).catch(error => { cache.delete(matchId); throw error; });
-      cache.set(matchId, { promise, until: Date.now() + 3000 });
+      const item = { promise: null, until: Infinity, fresh };
+      const promise = resolver(matchId, { fresh }).then(value => {
+        item.until = Date.now() + 15000;
+        return value;
+      }).catch(error => { if (cache.get(matchId) === item) cache.delete(matchId); throw error; });
+      item.promise = promise;
+      cache.set(matchId, item);
       return promise;
     };
   };
@@ -86,6 +91,7 @@ export function loadConfig(env = process.env) {
     providerAccounts: catalog ? () => catalog.accounts() : null,
     providerChannels: catalog ? () => catalog.channels() : null,
     providerAssignments: catalog ? () => catalog.assignments() : null,
+    primeMatchSnapshots: () => Promise.all([getKoooraMatches(), getApiFootballMatches()]),
     refreshProviderCatalog: catalog ? () => catalog.refreshNow() : null,
     accountsStatusPath: env.ACCOUNTS_STATUS_PATH || '/etc/koratv/accounts-status.json',
     hmacSecret,
@@ -113,9 +119,8 @@ export function loadConfig(env = process.env) {
     getMatchesForOrigin: async (origin, matchId = '') => {
       const source = sourceForMatchId(matchId) || sourceForOrigin(origin, { koratvOrigins, frajaOrigins });
       if (source === 'kooora') {
-        const rows = await getKoooraMatches();
+        const [rows, apiRows] = await Promise.all([getKoooraMatches(), getApiFootballMatches()]);
         if (!matchId) {
-          const apiRows = await getApiFootballMatches();
           const gulfFixtures = apiRows.filter(row => isGulfCupLeague(row.league)
             && isAllowedMatch({
               league: row.league,
@@ -127,7 +132,7 @@ export function loadConfig(env = process.env) {
           return [...rows, ...gulfFixtures];
         }
         const row = rows.find(item => item.match_id === matchId || item.id === matchId);
-        return row ? [attachApiFootballDetails(row, await getApiFootballMatches())] : [];
+        return row ? [attachApiFootballDetails(row, apiRows)] : [];
       }
       if (source === 'api-football') return getApiFootballMatches();
       return [...await getApiFootballMatches(), ...await getKoooraMatches()];

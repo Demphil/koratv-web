@@ -79,63 +79,19 @@ test('HLS accepts the player and resource API origins but rejects other hosts', 
   assert.equal(isAllowed('https://untrusted.example/api/resource'), false);
 });
 
-test('match opens a tab before token fetch and preserves the original page', async () => {
-  const source = readFileSync(new URL('../../assets/js/matches.js', import.meta.url), 'utf8');
-  const start = source.indexOf('async function openSecurePlayer(');
-  const end = source.indexOf('function setupSecurePlayerLinks()', start);
-  const events = [];
-  const tab = {
-    document: { body: {}, documentElement: {} },
-    location: { replace: (url) => events.push(url) },
-    close: () => events.push('close'),
-  };
-  const window = {
-    location: { href: 'https://koratv.click/' },
-    open: () => { events.push('open'); return tab; },
-  };
-  await vm.runInNewContext(`${source.slice(start, end)}; openSecurePlayer('match-1')`, {
-    window, STREAM_API_ORIGIN: 'https://stream-api.koratv.click',
-    PLAYER_ORIGIN: 'https://fabor.sbs', PLAYER_PATH: '/739184.html',
-    AbortSignal: { timeout: () => undefined },
-    fetch: async () => {
-      events.push('fetch');
-      return { ok: true, json: async () => ({ token: 'test-ticket' }) };
-    },
-  });
-  assert.deepEqual(events, ['open', 'fetch', 'https://fabor.sbs/739184.html?k=test-ticket']);
-  assert.equal(window.location.href, 'https://koratv.click/');
-  assert.equal(tab.opener, null);
-});
-
-test('match loading tab renders a branded waiting screen instead of blank text', async () => {
-  const source = readFileSync(new URL('../../assets/js/matches.js', import.meta.url), 'utf8');
-  const start = source.indexOf('async function openSecurePlayer(');
-  const end = source.indexOf('function setupSecurePlayerLinks()', start);
-  const writes = [];
-  const tab = {
-    document: {
-      body: {},
-      documentElement: {},
-      open: () => writes.push('open-doc'),
-      write: (html) => writes.push(html),
-      close: () => writes.push('close-doc'),
-    },
-    location: { replace: () => {} },
-    close: () => {},
-  };
-  const window = {
-    location: { href: 'https://koratv.click/' },
-    open: () => tab,
-  };
-  await vm.runInNewContext(`${source.slice(start, end)}; openSecurePlayer('match-1')`, {
-    window, STREAM_API_ORIGIN: 'https://stream-api.koratv.click',
-    PLAYER_ORIGIN: 'https://fabor.sbs', PLAYER_PATH: '/739184.html',
-    AbortSignal: { timeout: () => undefined },
-    fetch: async () => ({ ok: true, json: async () => ({ token: 'test-ticket' }) }),
-  });
-  const html = writes.find((entry) => typeof entry === 'string' && entry.includes('KORA TV'));
-  assert.match(html, /KORA TV/);
-  assert.match(html, /جاري تجهيز المشغل/);
-  assert.match(html, /لا تغلق الصفحة/);
-  assert.doesNotMatch(html, /^جاري تجهيز المشغل\.\.\.$/);
+test('both frontends navigate straight to the player with the exact match identity', () => {
+  for (const file of ['../../assets/js/matches.js', '../../../foottv6/assets/js/matches.js']) {
+    const text = readFileSync(new URL(file, import.meta.url), 'utf8');
+    const start = text.indexOf('function playerUrlForMatch(');
+    const end = text.indexOf('function setupSecurePlayerLinks()', start);
+    const id = 'kooora_2026-10-03_كرواتيا_vs_انجلترا';
+    const result = vm.runInNewContext(text.slice(start, end) + ';playerUrlForMatch(id)', {
+      URL, id, PLAYER_ORIGIN: 'https://fabor.sbs', PLAYER_PATH: '/739184.html'
+    });
+    const url = new URL(result);
+    assert.equal(url.origin, 'https://fabor.sbs');
+    assert.equal(url.searchParams.get('match'), id);
+    assert.doesNotMatch(text, /about:blank|playerTab\.document|api\/generate-token/);
+    assert.match(text, /target="_blank" rel="noopener noreferrer" data-secure-match-id/);
+  }
 });

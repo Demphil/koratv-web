@@ -20,6 +20,7 @@ export function createProviderLiveResolver({
   staggerMs = Number(process.env.PROVIDER_LIVE_RESOLVER_STAGGER_MS || 250),
 } = {}) {
   const cache = new Map();
+  const inflight = new Map();
   let credentialCache = { checkedAt: 0, credentials: {} };
 
   const loadPrivateCredentials = () => {
@@ -42,11 +43,11 @@ export function createProviderLiveResolver({
     return merged;
   };
 
-  const resolve = async (requestedNames, options = {}) => {
+  const discover = async (requestedNames, options = {}) => {
     const names = uniqueNames(requestedNames);
     if (!names.length) return null;
 
-    const cacheKey = names.map((name) => name.toLowerCase()).sort().join('|');
+    const cacheKey = `${names.map((name) => name.toLowerCase()).sort().join('|')}::${[...(options.providerIds || [])].sort().join(',')}`;
     const cached = cache.get(cacheKey);
     if (!options.fresh && cached && cached.expiresAt > Date.now()) return cached.value;
 
@@ -118,7 +119,15 @@ export function createProviderLiveResolver({
   };
 
   return {
-    resolve,
+    resolve(requestedNames, options = {}) {
+      const key = `${uniqueNames(requestedNames).map(name => name.toLowerCase()).sort().join('|')}::${[...(options.providerIds || [])].sort().join(',')}`;
+      if (inflight.has(key)) return inflight.get(key);
+      const promise = discover(requestedNames, options).finally(() => {
+        if (inflight.get(key) === promise) inflight.delete(key);
+      });
+      inflight.set(key, promise);
+      return promise;
+    },
     clear() { cache.clear(); },
   };
 }

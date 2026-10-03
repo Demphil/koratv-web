@@ -442,7 +442,7 @@ async function start() {
   if (!enforceEmbedIntegrity()) return;
   notifyParent('connecting');
   showLoading('جاري تجهيز البث...', 'يتم إنشاء جلسة مشاهدة آمنة');
-  if (!Hls.isSupported()) throw new Error('المتصفح لا يدعم تشغيل هذا البث. يرجى تحديثه أو استخدام متصفح حديث.');
+  if (!Hls.isSupported() && !video.canPlayType('application/vnd.apple.mpegurl')) throw new Error('المتصفح لا يدعم تشغيل هذا البث. يرجى تحديثه أو استخدام متصفح حديث.');
   let session;
   const readStoredSession = () => {
     try { return JSON.parse(sessionStorage.getItem(sessionKey)); } catch { return null; }
@@ -604,6 +604,12 @@ function connectStream(attempt = 0) {
   mediaRetries = 0;
   showLoading(attempt ? 'البث غير متوفر حالياً - جاري المحاولة...' : 'جاري الاتصال بالبث...', attempt ? `إعادة المحاولة ${attempt}/${MAX_RECONNECT_ATTEMPTS}` : 'جاري تحميل القناة');
   armLoadTimeout();
+  if (!Hls.isSupported()) {
+    hls = null;
+    video.src = streamUrlForQuality(currentQuality);
+    video.load();
+    return;
+  }
   hls = new Hls(hlsOptions());
   hls.on(Hls.Events.ERROR, (_, data) => {
     if ([409, 503].includes(data.response?.code)) {
@@ -977,7 +983,13 @@ copyEmbedCode?.addEventListener('click', async () => {
     document.execCommand('copy');
   }
 });
-video.addEventListener('canplay', () => { clearTimeout(loadTimer); clearTimeout(stallRecoveryTimer); lastReadyAt = Date.now(); });
+video.addEventListener('canplay', () => {
+  clearTimeout(loadTimer); clearTimeout(stallRecoveryTimer); lastReadyAt = Date.now();
+  if (!Hls.isSupported()) { hideStatus(); notifyParent('ready'); }
+});
+video.addEventListener('error', () => {
+  if (!Hls.isSupported() && hlsSessionToken) scheduleReconnect('تعذر تحميل مقطع الفيديو.');
+});
 video.addEventListener('waiting', () => { monitorQualityStall(); armLoadTimeout(); scheduleStallRecovery(); });
 video.addEventListener('stalled', () => { monitorQualityStall(); armLoadTimeout(); scheduleStallRecovery(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) loadMatchPanel(activeMatchId); });
@@ -987,10 +999,10 @@ window.addEventListener('pagehide', () => {
   clearInterval(matchTimer); hls?.destroy();
 });
 window.addEventListener('resize', () => {
-  if (hls) enforceTamperState();
+  if (hlsSessionToken) enforceTamperState();
 });
 setInterval(() => {
-  if (hls) enforceTamperState();
+  if (hlsSessionToken) enforceTamperState();
 }, 15000);
 startTamperObserver();
 loadWatchNews();

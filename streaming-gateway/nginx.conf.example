@@ -1,6 +1,11 @@
 # Production Nginx configuration for the gateway and isolated player.
 # TLS certificates must exist before this file is enabled.
 
+map $uri $koratv_cache_control {
+    default "no-store";
+    ~*\.(js|css|svg|png|ico|woff2?)$ "public, max-age=3600";
+}
+
 upstream koratv_gateway {
     # Njalla loopback is an SSH forward to the single Oracle gateway process.
     server 127.0.0.1:3100;
@@ -78,12 +83,16 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/fabor.sbs/privkey.pem;
     root /var/www/koratv-player;
     access_log off;
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types application/javascript text/css application/json image/svg+xml;
 
 # Public embeds include file:// parents; do not add frame-ancestors or X-Frame-Options here.
-add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:; base-uri 'none'; form-action 'none'" always;
+add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: https://stream-api.koratv.click; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:; base-uri 'none'; form-action 'none'" always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
     add_header X-Content-Type-Options nosniff always;
-    add_header Cache-Control no-store always;
+    add_header Cache-Control $koratv_cache_control always;
 
     location = / {
         return 403;

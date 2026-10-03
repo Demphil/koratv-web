@@ -193,6 +193,30 @@ test('pooled playback takes the refreshed provider URL rather than the stored ch
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('prepared playback skips provider discovery; an urgent refresh explicitly renews it', async () => {
+  const originalFetch = globalThis.fetch;
+  const match = { id: 'prepared-match', match_id: 'prepared-match', active: true, source: 'kooora',
+    kickoff_time: new Date(Date.now() - 60000).toISOString(), channel: 'beIN SPORTS HD 1',
+    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: ['beIN SPORTS HD 1'] } } };
+  globalThis.fetch = async input => Response.json(new URL(input).pathname.endsWith('/matches') ? [match] : []);
+  const catalog = { override: () => null, resolve: name => name,
+    sources: () => ({ A: 'https://prepared.example/live.m3u8' }) };
+  const calls = [];
+  const liveResolver = { resolve: async (names, options) => {
+    calls.push({ names, options });
+    return { resolvedChannel: match.channel, provider_sources: { A: 'https://renewed.example/live.m3u8' } };
+  } };
+  try {
+    const resolver = createPlaybackResolver({ NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' }, 'kooora', catalog, liveResolver);
+    assert.equal((await resolver(match.match_id)).stream_url, 'https://prepared.example/live.m3u8');
+    assert.equal(calls.length, 0);
+    assert.equal((await resolver(match.match_id, { fresh: true })).stream_url, 'https://renewed.example/live.m3u8');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].options.fresh, true);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test('pooled playback can resolve provider sources live when the catalog is stale', async () => {
   const originalFetch = globalThis.fetch;
   const match = { id: 'live-resolved-match', match_id: 'live-resolved-match', active: true, source: 'kooora',

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { findChannelNameMatch } from '../shared/channel-name-match.mjs';
+import { findChannelNameMatch, createChannelNameMatcher } from '../shared/channel-name-match.mjs';
 import { broadcastChannelCandidates, deduplicateSourceEvents, normalizeBroadcastChannel } from '../shared/match-broadcasts.mjs';
 import { basePriority } from './priority.js';
 
@@ -118,9 +118,16 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
       }
       return catalogSourceCache.get(scopedKey);
     };
+    const channelNames = availableChannels.map((channel) => channel.name);
+    const matchChannelName = createChannelNameMatcher(channelNames);
+    const channelsByName = new Map(availableChannels.map((channel) => [channel.name, channel]));
+    const channelMatches = new Map();
     const resolveChannel = (name) => {
-      const matchedName = findChannelNameMatch(name, availableChannels.map((channel) => channel.name));
-      return availableChannels.find((channel) => channel.name === matchedName) || null;
+      if (channelMatches.has(name)) return channelMatches.get(name);
+      const matchedName = matchChannelName(name);
+      const result = channelsByName.get(matchedName) || null;
+      channelMatches.set(name, result);
+      return result;
     };
     const channelCandidatesForRow = (row) => {
       const broadcastCandidates = broadcastChannelCandidates(row);
@@ -292,7 +299,7 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
     ...(diagnostics ? { diagnostics } : {})
   });
 
-  return async (matchId) => {
+  return async (matchId, { fresh = false } = {}) => {
     if (typeof matchId !== 'string' || !matchId.trim() || matchId.length > 160) {
       return { is_streaming_active: false, reason: 'invalid_match' };
     }
@@ -355,11 +362,23 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
     let channel;
     const attempts = [];
     let liveSources = null;
-    if (catalog && liveResolver?.resolve) {
-      liveSources = await liveResolver.resolve(candidates, { providerIds: assignedProviderIds });
-      const filteredLiveSources = filterProviderSources(liveSources?.provider_sources, assignedProviderIds);
-      liveSources = liveSources ? { ...liveSources, provider_sources: filteredLiveSources } : null;
+    // Scheduled discovery owns source renewal; normal viewers use its prepared snapshot.
+    if (catalog) {
+      for (const name of candidates) {
+        const catalogName = catalog.resolve?.(name) || name;
+        const sources = filterProviderSources(catalog.sources(catalogName), assignedProviderIds);
+        if (Object.keys(sources).length) {
+          channel = { name: catalogName, original_url: '', quality_variants: [] };
+          liveSources = { resolvedChannel: catalogName, provider_sources: sources };
+          break;
+        }
+      }
+    }
+    if (catalog && liveResolver?.resolve && (fresh || !liveSources)) {
+      const discovered = await liveResolver.resolve(candidates, { providerIds: assignedProviderIds, fresh });
+      const filteredLiveSources = filterProviderSources(discovered?.provider_sources, assignedProviderIds);
       if (Object.keys(filteredLiveSources).length) {
+        liveSources = { ...discovered, provider_sources: filteredLiveSources };
         channel = { name: liveSources.resolvedChannel || candidates[0], original_url: '', quality_variants: [] };
       }
     }

@@ -165,7 +165,7 @@ function renderMatch(match) {
     .toLocaleLowerCase('ar').trim().replace(/\s+/g, '_');
   const stableId = match.matchId || match.match_id || `${matchId}-${match.scheduledAt?.slice(0, 10) || 'undated'}`;
   const publicWatchId = opaqueWatchId(stableId);
-  const watchUrl = `${PLAYER_ORIGIN}${PLAYER_PATH}?m=${encodeURIComponent(publicWatchId)}`;
+  const watchUrl = playerUrlForMatch(stableId);
   
   // ==========================================
   // 🚀 الإصلاح الجذري لمشكلة منتصف الليل والتوقيت
@@ -210,7 +210,7 @@ function renderMatch(match) {
         ? 'channel_unavailable'
         : 'source_unavailable';
   const linkAttributes = canOpenSecurePlayer
-    ? `href="${watchUrl}" data-secure-match-id="${encodeURIComponent(stableId)}"`
+    ? `href="${watchUrl}" target="_blank" rel="noopener noreferrer" data-secure-match-id="${encodeURIComponent(stableId)}"`
     : `href="javascript:void(0)" data-disabled-reason="${disabledReason}"`;
   const linkClass = canOpenSecurePlayer ? 'clickable' : 'not-clickable';
 
@@ -329,89 +329,13 @@ function opaqueWatchId(value) {
   return String(hash).padStart(10, '0');
 }
 
-async function openSecurePlayer(matchId) {
-  if (!matchId) return;
-  const playerTab = window.open('about:blank', '_blank');
-  if (!playerTab) {
-    window.openWaitModal?.('يرجى السماح بفتح تبويب جديد للمشاهدة.');
-    return;
-  }
-  const renderTabState = (state = 'loading', detail = 'ننشئ جلسة مشاهدة آمنة. قد يستغرق ذلك بضع ثوانٍ.') => {
-    const isError = state === 'error';
-    const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${isError ? 'تعذر تجهيز المشغل' : 'جاري تجهيز المشغل'}</title><style>
-      *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 20% 10%,#173d30 0,#101821 34%,#07090d 100%);color:#fff;font-family:Tajawal,Arial,sans-serif;text-align:center;padding:22px}
-      .card{width:min(460px,94vw);border:1px solid rgba(255,255,255,.14);background:rgba(19,24,34,.88);box-shadow:0 24px 80px rgba(0,0,0,.42);border-radius:18px;padding:28px 22px}
-      .brand{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px;color:#e9fff6;font-weight:900}.dot{width:10px;height:10px;border-radius:50%;background:#ef3340;box-shadow:0 0 0 7px rgba(239,51,64,.15)}
-      .spinner{width:46px;height:46px;border-radius:50%;border:4px solid rgba(255,255,255,.18);border-top-color:#d6aa46;display:inline-block;animation:spin .9s linear infinite;margin:6px auto 18px}.error{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:#ef3340;margin:6px auto 18px;font-size:26px;font-weight:900}
-      h1{font-size:23px;margin:0 0 9px}p{margin:0;color:#cdd6dd;line-height:1.75;font-size:15px}.bar{height:5px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden;margin:20px 0 0}.bar span{display:block;height:100%;width:42%;background:#d6aa46;border-radius:inherit;animation:move 1.35s ease-in-out infinite}
-      button,a{display:inline-block;margin-top:20px;border:0;border-radius:999px;background:#ef3340;color:#fff;padding:12px 22px;font:inherit;font-weight:800;text-decoration:none;cursor:pointer}
-      small{display:block;margin-top:14px;color:#8fa0ad}@media(max-width:480px){body{padding:14px}.card{width:min(360px,calc(100vw - 24px));padding:22px 16px;border-radius:14px}.brand{margin-bottom:14px}.spinner,.error{width:40px;height:40px;margin-bottom:14px}h1{font-size:20px}p{font-size:14px}button,a{display:block;width:100%;margin-top:14px;padding:11px 14px}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes move{0%{transform:translateX(145%)}100%{transform:translateX(-245%)}}
-    </style></head><body><main class="card" role="status" aria-live="polite"><div class="brand"><span class="dot"></span><span>KORA TV</span></div>${isError ? '<div class="error">!</div>' : '<span class="spinner" aria-hidden="true"></span>'}<h1>${isError ? 'تعذر تجهيز المشغل' : 'جاري تجهيز المشغل'}</h1><p>${detail}</p>${isError ? '<button type="button" onclick="window.close()">إغلاق الصفحة</button><a href="https://koratv.click/" target="_self">العودة للمباريات</a>' : '<div class="bar" aria-hidden="true"><span></span></div><small>لا تغلق الصفحة، سيتم نقلك تلقائياً عند جاهزية الجلسة.</small>'}</main></body></html>`;
-    try {
-      playerTab.document.open();
-      playerTab.document.write(html);
-      playerTab.document.close();
-    } catch {
-      try {
-        playerTab.document.title = isError ? 'تعذر تجهيز المشغل' : 'جاري تجهيز المشغل';
-        playerTab.document.documentElement.dir = 'rtl';
-        playerTab.document.body.textContent = detail;
-      } catch {}
-    }
-  };
-  playerTab.opener = null;
-  renderTabState();
-  window.openWaitModal?.('جاري تجهيز المشغل الآمن...');
-  let response;
-  try {
-    response = await fetch(`${STREAM_API_ORIGIN}/api/generate-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store',
-      credentials: 'omit',
-      body: JSON.stringify({ matchId }),
-      signal: AbortSignal.timeout(15000)
-    });
-  } catch {
-    renderTabState('error', 'تعذر الاتصال بخادم البث بسرعة كافية. أغلق هذه الصفحة وجرب مرة أخرى من زر المباراة.');
-    window.openWaitModal?.('تعذر الاتصال بخادم البث. حاول مرة أخرى.');
-    return;
-  }
-
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    const messages = {
-      upcoming: 'سيُفتح البث قبل بداية المباراة بعشرين دقيقة.',
-      ended: 'انتهت المباراة وتم إغلاق البث.',
-      channel_unavailable: 'لم تُحدد القناة الناقلة بعد.',
-      source_unavailable: 'مصدر القناة غير متوفر حالياً.'
-    };
-    const message = messages[payload.error] || 'البث غير متاح حالياً. حاول مرة أخرى لاحقاً.';
-    renderTabState('error', message);
-    window.openWaitModal?.(message);
-    return;
-  }
-
-  const { token } = await response.json().catch(() => ({}));
-  if (!token) {
-    renderTabState('error', 'لم يتمكن الخادم من إنشاء جلسة مشاهدة آمنة. جرب مرة أخرى بعد لحظات.');
-    window.openWaitModal?.('لم يتمكن الخادم من إنشاء جلسة مشاهدة آمنة.');
-    return;
-  }
-  window.closeWaitModal?.();
-  if (!playerTab.closed) {
-    playerTab.location.replace(`${PLAYER_ORIGIN}${PLAYER_PATH}?k=${encodeURIComponent(token)}`);
-  }
+function playerUrlForMatch(matchId) {
+  const url = new URL(PLAYER_PATH, PLAYER_ORIGIN);
+  url.searchParams.set('match', matchId);
+  return url.href;
 }
 
 function setupSecurePlayerLinks() {
-  document.addEventListener('click', (event) => {
-    const link = event.target.closest?.('.match-card-link.clickable[data-secure-match-id]');
-    if (!link) return;
-    event.preventDefault();
-    const matchId = decodeURIComponent(link.dataset.secureMatchId || '');
-    openSecurePlayer(matchId);
-  });
   document.addEventListener('click', (event) => {
     const link = event.target.closest?.('.match-card-link.not-clickable[data-disabled-reason]');
     if (!link) return;

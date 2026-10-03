@@ -26,7 +26,7 @@ jobs:
             set -eu
             uptime
             free -m
-            pm2 jlist | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).map(p=>({name:p.name,status:p.pm2_env.status,restarts:p.pm2_env.restart_time,cpu:p.monit.cpu,memoryMB:Math.round(p.monit.memory/1048576)}))))'
+            pm2 jlist | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).map(p=>({name:p.name,script:p.pm2_env.pm_exec_path,cwd:p.pm2_env.pm_cwd,cron:p.pm2_env.cron_restart,status:p.pm2_env.status,restarts:p.pm2_env.restart_time,cpu:p.monit.cpu,memoryMB:Math.round(p.monit.memory/1048576)}))))'
             cd /opt/koratv/current/streaming-gateway
             sha256sum app.js config.js supabase.js provider-pool.js
             node --env-file=.env /tmp/koratv-performance-audit/streaming-gateway/scripts/performance-audit.js /opt/koratv/current/streaming-gateway

@@ -62,18 +62,21 @@ function baseTokens(tokens) {
   );
 }
 
-function scoreName(requested, candidate) {
-  const requestTokens = tokensFor(requested);
-  const candidateTokens = tokensFor(candidate);
-  const requestBase = baseTokens(requestTokens);
-  const candidateBase = baseTokens(candidateTokens);
+function describeName(name) {
+  const tokens = tokensFor(name);
+  return { name, base: baseTokens(tokens), variant: variantOf(tokens), explicit: explicitVariant(name) };
+}
+
+function scoreName(request, candidate) {
+  const requestBase = request.base;
+  const candidateBase = candidate.base;
   if (!requestBase.length || !candidateBase.length) return 0;
   for (const token of REQUIRED_BASE_LABELS) {
     if (requestBase.includes(token) && !candidateBase.includes(token)) return 0;
   }
 
-  const requestVariant = variantOf(requestTokens);
-  const candidateVariant = variantOf(candidateTokens);
+  const requestVariant = request.variant;
+  const candidateVariant = candidate.variant;
   if (requestVariant && candidateVariant && requestVariant !== candidateVariant) return 0;
   if (requestVariant && !candidateVariant) return 0;
 
@@ -91,23 +94,30 @@ function explicitVariant(value) {
   return '';
 }
 
-export function findChannelNameMatch(requested, candidates) {
-  if (/^SNRT(?:\s+Live)?$/i.test(String(requested || '').trim())) {
-    return findChannelNameMatch('Arryadia TNT', candidates);
-  }
-  const exact = (candidates || []).find((name) => typeof name === 'string' && name.toLowerCase() === String(requested || '').toLowerCase());
+export function createChannelNameMatcher(candidates) {
+  const rows = (candidates || []).filter(name => typeof name === 'string' && name.trim()).map(describeName);
+  const exactNames = new Map();
+  for (const row of rows) if (!exactNames.has(row.name.toLowerCase())) exactNames.set(row.name.toLowerCase(), row.name);
+  return (requested) => {
+  if (/^SNRT(?:\s+Live)?$/i.test(String(requested || '').trim())) requested = 'Arryadia TNT';
+  const exact = exactNames.get(String(requested || '').toLowerCase());
   if (exact) return exact;
-  let ranked = (candidates || [])
-    .filter((candidate) => typeof candidate === 'string' && candidate.trim())
-    .map((name) => ({ name, score: scoreName(requested, name) }))
+  const request = describeName(requested);
+  let ranked = rows
+    .map((candidate) => ({ name: candidate.name, explicit: candidate.explicit, score: scoreName(request, candidate) }))
     .filter(({ score }) => score >= 0.78)
     .sort((left, right) => right.score - left.score);
   if (!ranked.length) return null;
-  const requestedVariant = explicitVariant(requested);
+  const requestedVariant = request.explicit;
   if (requestedVariant) {
-    const exactVariant = ranked.filter(({ name }) => explicitVariant(name) === requestedVariant);
+    const exactVariant = ranked.filter(({ explicit }) => explicit === requestedVariant);
     if (exactVariant.length) ranked = exactVariant;
   }
   if (ranked.length > 1 && ranked[0].score - ranked[1].score < 0.08) return null;
   return ranked[0].name;
+  };
+}
+
+export function findChannelNameMatch(requested, candidates) {
+  return createChannelNameMatcher(candidates)(requested);
 }

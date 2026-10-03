@@ -91,6 +91,11 @@ jobs:
             test -d "$STAGING/streaming-gateway"
             test -d "$RELEASE/streaming-gateway"
 
+            install -d -m 0700 /opt/koratv/backups
+            tar -czf "/opt/koratv/backups/gateway-${{ github.run_id }}.tgz" \
+              --exclude=node_modules --exclude=.env --exclude=dist --exclude="*.log" \
+              -C "$RELEASE" streaming-gateway shared ecosystem.oracle.config.js
+
             rsync -a --delete "$STAGING/streaming-gateway/" "$RELEASE/streaming-gateway/" \
               --exclude .env \
               --exclude node_modules \
@@ -222,6 +227,9 @@ jobs:
             test -f "$ROOT/nginx.conf.example"
             test -f "$ROOT/nginx.http-player.conf.example"
             install -d -m 0755 /var/www/koratv-player
+            install -d -m 0700 /var/backups/koratv
+            tar -czf "/var/backups/koratv/player-${{ github.run_id }}.tgz" -C /var/www/koratv-player .
+            cp -a /etc/nginx/sites-available/koratv "/var/backups/koratv/nginx-${{ github.run_id }}.conf"
             find /var/www/koratv-player -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
             cp -a "$SRC/." /var/www/koratv-player/
             find /var/www/koratv-player -type d -exec chmod 0755 {} +

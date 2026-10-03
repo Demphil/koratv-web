@@ -60,6 +60,22 @@ test('provider catalog can be forced to refresh before selecting a replacement U
   assert.equal(catalog.sources('sport').C, 'https://fresh.example/live.m3u8');
 });
 
+test('catalog refresh invalidates negative name matches without discarding healthy data on a partial write', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provider-catalog-cache-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, 'catalog.json');
+  writeFileSync(path, JSON.stringify({ providers: { A: { enabled: true } }, channels: {} }));
+  const catalog = createProviderCatalog({ PROVIDER_CATALOG_PATH: path });
+  assert.equal(catalog.resolve('beIN SPORTS HD 1'), null);
+  writeFileSync(path, JSON.stringify({ providers: { A: { enabled: true } },
+    channels: { 'Sports One': { A: 'https://provider.example/live.m3u8', sourceNames: { A: 'beIN SPORTS HD 1' } } } }));
+  catalog.refreshNow();
+  assert.equal(catalog.resolve('beIN SPORTS HD 1'), 'Sports One');
+  writeFileSync(path, '{');
+  catalog.refreshNow();
+  assert.equal(catalog.resolve('beIN SPORTS HD 1'), 'Sports One');
+});
+
 test('provider catalog resolves Kooora broadcaster aliases against source names', t => {
   const dir = mkdtempSync(join(tmpdir(), 'provider-catalog-alias-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

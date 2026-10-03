@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { findChannelNameMatch } from '../shared/channel-name-match.mjs';
+import { readFileSync, statSync } from 'node:fs';
+import { findChannelNameMatch, createChannelNameMatcher } from '../shared/channel-name-match.mjs';
 import { normalizeName } from '../shared/provider-channel-match.mjs';
 import { PROVIDER_IDS } from './provider-pool.js';
 
@@ -18,6 +18,20 @@ export function selectProviderChannel(match) {
 
 export function createProviderCatalog(env = process.env) {
   let catalog = { channels: {} }, overrides = { matches: {} }, routeState = { matches: {} }, activeCatalog = { matches: {} }, assignments = { assignments: [], ignored: [] }, checked = 0;
+  const fileVersions = new Map();
+  const resolvedNames = new Map();
+  let sourceAliases = [], channelAliases = [];
+  let sourceMatcher = () => null, channelMatcher = () => null;
+  const loadChanged = (path, previous) => {
+    try {
+      const stat = statSync(path);
+      const version = `${stat.mtimeMs}:${stat.size}`;
+      if (fileVersions.get(path) === version) return previous;
+      const value = JSON.parse(readFileSync(path, 'utf8'));
+      fileVersions.set(path, version);
+      return value;
+    } catch { return previous; }
+  };
   const hasEnabledSources = (name) => PROVIDER_IDS.some((id) => catalog.providers?.[id]?.enabled && catalog.channels?.[name]?.[id]);
   const assignmentFor = (matchId) => {
     const id = String(matchId || '').trim();
@@ -51,34 +65,44 @@ export function createProviderCatalog(env = process.env) {
   const refresh = (force = false) => {
     if (!force && Date.now() - checked < 5000) return;
     checked = Date.now();
-    try { catalog = JSON.parse(readFileSync(env.PROVIDER_CATALOG_PATH || '/etc/koratv/provider-catalog.json', 'utf8')); } catch {}
-    try { overrides = JSON.parse(readFileSync(env.MANUAL_BROADCAST_OVERRIDE_PATH || '/etc/koratv/manual-broadcast-override.json', 'utf8')); } catch {}
-    try { routeState = JSON.parse(readFileSync(env.DIRECT_MATCH_ROUTE_STATE_PATH || '/etc/koratv/direct-match-route-state.json', 'utf8')); } catch {}
-    try { activeCatalog = JSON.parse(readFileSync(env.ACTIVE_CATALOG_PATH || '/etc/koratv/active-catalog.json', 'utf8')); } catch {}
-    try { assignments = JSON.parse(readFileSync(env.MATCH_RESOURCE_ASSIGNMENT_PATH || '/etc/koratv/match-resource-assignments.json', 'utf8')); } catch {}
+    const previous = catalog;
+    catalog = loadChanged(env.PROVIDER_CATALOG_PATH || '/etc/koratv/provider-catalog.json', catalog);
+    if (catalog !== previous) {
+      resolvedNames.clear();
+      sourceAliases = [];
+      channelAliases = [];
+      for (const [name, entry] of Object.entries(catalog.channels || {})) {
+        if (!hasEnabledSources(name)) continue;
+        channelAliases.push({ alias: name, name });
+        for (const sourceName of Object.values(entry?.sourceNames || {})) {
+          if (sourceName) sourceAliases.push({ alias: sourceName, name });
+        }
+      }
+      sourceMatcher = createChannelNameMatcher(sourceAliases.map(row => row.alias));
+      channelMatcher = createChannelNameMatcher(channelAliases.map(row => row.alias));
+    }
+    overrides = loadChanged(env.MANUAL_BROADCAST_OVERRIDE_PATH || '/etc/koratv/manual-broadcast-override.json', overrides);
+    routeState = loadChanged(env.DIRECT_MATCH_ROUTE_STATE_PATH || '/etc/koratv/direct-match-route-state.json', routeState);
+    activeCatalog = loadChanged(env.ACTIVE_CATALOG_PATH || '/etc/koratv/active-catalog.json', activeCatalog);
+    assignments = loadChanged(env.MATCH_RESOURCE_ASSIGNMENT_PATH || '/etc/koratv/match-resource-assignments.json', assignments);
   };
   const resolve = (channel) => {
     refresh();
     const requested = String(channel || '').trim();
     if (!requested) return null;
     if (catalog.channels?.[requested] && hasEnabledSources(requested)) return requested;
-    const matchRows = (rows) => {
-      const matched = findChannelNameMatch(requested, rows.map((row) => row.alias));
+    if (resolvedNames.has(requested)) return resolvedNames.get(requested);
+    const matchRows = (rows, matcher) => {
+      const matched = matcher(requested);
       if (!matched) return null;
       const matches = rows.filter((row) => row.alias === matched);
       const names = [...new Set(matches.map((row) => row.name).filter(hasEnabledSources))];
       return names.length === 1 ? names[0] : null;
     };
-    const sourceAliases = [];
-    const channelAliases = [];
-    for (const [name, entry] of Object.entries(catalog.channels || {})) {
-      if (!hasEnabledSources(name)) continue;
-      channelAliases.push({ alias: name, name });
-      for (const sourceName of Object.values(entry?.sourceNames || {})) {
-        if (sourceName) sourceAliases.push({ alias: sourceName, name });
-      }
-    }
-    return matchRows(sourceAliases) || matchRows(channelAliases);
+    const result = matchRows(sourceAliases, sourceMatcher) || matchRows(channelAliases, channelMatcher);
+    if (resolvedNames.size >= 1000) resolvedNames.delete(resolvedNames.keys().next().value);
+    resolvedNames.set(requested, result);
+    return result;
   };
   return {
     refreshNow() { checked = 0; refresh(true); },
