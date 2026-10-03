@@ -157,6 +157,8 @@ function normalizeMatch(row, config) {
     streams: [],
     sourceReady: sourceAvailable && playbackState === 'live',
     sourceAvailable,
+    resourceStatus: row.resource_status || null,
+    viewingMode: playbackState === 'live' ? (sourceAvailable ? 'stream' : 'live_updates') : playbackState,
     playbackState,
     isLive: playbackState === 'live',
     liveMinute: playbackState === 'live' ? clampLiveMinute(row) : null,

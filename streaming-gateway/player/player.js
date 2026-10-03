@@ -42,6 +42,8 @@ let currentMatchInfo = null;
 let selectedMatchTab = 'details';
 let selectedLineupSide = 'home';
 let matchPanelRequestSequence = 0;
+let liveUpdatesMode = false;
+let liveUpdatesSignature = '';
 let resumeAfterQualityChange = false;
 const sessionKey = 'koratv-playback-session';
 const lastMatchKey = 'koratv-last-match-id';
@@ -377,7 +379,7 @@ function renderMatchDetail(tab, match) {
   const events = Array.isArray(match.events) && match.events.length ? match.events : (match.goals || []).map((goal) => ({ ...goal, type: 'Goal', detail: 'Goal' }));
   const eventHtml = events.map((event) => `<div class="match-event"><time>${escapeHtml(formatEventMinute(event))}</time><span><b>${escapeHtml(event.player || event.detail || event.type || 'حدث')}</b><small>${escapeHtml([event.team, event.assist ? `تمريرة: ${event.assist}` : '', event.detail].filter(Boolean).join(' · '))}</small></span></div>`).join('');
   return `<div class="match-context-row"><span>${escapeHtml(cleanText(match.league, ''))}</span><b>${escapeHtml(cleanText(match.venue, ''))}${match.venueCity ? ` · ${escapeHtml(match.venueCity)}` : ''}</b>${match.referee ? `<span>الحكم: ${escapeHtml(match.referee)}</span>` : ''}</div>
-    <div class="live-match-events">${eventHtml || `<p class="empty-match-data">${match.eventDetailsLoaded ? 'لا توجد أحداث مسجلة حتى الآن.' : 'تفاصيل المباراة لم تصل من API-Football بعد.'}</p>`}</div>
+    <div class="live-match-events">${eventHtml || `<p class="empty-match-data">${match.eventDetailsLoaded ? 'لا توجد أحداث مسجلة حتى الآن.' : 'ستظهر أحدث أحداث المباراة هنا عند وصولها من المصدر.'}</p>`}</div>
     <div class="live-match-statistics">${statRows}</div>`;
 }
 
@@ -411,7 +413,8 @@ async function loadMatchPanel(matchId) {
   try {
     const response = await fetch(`${STREAM_API_ORIGIN}/api/match-info?matchId=${encodeURIComponent(matchId)}`, {
       cache: 'no-store',
-      credentials: 'omit'
+      credentials: 'omit',
+      signal: AbortSignal.timeout(8000)
     });
     if (!response.ok) return;
     const { match } = await response.json();
@@ -439,15 +442,64 @@ async function loadMatchPanel(matchId) {
     const goals = document.getElementById('match-goals');
     const scorers = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 8) : [];
     goals.innerHTML = scorers.map((goal) => `<span>${escapeHtml(goal.minute ? `${goal.minute}' ` : '')}${escapeHtml(goal.player)}</span>`).join('');
+    if (liveUpdatesMode) showLiveUpdates(match);
+    return match;
   } catch {
     // Match context is decorative; playback should not fail if it is unavailable.
   }
+}
+
+function showLiveUpdates(match) {
+  liveUpdatesMode = true;
+  document.documentElement.classList.add('live-updates-view');
+  status.classList.remove('error');
+  status.classList.add('live-updates-state');
+  const ended = match.playbackState === 'ended';
+  const ready = match.sourceReady === true && match.playbackState === 'live';
+  const signature = `${ended}|${ready}|${match.resourceStatus}`;
+  if (signature === liveUpdatesSignature) return;
+  liveUpdatesSignature = signature;
+  const message = ended
+    ? 'انتهت المباراة. يمكنك مراجعة النتيجة وأحداثها في البطاقة أسفل الصفحة.'
+    : match.resourceStatus === 'WAITING'
+      ? 'نعتذر، لم تُحجز هذه المباراة ضمن جلسات بث المباريات الثماني ذات الأولوية. نوفر لك متابعة حية للنتيجة وأحدث الأحداث في البطاقة أدناه.'
+      : 'نعتذر، البث المرئي لهذه المباراة غير متاح حالياً. يمكنك متابعة النتيجة وأحدث أحداث المباراة في البطاقة أدناه.';
+  status.innerHTML = `<section class="live-updates-card" aria-labelledby="live-updates-title">
+    <span class="live-updates-label">${ended ? 'النتيجة النهائية' : 'متابعة حية'}</span>
+    <h2 id="live-updates-title">${ended ? 'ملخص المباراة' : 'المباراة مستمرة، تابع أحداثها معنا'}</h2>
+    <p>${message}</p>
+    ${ready ? '<button type="button" id="open-ready-stream">البث متاح الآن، شاهد المباراة</button>' : ''}
+    <a class="live-updates-jump" href="#match-panel"><span>أحداث المباراة</span><span class="live-updates-arrow" aria-hidden="true">↓</span></a>
+  </section>`;
+  document.getElementById('open-ready-stream')?.addEventListener('click', () => location.reload());
+  status.querySelector('.live-updates-jump')?.addEventListener('click', (event) => {
+    event.preventDefault();
+    const panel = document.getElementById('match-panel');
+    panel.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
+    panel.focus({ preventScroll: true });
+  });
+  if (refreshStreamButton) refreshStreamButton.hidden = true;
+  notifyParent('live_updates');
+}
+
+async function prepareLiveUpdates(matchId) {
+  activeMatchId = matchId;
+  const match = await loadMatchPanel(matchId);
+  if (!match || match.playbackState !== 'live' || match.sourceReady === true) return false;
+  selectedMatchTab = 'details';
+  renderMatchPanel();
+  showLiveUpdates(match);
+  clearInterval(matchTimer);
+  matchTimer = setInterval(() => { if (!document.hidden) loadMatchPanel(matchId); }, 15000);
+  return true;
 }
 
 async function start() {
   if (!enforceEmbedIntegrity()) return;
   notifyParent('connecting');
   showLoading('جاري تجهيز البث...', 'يتم إنشاء جلسة مشاهدة آمنة');
+  const requestedMatchId = embeddedMatchId || decodeJwtPayload(entry || '').matchId;
+  if (requestedMatchId && await prepareLiveUpdates(requestedMatchId)) return;
   if (!Hls.isSupported() && !video.canPlayType('application/vnd.apple.mpegurl')) throw new Error('المتصفح لا يدعم تشغيل هذا البث. يرجى تحديثه أو استخدام متصفح حديث.');
   let session;
   const readStoredSession = () => {
@@ -546,7 +598,7 @@ async function start() {
     fetch(`${STREAM_API_ORIGIN}/api/pool-heartbeat`, { headers: { Authorization: `Bearer ${hlsSessionToken}` }, cache: 'no-store', signal: AbortSignal.timeout(4000) }).catch(() => {});
   }, 5000);
   updateChannelLabel(session.channelName);
-  loadMatchPanel(activeMatchId);
+  if (currentMatchInfo?.matchId !== activeMatchId) loadMatchPanel(activeMatchId);
   matchTimer = setInterval(() => { if (!document.hidden) loadMatchPanel(activeMatchId); }, 15000);
   connectStream(0);
   expiryTimer = setTimeout(() => {

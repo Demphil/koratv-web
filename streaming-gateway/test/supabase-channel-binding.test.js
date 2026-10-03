@@ -481,5 +481,8 @@ test('pooled playback does not play matches outside the assigned top resources',
     assert.equal(playback.is_streaming_active, false);
     assert.equal(playback.reason, 'source_unavailable');
     assert.equal(playback.diagnostics.stage, 'resource_assignment');
+    const [listed] = await createMatchesReader(env, 'kooora', catalog)();
+    assert.equal(listed.source_ready, false);
+    assert.equal(listed.resource_status, 'WAITING');
   } finally { globalThis.fetch = originalFetch; }
 });

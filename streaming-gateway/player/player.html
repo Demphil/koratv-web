@@ -36,7 +36,7 @@
         </section>
       </dialog>
 
-      <section id="match-panel" class="match-panel" hidden>
+      <section id="match-panel" class="match-panel" tabindex="-1" hidden>
         <div class="match-panel-header">
           <span id="match-state-pill" class="match-state-pill">مباشر</span>
           <div class="match-panel-meta"><strong id="match-league"></strong><span id="match-channel-name"></span></div>
@@ -121,6 +121,10 @@
 
       function armClickAd() {
         if (clickShield || !container) return;
+        if (document.documentElement.classList.contains('live-updates-view')) {
+          window.setTimeout(armClickAd, AD_COOLDOWN_MS);
+          return;
+        }
         const shield = document.createElement('button');
         shield.type = 'button';
         shield.className = 'ad-click-shield';

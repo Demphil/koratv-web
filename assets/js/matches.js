@@ -202,9 +202,8 @@ function renderMatch(match) {
   const isLive = hasPlaybackState ? match.playbackState === 'live'
     : !isEnded && (match.isLive === true || (diffMins <= 0 && diffMins >= -matchDuration));
   const isSoon = diffMins > 0 && diffMins <= 60; 
-  const hasReadySource = match.sourceReady === true;
   const hasKnownSource = match.sourceAvailable === true || Boolean(match.channelName);
-  const canOpenSecurePlayer = isLive && !isEnded && hasReadySource;
+  const canOpenSecurePlayer = isLive && !isEnded;
   const disabledReason = isEnded
     ? 'ended'
     : !isLive

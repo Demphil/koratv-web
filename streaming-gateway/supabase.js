@@ -161,7 +161,7 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
         const catalogName = catalog?.resolve?.(name) || name;
         return catalog && hasCatalogSources(catalogName, assignedProviderIds) ? { name: catalogName } : null;
       }).find(Boolean);
-      return { row, channel };
+      return { row, channel, resourceStatus: assignmentIsCurrent ? assignment?.status : null };
     });
     const usedChannelNames = [...new Set(resolvedRows
       .map(({ channel }) => channel?.name)
@@ -173,10 +173,11 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
         .filter(([, ok]) => ok)
         .map(([name]) => name)
         .filter((name) => hasCatalogSources(name)));
-    return resolvedRows.map(({ row, channel }) => ({
+    return resolvedRows.map(({ row, channel, resourceStatus }) => ({
       ...row,
       channel: channel?.name || row.channel,
-      source_ready: Boolean(channel && readyChannels.has(channel.name))
+      source_ready: Boolean(channel && readyChannels.has(channel.name)),
+      resource_status: resourceStatus || null
     }));
   };
 }
