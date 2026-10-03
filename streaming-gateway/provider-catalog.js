@@ -36,7 +36,7 @@ export function createProviderCatalog(env = process.env) {
   const assignmentFor = (matchId) => {
     const id = String(matchId || '').trim();
     if (!id) return null;
-    const assigned = (assignments.assignments || []).find((item) => String(item?.matchId || '') === id);
+    const assigned = (assignments.assignments || []).find((item) => String(item?.matchId || '') === id || item?.aliases?.includes(id));
     if (assigned?.providerId && assigned?.resolvedChannel) {
       return {
         matchId: id,
@@ -48,7 +48,7 @@ export function createProviderCatalog(env = process.env) {
         source: 'match-resource-assignment',
       };
     }
-    const ignored = (assignments.ignored || []).find((item) => String(item?.matchId || '') === id);
+    const ignored = (assignments.ignored || []).find((item) => String(item?.matchId || '') === id || item?.aliases?.includes(id));
     if (ignored) {
       return {
         matchId: id,

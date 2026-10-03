@@ -3,6 +3,25 @@ import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 import { createApp } from '../app.js';
 
+test('a known channel is not advertised as ready until its resource is prepared', async t => {
+  const config = { secret: 'test-secret-longer-than-32-characters', hmacSecret: 'independent-hmac-longer-than-32-characters',
+    frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example',
+    frontendOrigins: new Set(['https://koratv.click']), upstreamOrigins: new Set(), trustedProxies: [],
+    enableAntiBot: false, directProviderResolutionEnabled: true,
+    getMatchesForOrigin: async () => [{ id: 'unprepared', match_id: 'unprepared', home_team: 'Real Madrid', away_team: 'Barcelona',
+      league: 'الدوري الإسباني', kickoff_time: new Date(Date.now() - 60000).toISOString(), active: true,
+      channel: 'beIN SPORTS HD 1', source_ready: false, payload: { status: 'LIVE' } }] };
+  const app = createApp({ config, redis: {} });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/matches`, { headers: { Origin: config.frontend } });
+  const { matches } = await response.json();
+  assert.equal(matches[0].channelName, 'beIN SPORTS HD 1');
+  assert.equal(matches[0].sourceAvailable, false);
+  assert.equal(matches[0].sourceReady, false);
+});
+
 test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   const store = new Map();
   const matchInfoLookups = [];

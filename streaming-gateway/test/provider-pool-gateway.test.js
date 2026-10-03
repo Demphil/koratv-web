@@ -76,7 +76,23 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
   const segmentManifest = await request('/api/stream.m3u8', segmentToken);
   assert.equal(segmentManifest.status, 200);
   const segmentResource = new URL((await segmentManifest.text()).split('\n').find(line => line.startsWith('https:')));
-  assert.equal((await request(segmentResource.pathname + segmentResource.search, segmentToken)).status, 409);
+  const beforeFailure = app.locals.providerPool.snapshot().map(row => row.provider);
+  assert.equal((await request(segmentResource.pathname + segmentResource.search, segmentToken)).status, 502);
+  assert.deepEqual(app.locals.providerPool.snapshot().map(row => row.provider), beforeFailure);
+  throwSegmentA = false;
+  assert.equal((await request(segmentResource.pathname + segmentResource.search, segmentToken)).status, 200);
+  for (const provider of ['A', 'B', 'C']) app.locals.providerPool.revoke(provider);
+  app.locals.providerPool.demands.clear(); app.locals.providerPool.blocked.clear();
+  throwSegmentA = true;
+  const persistent = await session('persistent-network');
+  const persistentManifest = await request('/api/stream.m3u8', persistent);
+  const persistentResource = new URL((await persistentManifest.text()).split('\n').find(line => line.startsWith('https:')));
+  let failureStatus = 502;
+  for (let attempt = 0; attempt < 4 && failureStatus === 502; attempt++) {
+    failureStatus = (await request(persistentResource.pathname + persistentResource.search, persistent)).status;
+  }
+  assert.equal(failureStatus, 409);
+  assert.equal(calls.filter(url => url.includes('/persistent-network/') && !url.endsWith('.m3u8')).length, 3);
   throwSegmentA = false;
   for (const provider of ['A','B','C']) app.locals.providerPool.revoke(provider);
   app.locals.providerPool.demands.clear(); app.locals.providerPool.blocked.clear();

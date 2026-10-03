@@ -95,3 +95,36 @@ test('both frontends navigate straight to the player with the exact match identi
     assert.match(text, /target="_blank" rel="noopener noreferrer" data-secure-match-id/);
   }
 });
+
+test('native HLS uses the protected stream endpoint without constructing Hls', () => {
+  const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
+  const block = source.slice(source.indexOf('function connectStream('), source.indexOf('function scheduleStallRecovery('));
+  let loads = 0;
+  const video = { load: () => loads++ };
+  const context = { clearTimeout: () => {}, retryTimer: null, qualityStallTimer: null, hls: null,
+    reconnectAttempt: 0, networkRetries: 0, mediaRetries: 0, showLoading: () => {}, armLoadTimeout: () => {},
+    Hls: { isSupported: () => false }, video, currentQuality: '',
+    streamUrlForQuality: () => 'https://stream-api.koratv.click/api/stream.m3u8?token=protected-session' };
+  vm.runInNewContext(block + ';connectStream(0)', context);
+  assert.equal(loads, 1);
+  assert.equal(video.src, context.streamUrlForQuality());
+});
+
+test('both frontend readers coalesce concurrent initial loads', async () => {
+  for (const file of ['../../assets/js/api.js', '../../../foottv6/assets/js/api.js']) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    const fn = source.slice(source.indexOf('async function getStagingMatches('), source.indexOf('export async function getTodayMatches('));
+    let calls = 0, release;
+    const promise = new Promise(resolve => { release = resolve; });
+    const context = vm.createContext({ fetch: () => { calls++; return promise; }, Date, AbortSignal,
+      MATCHES_API_ORIGIN: 'https://api.example', CACHE_EXPIRY_MS: 1000, normalizeStagingMatch: value => value });
+    vm.runInContext('let stagingMatchesPromise=null, stagingMatchesExpiresAt=0, stagingMatchesPending=false;\n' + fn, context);
+    const first = vm.runInContext('getStagingMatches()', context);
+    const second = vm.runInContext('getStagingMatches()', context);
+    assert.equal(calls, 1);
+    release({ ok: true, json: async () => ({ matches: [] }) });
+    await Promise.all([first, second]);
+    await vm.runInContext('getStagingMatches()', context);
+    assert.equal(calls, 1);
+  }
+});

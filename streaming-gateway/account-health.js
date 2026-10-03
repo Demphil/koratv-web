@@ -40,7 +40,8 @@ export class AccountHealth {
     state.failures += code === 403 ? 1 : 0;
     state.stopped = code === 401;
     state.stalled = false;
-    state.reason = code === 401 ? 'upstream_authentication_401' : state.failures >= 3 ? 'persistent_upstream_403' : 'upstream_403';
+    state.reason = code === 401 ? 'upstream_authentication_401'
+      : code === 403 ? (state.failures >= 3 ? 'persistent_upstream_403' : 'upstream_403') : `upstream_${code}`;
     state.until = this.now() + (state.failures >= 3 ? 300000 : 30000);
     this.persist();
     return state.stopped ? Infinity : state.until;

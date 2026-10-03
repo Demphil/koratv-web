@@ -119,3 +119,26 @@ test('manual match selection is ignored when disabled or for another date', () =
   assert.deepEqual(parseManualMatchSelection({ enabled: false, matches: ['a'] }, { dateKey: '2026-10-02' }), []);
   assert.deepEqual(parseManualMatchSelection({ enabled: true, date: '2026-10-03', matches: ['a'] }, { dateKey: '2026-10-02' }), []);
 });
+
+test('bilingual feeds share one worker while manual selection and channel identity remain exact', () => {
+  const matches = [
+    { match_id: 'api-croatia', source: 'api-football', home_team: 'Croatia', away_team: 'England', kickoff_time: '2026-10-03T16:00:00Z' },
+    { match_id: 'kooora-croatia', source: 'kooora', home_team: 'كرواتيا', away_team: 'إنجلترا', kickoff_time: '2026-10-03T16:00:00Z' },
+    { match_id: 'other', source: 'kooora', home_team: 'Iceland', away_team: 'Bulgaria', kickoff_time: '2026-10-03T16:00:00Z' },
+  ];
+  const routeStates = Object.fromEntries(matches.map((match, i) => [match.match_id, {
+    status: 'RESOLVED', resolvedChannel: i < 2 ? 'Sports 1' : 'Sports 2', providerIds: ['A', 'B']
+  }]));
+  const input = { matches, routeStates, providerCatalog: { providers: { A: { enabled: true }, B: { enabled: true } } }, maxResources: 2 };
+  const plan = buildProjectAssignmentPlan(input);
+  assert.equal(plan.assignments.length, 2);
+  assert.deepEqual(plan.assignments.find(row => row.matchId === 'kooora-croatia').aliases, ['api-croatia']);
+  assert.equal(plan.ignored.length, 0);
+  const manual = buildProjectAssignmentPlan({ ...input, manualMatchIds: ['api-croatia'] });
+  assert.equal(manual.assignments[0].matchId, 'api-croatia');
+  assert.deepEqual(manual.assignments[0].aliases, ['kooora-croatia']);
+  routeStates['api-croatia'].resolvedChannel = 'Different channel';
+  const distinct = buildProjectAssignmentPlan(input);
+  assert.equal(distinct.ignored.length, 1);
+  assert.ok(distinct.assignments.every(row => row.aliases.length === 0));
+});

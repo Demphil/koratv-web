@@ -16,7 +16,7 @@ import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mj
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
-const playerSources = "script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:";
+const playerSources = "script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: https://stream-api.koratv.click; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:";
 
 function originFromHeader(value) {
   if (!value) return '';
@@ -134,8 +134,7 @@ function normalizeMatch(row, config) {
   const playbackState = matchPlaybackState(row, config);
   const cards = payload.cards || payload.stats?.cards || {};
   const channelName = cleanText(row.channel || payload.channel);
-  const directResolverCanAttempt = config.directProviderResolutionEnabled === true && Boolean(channelName);
-  const sourceAvailable = row.source_ready === true || directResolverCanAttempt;
+  const sourceAvailable = row.source_ready === true;
   return {
     match_id: row.match_id || row.id,
     matchId: row.match_id || row.id,
@@ -396,12 +395,21 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     throw lastError || new Error('upstream_fetch_failed');
   };
   const fetchLeasedUpstream = (source, options, lease) => lease ? providerPool.run(lease, async signal => {
-    const response = await fetchUpstream(source, { ...options, signal });
-    if (providerPool.valid(lease)) accountHealth?.observe(lease.provider, response.status, hlsResourceKind(source) === 'segment');
-    const bytes = await response.arrayBuffer();
-    const buffered = new Response(bytes, { status: response.status, headers: response.headers });
-    Object.defineProperty(buffered, 'url', { value: response.url });
-    return buffered;
+    const media = hlsResourceKind(source) === 'segment';
+    try {
+      // HLS retries media loads; nested server retries block the shared account queue.
+      const response = await fetchUpstream(source, { ...options, signal }, 1);
+      if (providerPool.valid(lease)) accountHealth?.observe(lease.provider, response.status, media);
+      const bytes = await response.arrayBuffer();
+      if (media && response.ok) lease.transientFailures = 0;
+      else if (media && retryableStatus(response.status)) lease.transientFailures = (lease.transientFailures || 0) + 1;
+      const buffered = new Response(bytes, { status: response.status, headers: response.headers });
+      Object.defineProperty(buffered, 'url', { value: response.url });
+      return buffered;
+    } catch (error) {
+      if (media && !signal.aborted) lease.transientFailures = (lease.transientFailures || 0) + 1;
+      throw error;
+    }
   }) : fetchUpstream(source, options);
   const fetchCachedUpstream = (source, options, version = '', lease = null) => {
     const kind = hlsResourceKind(source);
@@ -838,6 +846,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           } catch (error) {
             if (error instanceof PoolError) throw error;
             if (lease && req.path === '/api/resource') {
+              if (hlsResourceKind(source) === 'segment' && (lease.transientFailures || 0) < 3) {
+                return res.sendStatus(502);
+              }
               console.warn('[stream-proxy] upstream resource failed, asking player to reconnect', {
                 provider: lease.provider,
                 message: error?.message || String(error),
@@ -865,6 +876,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           }
           if (!lease || !failoverStatus(upstream.status)) break;
           await upstream.body?.cancel();
+          if (req.path === '/api/resource' && hlsResourceKind(source) === 'segment'
+            && retryableStatus(upstream.status) && (lease.transientFailures || 0) < 3) return res.sendStatus(502);
           attemptedProviders.add(lease.provider);
           providerPool.fail(lease, upstream.status);
           if (attemptedProviders.size >= PROVIDER_IDS.length) throw new PoolError('pool_upstream_unavailable');

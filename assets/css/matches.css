@@ -929,6 +929,8 @@ html.crawler-view .match-card-link {
   .featured-section,
   .news-controls-section,
   .news-grid-section {
+    box-sizing: border-box;
+    min-width: 0;
     width: min(100%, calc(100vw - 20px));
     margin-inline: auto;
   }

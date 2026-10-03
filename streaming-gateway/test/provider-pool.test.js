@@ -205,6 +205,7 @@ test('provider catalog exposes safe match assignment state without raw URLs', t 
   writeFileSync(assignmentPath, JSON.stringify({
     assignments: [{
       matchId: 'match-1',
+      aliases: ['api-alias'],
       providerId: 'B',
       requestedChannel: 'beIN SPORTS HD 8',
       resolvedChannel: 'beIN SPORTS HD 8',
@@ -231,6 +232,8 @@ test('provider catalog exposes safe match assignment state without raw URLs', t 
     source: 'match-resource-assignment',
   });
   assert.equal(JSON.stringify(catalog.matchAssignment('match-1')).includes('https://'), false);
+  assert.equal(catalog.matchAssignment('api-alias').providerId, 'B');
+  assert.equal(catalog.matchAssignment('api-alias').matchId, 'api-alias');
   assert.equal(catalog.matchAssignment('match-2').status, 'WAITING');
 });
 

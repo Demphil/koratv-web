@@ -196,12 +196,15 @@ function renderMatch(match) {
 
   const matchDuration = typeof getMatchDuration === 'function' ? getMatchDuration(match.league) : 120;
   const sourceStatus = String(match.status || match.state || match.matchStatus || '').toLowerCase();
-  const isEnded = match.playbackState === 'ended' || /result|finished|ended|full.?time|انته/.test(sourceStatus) || diffMins < -matchDuration;
-  const isLive = !isEnded && (match.isLive === true || (diffMins <= 0 && diffMins >= -matchDuration));
+  const hasPlaybackState = ['live', 'ended', 'upcoming'].includes(match.playbackState);
+  const isEnded = hasPlaybackState ? match.playbackState === 'ended'
+    : /result|finished|ended|full.?time|انته/.test(sourceStatus) || diffMins < -matchDuration;
+  const isLive = hasPlaybackState ? match.playbackState === 'live'
+    : !isEnded && (match.isLive === true || (diffMins <= 0 && diffMins >= -matchDuration));
   const isSoon = diffMins > 0 && diffMins <= 60; 
   const hasReadySource = match.sourceReady === true;
   const hasKnownSource = match.sourceAvailable === true || Boolean(match.channelName);
-  const canOpenSecurePlayer = isLive && !isEnded && (hasReadySource || hasKnownSource);
+  const canOpenSecurePlayer = isLive && !isEnded && hasReadySource;
   const disabledReason = isEnded
     ? 'ended'
     : !isLive

@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile, rename, chmod } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { basePriority } from '../priority.js';
+import { sameFixture } from '../../shared/match-broadcasts.mjs';
 
 const DEFAULT_MAX_RESOURCES = 8;
 const DEFAULT_NATIONAL_TEAM_POINTS = 1000;
@@ -221,10 +222,27 @@ export function buildProjectAssignmentPlan({
       return String(a.matchId).localeCompare(String(b.matchId));
     });
 
+  // Both feeds describe the same event; aliases must not consume extra workers.
+  const uniqueRows = [];
+  for (const row of rows) {
+    const duplicateIndex = uniqueRows.findIndex(other => other.state.resolvedChannel === row.state.resolvedChannel
+      && sameFixture(other.match, row.match));
+    if (duplicateIndex < 0) {
+      uniqueRows.push({ ...row, aliases: [] });
+      continue;
+    }
+    const previous = uniqueRows[duplicateIndex];
+    const preferRow = previous.manualRank === null && (row.manualRank !== null
+      || (!String(previous.match.source || '').startsWith('kooora') && String(row.match.source || '').startsWith('kooora')));
+    const kept = preferRow ? row : previous;
+    const alias = preferRow ? previous.matchId : row.matchId;
+    uniqueRows[duplicateIndex] = { ...kept, priorityScore: Math.max(previous.priorityScore, row.priorityScore),
+      aliases: [...previous.aliases, alias] };
+  }
   const usedProviders = new Set();
   const assignments = [];
   const ignored = [];
-  for (const row of rows) {
+  for (const row of uniqueRows) {
     const providerId = row.providerIds.find((id) => !usedProviders.has(id));
     if (!providerId || assignments.length >= maxResources) {
       ignored.push({ ...row, reason: providerId ? 'capacity' : 'no_available_provider' });
@@ -233,6 +251,7 @@ export function buildProjectAssignmentPlan({
     usedProviders.add(providerId);
     assignments.push({
       matchId: row.matchId,
+      aliases: row.aliases,
       homeTeam: row.match.home_team,
       awayTeam: row.match.away_team,
       league: row.match.league,
@@ -246,7 +265,7 @@ export function buildProjectAssignmentPlan({
       assignedAt: generatedAt,
     });
   }
-  const represented = new Set([...assignments.map((item) => item.matchId), ...ignored.map((item) => item.matchId)]);
+  const represented = new Set([...assignments, ...ignored].flatMap(item => [item.matchId, ...(item.aliases || [])]));
   for (const matchId of manualRank.keys()) {
     if (!represented.has(matchId)) {
       const match = matches.find((row) => (row.match_id || row.id) === matchId);
@@ -272,6 +291,7 @@ export function buildProjectAssignmentPlan({
     assignments,
     ignored: ignored.map((row) => ({
       matchId: row.matchId,
+      aliases: row.aliases || [],
       homeTeam: row.match.home_team,
       awayTeam: row.match.away_team,
       league: row.match.league,
@@ -427,8 +447,8 @@ async function writeProjectAssignmentsToSupabase(supabase, env, dateKey, plan) {
     return { enabled: false, written: 0 };
   }
   const table = env.RESOURCE_ASSIGNMENT_TABLE || 'match_resource_assignments';
-  const rows = plan.assignments.map((assignment) => ({
-    match_id: assignment.matchId,
+  const rows = plan.assignments.flatMap((assignment) => [assignment.matchId, ...(assignment.aliases || [])].map(matchId => ({
+    match_id: matchId,
     assignment_date: dateKey,
     provider_id: assignment.providerId,
     requested_channel: assignment.requestedChannel,
@@ -436,10 +456,10 @@ async function writeProjectAssignmentsToSupabase(supabase, env, dateKey, plan) {
     priority_score: assignment.priorityScore,
     status: 'ASSIGNED',
     updated_at: assignment.assignedAt,
-  }));
+  })));
   for (const row of plan.ignored) {
-    rows.push({
-      match_id: row.matchId,
+    rows.push(...[row.matchId, ...(row.aliases || [])].map(matchId => ({
+      match_id: matchId,
       assignment_date: dateKey,
       provider_id: null,
       requested_channel: null,
@@ -447,7 +467,7 @@ async function writeProjectAssignmentsToSupabase(supabase, env, dateKey, plan) {
       priority_score: row.priorityScore,
       status: 'WAITING',
       updated_at: plan.generatedAt,
-    });
+    })));
   }
   if (!rows.length) return { enabled: true, written: 0 };
   const { data, error } = await supabase
