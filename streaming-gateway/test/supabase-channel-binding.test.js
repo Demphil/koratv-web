@@ -237,7 +237,7 @@ test('stale waiting assignment cannot block the current Kooora broadcaster', asy
     source: 'kooora',
     kickoff_time: new Date(Date.now() - 60000).toISOString(),
     channel: 'MBC Action',
-    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: ['MBC Action'] } }
+    payload: { status: 'LIVE', broadcast: { source: 'kooora', channels: ['MBC Action', 'Abu Dhabi Sports 1'] } }
   };
   globalThis.fetch = async (input) => {
     const url = new URL(input);

@@ -136,10 +136,13 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
       const assignmentIsCurrent = resolvedChannelIsCurrentOrFallback(assignment?.resolvedChannel, rowCandidates, catalog);
       const routeStateIsCurrent = resolvedChannelIsCurrentOrFallback(routeState?.resolvedChannel, rowCandidates, catalog);
       const assignedProviderIds = assignment?.status === 'ASSIGNED' && assignmentIsCurrent && assignment.providerId ? [assignment.providerId] : [];
+      const waitingFallbackCandidates = assignment?.status === 'WAITING' && assignmentIsCurrent
+        ? removeResolvedChannelCandidate(assignment.resolvedChannel, rowCandidates, catalog)
+        : null;
       const candidates = catalog?.override(row.match_id || row.id)
         ? [catalog.override(row.match_id || row.id)]
         : assignment?.status === 'WAITING' && assignmentIsCurrent
-          ? []
+          ? waitingFallbackCandidates
         : assignment?.resolvedChannel && assignmentIsCurrent
           ? [assignment.resolvedChannel]
         : routeState?.resolvedChannel && routeStateIsCurrent
@@ -266,6 +269,18 @@ function resolvedChannelIsCurrentOrFallback(resolvedChannel, candidates = [], ca
   return resolvedChannelMatchesCandidates(resolvedChannel, candidates, catalog);
 }
 
+function removeResolvedChannelCandidate(resolvedChannel, candidates = [], catalog = null) {
+  const expected = normalizeBroadcastChannel(resolvedChannel);
+  if (!expected) return candidates;
+  const expectedCatalogName = catalog?.resolve?.(expected) || expected;
+  return (candidates || []).filter((candidate) => {
+    const normalized = normalizeBroadcastChannel(candidate);
+    if (!normalized) return false;
+    const catalogName = catalog?.resolve?.(normalized) || normalized;
+    return normalized !== expected && catalogName !== expectedCatalogName;
+  });
+}
+
 export function createPlaybackResolver(env, sourceFilter = null, catalog = null, liveResolver = null) {
   const client = createServerClient(env);
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
@@ -310,7 +325,10 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
         : [];
     const assignmentIsCurrent = resolvedChannelIsCurrentOrFallback(assignment?.resolvedChannel, currentCandidates, catalog);
     const routeStateIsCurrent = resolvedChannelIsCurrentOrFallback(routeState?.resolvedChannel, currentCandidates, catalog);
-    if (assignment?.status === 'WAITING' && assignmentIsCurrent) {
+    const waitingFallbackCandidates = assignment?.status === 'WAITING' && assignmentIsCurrent
+      ? removeResolvedChannelCandidate(assignment.resolvedChannel, currentCandidates, catalog)
+      : null;
+    if (assignment?.status === 'WAITING' && assignmentIsCurrent && !waitingFallbackCandidates.length) {
       return unavailable('source_unavailable', {
         stage: 'resource_assignment',
         status: assignment.status,
@@ -322,6 +340,8 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
       : [];
     const candidates = override
       ? [override]
+      : assignment?.status === 'WAITING' && assignmentIsCurrent
+        ? waitingFallbackCandidates
       : assignment?.resolvedChannel && assignmentIsCurrent
         ? [assignment.resolvedChannel]
       : routeState?.resolvedChannel && routeStateIsCurrent
