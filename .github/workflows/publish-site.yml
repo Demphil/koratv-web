@@ -11,6 +11,10 @@ on:
       - "sitemap.xml"
       - "8f13b7e3fc9c709be30188a8675772ed.txt"
       - "scripts/apply-seo.js"
+      - "scripts/build-public-site.cjs"
+      - "scripts/build-public-site.test.cjs"
+      - "package.json"
+      - "package-lock.json"
       - "scripts/generate-match-pages.cjs"
       - "scripts/submit-indexnow.js"
       - "assets/js/matches.js"
@@ -50,18 +54,9 @@ jobs:
       - name: Prepare static website
         run: |
           set -euo pipefail
-          mkdir -p _site
-          rsync -a ./ _site/ \
-            --exclude .git \
-            --exclude .github \
-            --exclude _site \
-            --exclude node_modules \
-            --exclude secure-streaming/node_modules \
-            --exclude streaming-gateway/node_modules \
-            --exclude secure-streaming/.next \
-            --exclude streaming-gateway/dist \
-            --exclude "**/.env*" \
-            --exclude "**/*.log"
+          npm ci --ignore-scripts --no-audit --fund=false
+          node --test scripts/build-public-site.test.cjs
+          node scripts/build-public-site.cjs
 
       - name: Test and generate indexable match pages
         run: |

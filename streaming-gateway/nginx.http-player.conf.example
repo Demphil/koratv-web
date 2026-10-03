@@ -137,4 +137,10 @@ add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'unsaf
     location / {
         try_files $uri =404;
     }
+    location ~ /\.(?!well-known/) {
+        return 404;
+    }
+    location ~* \.(map|md|env|log|sql|php|ya?ml|toml|bak|backup)$ {
+        return 404;
+    }
 }

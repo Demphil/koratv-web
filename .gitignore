@@ -30,6 +30,7 @@ Thumbs.db
 
 # ملفات البناء
 dist/
+_site/
 build/
 out/
 .next/

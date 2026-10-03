@@ -67,18 +67,9 @@ jobs:
       - name: Prepare static frontend artifact
         run: |
           set -euo pipefail
-          mkdir -p _site
-          rsync -a ./ _site/ \
-            --exclude .git \
-            --exclude .github \
-            --exclude _site \
-            --exclude node_modules \
-            --exclude secure-streaming/node_modules \
-            --exclude streaming-gateway/node_modules \
-            --exclude secure-streaming/.next \
-            --exclude streaming-gateway/dist \
-            --exclude "**/.env*" \
-            --exclude "**/*.log"
+          npm ci --ignore-scripts --no-audit --fund=false
+          node --test scripts/build-public-site.test.cjs
+          node scripts/build-public-site.cjs
 
       - name: Test and generate indexable match pages
         run: |
