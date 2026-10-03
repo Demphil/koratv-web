@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reconcileBroadcasts, mergeRefreshedMatch, broadcastChannelCandidates, sameFixture, deduplicateSourceEvents, obsoleteMatchRows } from '../../shared/match-broadcasts.mjs';
-import { extractKoooraBroadcastChannelsFromHtml, parseKoooraMatches, parseKoooraScheduleBroadcasts, persistMatchSnapshots } from '../scripts/sync-matches-from-source.js';
+import { extractKoooraBroadcastChannelsFromHtml, parseKoooraMatches, parseKoooraScheduleBroadcasts, persistMatchSnapshots, koooraDetailChannelTargets } from '../scripts/sync-matches-from-source.js';
 import { findChannelNameMatch } from '../../shared/channel-name-match.mjs';
 import { matchChannels, parseM3uText } from '../scripts/import-m3u.js';
 import { liveCatalogToM3u } from '../scripts/sync-iptv-provider.js';
@@ -236,6 +236,37 @@ test('Kooora match detail extractor reads visible watch-on broadcaster cards', (
     })}</script>
   </body></html>`;
   assert.deepEqual(extractKoooraBroadcastChannelsFromHtml(html), ['MBC Action']);
+});
+
+test('Kooora channel extraction never borrows another fixture watch card or team badge', () => {
+  const html = `<body>
+    <section data-match-id="other" class="match-card"><div class="watch-provider" data-broadcaster="beIN Sports Mena 2"></div></section>
+    <img alt="Spain badge"><img alt="Czechia badge">
+    <script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { data: [{
+      competition: { name: 'La Liga' }, matches: [{ id: 'target', startDate: kickoff_time, status: 'LIVE',
+        teamA: { name: 'Real Madrid' }, teamB: { name: 'Barcelona' }, tvChannels: [], score: {} }]
+    }] } } })}</script></body>`;
+  const [row] = parseKoooraMatches(html);
+  assert.deepEqual(row.payload.channels, []);
+  assert.equal(row.channel, null);
+  assert.deepEqual(extractKoooraBroadcastChannelsFromHtml(html, 'target'), []);
+});
+
+test('Kooora detail channels require the requested exact source fixture ID', () => {
+  const html = `<body><div class="watch-provider" data-broadcaster="AL KASS One"></div>
+    <script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { data: {
+      match: { id: 'target' }, tvChannels: [{ name: 'AL KASS One' }]
+    } } } })}</script></body>`;
+  assert.deepEqual(extractKoooraBroadcastChannelsFromHtml(html, 'target'), ['AL KASS One']);
+  assert.deepEqual(extractKoooraBroadcastChannelsFromHtml(html, 'different'), []);
+});
+
+test('detail channel lookup budget goes to live and upcoming fixtures, not finished rows at the top of the source', () => {
+  const row = (id, status, time) => ({ match_id: id, source: 'kooora', kickoff_time: time,
+    payload: { status, channels: [], matchLink: `https://www.kooora.com/${id}` } });
+  const rows = [row('ended', 'RESULT', kickoff_time), row('later', 'FIXTURE', '2026-09-27T19:00:00Z'),
+    row('live', 'LIVE', '2026-09-27T17:00:00Z'), row('next', 'FIXTURE', '2026-09-27T18:00:00Z')];
+  assert.deepEqual(koooraDetailChannelTargets(rows, 2).map(row => row.match_id), ['live', 'next']);
 });
 
 test('fresh Kooora lifecycle clears a previously stored finished flag', () => {

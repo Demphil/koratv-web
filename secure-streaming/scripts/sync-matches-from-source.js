@@ -405,6 +405,7 @@ function normalizeKoooraChannel(value) {
 }
 
 function cleanKoooraBroadcastName(value) {
+  if (/\bbadge\b|\bcrest\b|علم|شعار\s+(?:فريق|منتخب)/iu.test(String(value || ''))) return null;
   let name = String(value || '')
     .replace(/\u00a0/g, ' ')
     .replace(/\s+/g, ' ')
@@ -455,7 +456,15 @@ function collectKoooraDomChannelCandidates($, matchId = '') {
       roots.push(root.length ? root : $(item));
     });
   }
-  if (!roots.length) roots.push($('body'));
+  if (!roots.length) {
+    if (matchId) {
+      try {
+        const data = JSON.parse($('#__NEXT_DATA__').text() || '{}').props?.pageProps?.data;
+        if (String(data?.match?.id || data?.id || '') !== String(matchId)) return [];
+      } catch { return []; }
+    }
+    roots.push($('body'));
+  }
 
   const candidates = [];
   const addCandidate = (value) => {
@@ -466,8 +475,10 @@ function collectKoooraDomChannelCandidates($, matchId = '') {
   for (const root of roots) {
     root.find('[data-channel],[data-broadcaster],[data-provider-name],[aria-label],img[alt],img[title]').each((_, item) => {
       const element = $(item);
-      addCandidate(element.attr('data-channel') || element.attr('data-broadcaster') || element.attr('data-provider-name')
-        || element.attr('aria-label') || element.attr('alt') || element.attr('title'));
+      const explicit = element.attr('data-channel') || element.attr('data-broadcaster') || element.attr('data-provider-name');
+      const label = element.attr('aria-label') || element.attr('alt') || element.attr('title');
+      const inWatchCard = element.closest('[class*="watch"],[class*="broadcast"],[class*="provider"]').length > 0;
+      if (explicit || inWatchCard || isLikelySportsBroadcaster(label)) addCandidate(explicit || label);
     });
 
     root.find('*').each((_, item) => {
@@ -492,7 +503,10 @@ export function extractKoooraBroadcastChannelsFromHtml(html, matchId = '') {
     try {
       const page = JSON.parse(raw);
       const tvChannels = page?.props?.pageProps?.data?.tvChannels;
-      if (Array.isArray(tvChannels)) names.push(...tvChannels.map((channel) => channel?.name || channel?.title || channel?.label));
+      const sourceId = page?.props?.pageProps?.data?.match?.id || page?.props?.pageProps?.data?.id;
+      if (Array.isArray(tvChannels) && (!matchId || String(sourceId || '') === String(matchId))) {
+        names.push(...tvChannels.map((channel) => channel?.name || channel?.title || channel?.label));
+      }
     } catch {}
   }
   names.push(...collectKoooraDomChannelCandidates($, matchId));
@@ -945,12 +959,18 @@ export async function enrichApiFootballMatchDetails(rows) {
   return rows;
 }
 
-async function enrichKoooraRowsWithDetailChannels(rows) {
-  const targets = rows.filter((row) =>
+export function koooraDetailChannelTargets(rows, limit = koooraDetailChannelLimit) {
+  return rows.filter((row) =>
     row.source === 'kooora'
     && !(Array.isArray(row.payload?.channels) && row.payload.channels.length)
     && row.payload?.matchLink
-  ).slice(0, koooraDetailChannelLimit);
+    && !['ended', 'unavailable'].includes(sourceMatchState(row.payload))
+  ).sort((a, b) => Number(sourceMatchState(b.payload) === 'live') - Number(sourceMatchState(a.payload) === 'live')
+    || Date.parse(a.kickoff_time) - Date.parse(b.kickoff_time)).slice(0, limit);
+}
+
+async function enrichKoooraRowsWithDetailChannels(rows) {
+  const targets = koooraDetailChannelTargets(rows);
 
   for (const row of targets) {
     try {
