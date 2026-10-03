@@ -81,7 +81,8 @@ export class AccountHealth {
             state.reason = `provider_${/^(expired|disabled|banned)$/i.test(info?.status || '') ? info.status.toLowerCase() : 'authentication_rejected'}`;
             this.pool?.quarantine(id, Infinity);
           } else if (response.status === 403) {
-            this.pool?.quarantine(id, this.failure(id, 403));
+            // Management endpoint access is not evidence that this account's media is denied.
+            state.metadataCode = 403;
           } else if (Number(info?.auth) === 1) {
             if (state.stopped) {
               state.stopped = false; state.until = 0; state.reason = null; this.pool?.blocked.delete(id);

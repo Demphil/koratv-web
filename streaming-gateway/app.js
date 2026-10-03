@@ -17,7 +17,7 @@ import { matchPlaybackState as providerPlaybackState } from '../shared/match-lif
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
-const playerSources = "script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: https://stream-api.koratv.click; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:";
+const playerSources = "script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com https://al5sm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: https://stream-api.koratv.click; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:";
 
 function originFromHeader(value) {
   if (!value) return '';
@@ -49,12 +49,7 @@ function clampLiveMinute(row) {
   const explicit = Number(payload.minute ?? payload.liveMinute ?? payload.matchMinute);
   if (Number.isFinite(explicit)) return explicit > 0 ? Math.min(130, Math.round(explicit)) : null;
 
-  const scheduledAt = row.kickoff_time || payload.scheduledAt || '';
-  const kickoff = new Date(scheduledAt);
-  if (Number.isNaN(kickoff.getTime())) return null;
-  const elapsed = Math.floor((Date.now() - kickoff.getTime()) / 60_000);
-  if (elapsed <= 0) return null;
-  return Math.min(130, elapsed);
+  return null;
 }
 
 function cleanText(value, fallback = '') {
@@ -155,6 +150,7 @@ function normalizeMatch(row, config) {
     playbackState,
     isLive: playbackState === 'live',
     liveMinute: playbackState === 'live' ? clampLiveMinute(row) : null,
+    liveExtraMinute: playbackState === 'live' ? Math.max(0, Number(payload.liveExtraMinute) || 0) : 0,
     yellowCards: normalizeCardCount(payload.yellowCards || cards.yellow || payload.stats?.yellowCards),
     redCards: normalizeCardCount(payload.redCards || cards.red || payload.stats?.redCards),
     goals: Array.isArray(payload.goals) ? payload.goals.slice(0, 12).map((goal) => ({

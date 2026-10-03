@@ -89,7 +89,7 @@ server {
     gzip_types application/javascript text/css application/json image/svg+xml;
 
 # Public embeds include file:// parents; do not add frame-ancestors or X-Frame-Options here.
-add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: https://stream-api.koratv.click; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:; base-uri 'none'; form-action 'none'" always;
+add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com https://al5sm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: https://stream-api.koratv.click; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:; base-uri 'none'; form-action 'none'" always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
     add_header X-Content-Type-Options nosniff always;
     add_header Cache-Control $koratv_cache_control always;

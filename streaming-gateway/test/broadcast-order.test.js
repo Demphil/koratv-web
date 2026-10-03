@@ -4,6 +4,15 @@ import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 
 for (const file of ['../../assets/js/matches.js', '../../../foottv6/assets/js/matches.js']) {
+  test(`${file}: scores keep explicit team sides and missing minutes are never estimated`, () => {
+    const text = readFileSync(new URL(file, import.meta.url), 'utf8');
+    const block = text.slice(text.indexOf('function liveMinuteText('), text.indexOf('function cardsTotal('));
+    const { minute, score } = vm.runInNewContext(`${block}; ({ minute: liveMinuteText, score: scoreMarkup })`);
+    assert.equal(minute({ liveMinute: null }, new Date(0)), 'مباشر');
+    assert.equal(minute({ liveMinute: 90, liveExtraMinute: 3 }), "90+3'");
+    assert.match(score('1 - 0'), /data-score-side="home">1<\/span>.*data-score-side="away">0<\/span>/);
+    assert.equal(score('VS'), 'VS');
+  });
   test(`${file}: selected broadcasts lead the list in assignment order`, () => {
     const text = readFileSync(new URL(file, import.meta.url), 'utf8');
     const block = text.slice(text.indexOf('function compareBroadcastPriority('), text.indexOf('function renderMatchCollections('));

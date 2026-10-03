@@ -152,7 +152,8 @@ function normalizeStagingMatch(match) {
     playbackState: match.playbackState || '',
     isLive: Boolean(match.isLive),
     commentator: match.commentator || '',
-    liveMinute: Number.isFinite(Number(match.liveMinute)) ? Number(match.liveMinute) : null,
+    liveMinute: match.liveMinute != null && Number.isFinite(Number(match.liveMinute)) ? Number(match.liveMinute) : null,
+    liveExtraMinute: Math.max(0, Number(match.liveExtraMinute) || 0),
     yellowCards: match.yellowCards || null,
     redCards: match.redCards || null,
     goals: Array.isArray(match.goals) ? match.goals : []

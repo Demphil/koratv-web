@@ -20,6 +20,9 @@ await cp('player', 'dist', { recursive: true });
 await cp('player/player.html', 'dist/739184.html');
 await cp('player/player.html', 'dist/watch.html');
 await cp(require.resolve('hls.js/dist/hls.min.js'), 'dist/hls.min.js');
+for (const asset of ['three.module.min.js', 'three.core.min.js']) {
+  await cp(join(dirname(require.resolve('three')), asset), `dist/${asset}`);
+}
 for (const asset of ['plyr.js', 'plyr.css', 'plyr.svg']) {
   await cp(join(dirname(require.resolve('plyr')), asset), `dist/${asset}`);
 }
@@ -29,7 +32,7 @@ for (const icon of ['mail', 'trophy', 'scale', 'landmark', 'tv']) {
 }
 await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\nconst STREAM_API_ORIGINS = new Set(${JSON.stringify(apiOrigins)});\n`);
 const version = createHash('sha256');
-for (const asset of ['config.js', 'player.js', 'player.css', 'match-ui.css', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
+for (const asset of ['config.js', 'player.js', 'player.css', 'match-ui.css', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
   version.update(await readFile(`dist/${asset}`));
 }
 const revision = version.digest('hex').slice(0, 12);
@@ -37,7 +40,7 @@ const html = (await readFile('player/player.html', 'utf8')).replace(/((?:src|hre
 for (const page of ['player.html', '739184.html', 'watch.html']) await writeFile(`dist/${page}`, html);
 await writeFile('dist/headers.txt', [
   'Set these HTTP response headers on the player host:',
-  `Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: ${apiOrigins.join(' ')}; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:; base-uri 'none'; form-action 'none'`,
+  `Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline' https://nap5k.com https://n6wxm.com https://al5sm.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' blob: ${apiOrigins.join(' ')}; connect-src 'self' https:; worker-src blob:; frame-src 'self' https:; base-uri 'none'; form-action 'none'`,
   'Referrer-Policy: strict-origin-when-cross-origin',
   'Cache-Control: no-store',
   'X-Content-Type-Options: nosniff',

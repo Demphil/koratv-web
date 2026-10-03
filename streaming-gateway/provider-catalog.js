@@ -71,6 +71,7 @@ export function createProviderCatalog(env = process.env) {
   };
   const refresh = (force = false) => {
     if (!force && Date.now() - checked < 5000) return;
+    if (force) fileVersions.clear();
     checked = Date.now();
     const previous = catalog;
     catalog = loadChanged(env.PROVIDER_CATALOG_PATH || '/etc/koratv/provider-catalog.json', catalog);

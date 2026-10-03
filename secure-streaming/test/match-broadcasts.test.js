@@ -261,6 +261,18 @@ test('Kooora detail channels require the requested exact source fixture ID', () 
   assert.deepEqual(extractKoooraBroadcastChannelsFromHtml(html, 'different'), []);
 });
 
+test('Kooora period is authoritative for live minute and stoppage time', () => {
+  const html = `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { data: [{
+    competition: { name: 'La Liga' }, matches: [{ id: 'clock', startDate: kickoff_time, status: 'LIVE',
+      teamA: { name: 'Real Madrid' }, teamB: { name: 'Barcelona' }, score: { teamA: 1, teamB: 0 },
+      period: { type: 'SECOND_HALF', minute: 90, extra: 3 } }]
+  }] } } })}</script>`;
+  const [row] = parseKoooraMatches(html);
+  assert.equal(row.payload.liveMinute, 90);
+  assert.equal(row.payload.liveExtraMinute, 3);
+  assert.equal(row.payload.score, '1 - 0');
+});
+
 test('detail channel lookup budget goes to live and upcoming fixtures, not finished rows at the top of the source', () => {
   const row = (id, status, time) => ({ match_id: id, source: 'kooora', kickoff_time: time,
     payload: { status, channels: [], matchLink: `https://www.kooora.com/${id}` } });

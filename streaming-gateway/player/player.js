@@ -466,7 +466,7 @@ async function loadMatchPanel(matchId) {
     if (homeArabic) { homeArabic.textContent = arabicTeamLabel(match, 'home'); homeArabic.hidden = !homeArabic.textContent || homeArabic.textContent === match.homeTeam; }
     if (awayArabic) { awayArabic.textContent = arabicTeamLabel(match, 'away'); awayArabic.hidden = !awayArabic.textContent || awayArabic.textContent === match.awayTeam; }
     setText('match-score', cleanScore(match.score));
-    setText('match-minute', match.playbackState === 'ended' ? 'النتيجة النهائية' : match.liveMinute != null && Number.isFinite(Number(match.liveMinute)) ? `${match.liveMinute}' •` : match.time || '');
+    setText('match-minute', match.playbackState === 'ended' ? 'النتيجة النهائية' : match.liveMinute != null && Number.isFinite(Number(match.liveMinute)) ? `${match.liveMinute}${match.liveExtraMinute ? `+${match.liveExtraMinute}` : ''}' •` : 'مباشر');
     setText('match-yellow-cards', String(cardTotal(match.yellowCards)));
     setText('match-red-cards', String(cardTotal(match.redCards)));
     for (const side of ['home','away']) {

@@ -33,6 +33,14 @@ test('reversed source display order preserves lineup sides, score and cards', ()
   assert.equal(merged.payload.statistics[0].team.id, 2);
 });
 
+test('detail enrichment cannot replace Kooora score, minute or end a live fixture', () => {
+  const live = { ...row, payload: { ...row.payload, score: '1 - 0', status: 'LIVE', isLive: true, isFinished: false, liveMinute: 90, liveExtraMinute: 3 } };
+  const stale = { ...api, payload: { ...api.payload, score: '0 - 1', status: 'FT', isLive: false, isFinished: true, liveMinute: 116 } };
+  const merged = attachApiFootballDetails(live, [stale]);
+  for (const key of ['score', 'status', 'isLive', 'isFinished', 'liveMinute', 'liveExtraMinute']) assert.equal(merged.payload[key], live.payload[key]);
+  assert.equal(merged.payload.sourceFixtureId, 42);
+});
+
 test('mismatched fixture identity and ambiguous matches cannot supply card data', () => {
   for (const candidates of [[{ ...api, away_team: 'England' }], [api, api], [{ ...api, payload: { ...api.payload, broadcast: { sourceMatchId: 'different' } } }]]) {
     const merged = attachApiFootballDetails(row, candidates);

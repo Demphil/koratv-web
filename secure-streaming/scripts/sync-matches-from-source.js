@@ -711,7 +711,8 @@ function normalizeMatchEvents(match = {}) {
 }
 
 function matchMinute(match = {}) {
-  const value = Number(match.minute ?? match.matchMinute ?? match.currentMinute ?? match.time?.minute);
+  const raw = match.period?.minute ?? match.minute ?? match.matchMinute ?? match.currentMinute ?? match.time?.minute;
+  const value = raw == null || raw === '' ? NaN : Number(raw);
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
@@ -765,6 +766,8 @@ export function parseKoooraMatches(html) {
           isLive: sourceMatchState({ status }) === 'live',
           isFinished: sourceMatchState({ status }) === 'ended',
           liveMinute: matchMinute(match),
+          liveExtraMinute: Number(match.period?.extra) || 0,
+          livePeriod: match.period?.type || null,
           goals: events.goals,
           yellowCards: events.yellowCards,
           redCards: events.redCards,

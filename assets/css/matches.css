@@ -921,6 +921,7 @@ html.crawler-view .match-card-link {
 .match-card .team-name { line-height: 1.5; overflow-wrap: anywhere; }
 .match-card .match-info { width: 76px; min-width: 0; }
 .match-card .score { white-space: nowrap; direction: ltr; }
+.team-score-pair { display: inline-flex; direction: rtl; gap: 0.3em; unicode-bidi: isolate; }
 .match-card .time { line-height: 1.5; direction: ltr; }
 
 @media (max-width: 560px) {

@@ -139,7 +139,8 @@ jobs:
                 const apps=JSON.parse(execFileSync("pm2",["jlist"],{encoding:"utf8"}));
                 for(const app of apps){
                   const env=app.pm2_env||{};
-                  if(env.pm_exec_path==="/home/ubuntu/iptv-system/secure-streaming/scripts/match-sync-cron.js")
+                  if(env.pm_exec_path==="/home/ubuntu/iptv-system/secure-streaming/scripts/match-sync-cron.js"
+                    || (app.name==="match-sync-cron" && env.pm_cwd==="/home/ubuntu/iptv-system/secure-streaming"))
                     execFileSync("pm2",["restart",String(app.pm_id)],{stdio:"inherit"});
                 }
               '
@@ -160,6 +161,8 @@ jobs:
             ' bash "$STAGING/manual-match-selection.json"
             cd /opt/koratv/current
             pm2 delete iptv-app || true
+            # PM2 reload keeps the old cwd/script; recreate only this managed scheduler.
+            pm2 delete koratv-provider-pool-sync || true
             pm2 startOrReload ecosystem.oracle.config.js --env production --update-env
             pm2 save
             healthy=false

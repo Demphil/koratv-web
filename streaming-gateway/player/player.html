@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="./match-ui.css">
 </head>
 <body>
+  <canvas id="page-depth" aria-hidden="true"></canvas>
   <div class="layout-wrapper">
     <main class="main-content">
       <header class="player-heading"><img class="morocco-flag" src="./flag-morocco.png" width="24" height="16" alt="المغرب"><strong dir="ltr">KORA TV</strong><span class="heading-live">مباشر</span></header>
@@ -91,13 +92,15 @@
   <script src="./plyr.js"></script>
   <script src="./player.js"></script>
   <script src="./player-branding.js"></script>
+  <script src="./page-depth.js" defer></script>
   <script>
     (() => {
       const AD_COOLDOWN_MS = 5 * 60 * 1000;
-      const DIRECT_CLICK_URL = 'https://omg10.com/4/11908572';
+      const DIRECT_CLICK_URL = 'https://omg10.com/4/11949902';
       const MONETAG_SCRIPTS = [
         { zone: '11908579', src: 'https://nap5k.com/tag.min.js' },
-        { zone: '11908582', src: 'https://n6wxm.com/vignette.min.js' }
+        { zone: '11908582', src: 'https://n6wxm.com/vignette.min.js' },
+        { zone: '11949898', src: 'https://al5sm.com/tag.min.js' }
       ];
       const container = document.getElementById('player-container');
       const video = document.getElementById('video');

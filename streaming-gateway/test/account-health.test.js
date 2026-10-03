@@ -6,6 +6,26 @@ import { join } from 'node:path';
 import { AccountHealth } from '../account-health.js';
 import { ProviderPool, PROVIDER_IDS, PoolError } from '../provider-pool.js';
 
+test('management 403 neither revokes working media nor perpetually renews a media cooldown', async t => {
+  let now = 1000000;
+  const dir = mkdtempSync(join(tmpdir(), 'account-metadata-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const health = new AccountHealth({ accounts: () => ({ B: { enabled: true, sourceUrl: 'https://provider.example/live/user/pass/1.m3u8' } }),
+    path: join(dir, 'accounts-status.json'), now: () => now, fetchImpl: async () => new Response('Forbidden', { status: 403 }) });
+  const pool = new ProviderPool({ now: () => now, health }); health.pool = pool; t.after(() => pool.close());
+  const playback = { match_id: 'live', provider_sources: { B: 'https://provider.example/live/user/pass/1.m3u8' } };
+  const lease = pool.acquire(playback, 'viewer');
+  await health.check();
+  assert.equal(pool.valid(lease), true);
+  assert.equal(health.snapshot()[1].status, 'BUSY_STREAMING');
+  pool.fail(lease, 403);
+  const until = pool.blocked.get('B');
+  now += 10000; await health.check();
+  assert.equal(pool.blocked.get('B'), until);
+  now = until + 1; await health.check();
+  assert.equal(pool.acquire(playback, 'viewer').provider, 'B');
+});
+
 test('diagnostic heartbeats preserve slow in-flight leases without resurrecting revoked leases', t => {
   let now = 0; const pool = new ProviderPool({ now: () => now }); t.after(() => pool.close());
   const lease = pool.acquire({ match_id: 'slow', provider_sources: { A: 'https://a.example/slow' } }, 'probe');
