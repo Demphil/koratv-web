@@ -23,9 +23,13 @@ await cp(require.resolve('hls.js/dist/hls.min.js'), 'dist/hls.min.js');
 for (const asset of ['plyr.js', 'plyr.css', 'plyr.svg']) {
   await cp(join(dirname(require.resolve('plyr')), asset), `dist/${asset}`);
 }
+await mkdir('dist/icons', { recursive: true });
+for (const icon of ['mail', 'trophy', 'scale', 'landmark', 'tv']) {
+  await cp(join(dirname(require.resolve('lucide-static/package.json')), 'icons', `${icon}.svg`), `dist/icons/${icon}.svg`);
+}
 await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\nconst STREAM_API_ORIGINS = new Set(${JSON.stringify(apiOrigins)});\n`);
 const version = createHash('sha256');
-for (const asset of ['config.js', 'player.js', 'player.css', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
+for (const asset of ['config.js', 'player.js', 'player.css', 'match-ui.css', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
   version.update(await readFile(`dist/${asset}`));
 }
 const revision = version.digest('hex').slice(0, 12);

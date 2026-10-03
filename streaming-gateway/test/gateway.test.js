@@ -73,7 +73,7 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
         lineups: [{
           teamId: 10, team: 'Botafogo', formation: '4-3-3', coach: 'Coach',
           startXI: [
-            { id: 1, name: 'Player One', number: 9, position: 'F', grid: '1:1', photo: 'https://media.api-sports.io/football/players/1.png' },
+            { id: 1, name: 'Player One', number: 9, position: 'F', grid: '1:1', rating: 6.7, photo: 'https://media.api-sports.io/football/players/1.png' },
             { id: 2, name: 'Untrusted Photo', photo: 'https://bad.example/photo.png' }
           ],
           substitutes: []
@@ -155,6 +155,8 @@ test('token lifecycle, IP checks and protected HLS resources', async (t) => {
   assert.equal(infoBody.match.homeTeamId, 10);
   assert.equal(infoBody.match.events[0].elapsed, 55);
   assert.equal(infoBody.match.lineups[0].startXI[0].photo, 'https://media.api-sports.io/football/players/1.png');
+  assert.equal(infoBody.match.lineups[0].startXI[0].rating,6.7);
+  assert.equal(infoBody.match.lineups[0].team,'Botafogo');
   assert.equal(infoBody.match.lineups[0].startXI[1].photo, '');
   assert.equal(infoBody.match.standings[0].team, 'Botafogo');
   assert.equal(infoBody.match.venue, 'Test Stadium');

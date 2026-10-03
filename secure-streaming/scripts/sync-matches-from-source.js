@@ -6,6 +6,7 @@ import { isAllowedMatch, normalizeTeamName } from "../../shared/league-whitelist
 import { reconcileBroadcasts, mergeRefreshedMatch, sameFixture } from "../../shared/match-broadcasts.mjs";
 import { pruneMatchData } from './prune-match-data.js';
 import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
+import { normalizeKnockoutFixtures } from '../../shared/knockout.mjs';
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
@@ -23,6 +24,7 @@ const liveDetailsRefreshMs = Math.max(5, Number(process.env.API_FOOTBALL_LIVE_DE
 const lineupDetailsRefreshMs = Math.max(15, Number(process.env.API_FOOTBALL_LINEUP_DETAILS_REFRESH_MINUTES || 15)) * 60_000;
 const standingsRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_STANDINGS_REFRESH_HOURS || 24)) * 60 * 60_000;
 const standingsLimit = Math.max(0, Number(process.env.API_FOOTBALL_STANDINGS_PER_SYNC || 1));
+const knockoutRefreshMs = 4 * 60 * 60_000;
 const apiFootballTodayRefreshMs = Math.max(5, Number(process.env.API_FOOTBALL_TODAY_REFRESH_MINUTES || 10)) * 60_000;
 const apiFootballTomorrowRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_TOMORROW_REFRESH_HOURS || 12)) * 60 * 60_000;
 const koooraDetailChannelLimit = Math.max(0, Number(process.env.KOOORA_DETAIL_CHANNEL_LIMIT || 20));
@@ -175,9 +177,11 @@ function apiFootballPhoto(value) {
   }
 }
 
-export function normalizeApiFootballLineups(lineups = []) {
+export function normalizeApiFootballLineups(lineups = [], playerStatistics = []) {
   if (!Array.isArray(lineups)) return [];
   return lineups.slice(0, 2).map((lineup) => {
+    const teamStats = (Array.isArray(playerStatistics) ? playerStatistics : []).find(team => String(team?.team?.id) === String(lineup?.team?.id));
+    const ratings = new Map((teamStats?.players || []).map(entry => [String(entry?.player?.id), entry?.statistics?.[0]?.games?.rating]));
     const player = (item) => {
       const person = item?.player || {};
       const id = Number(person.id) || null;
@@ -187,6 +191,8 @@ export function normalizeApiFootballLineups(lineups = []) {
         number: Number(person.number) || null,
         position: String(person.pos || "").slice(0, 12),
         grid: String(person.grid || "").slice(0, 12),
+        rating: ratings.get(String(id)) != null && Number.isFinite(Number(ratings.get(String(id))))
+          && Number(ratings.get(String(id))) >= 0 && Number(ratings.get(String(id))) <= 10 ? Number(ratings.get(String(id))) : null,
         photo: apiFootballPhoto(person.photo) || (id ? `https://media.api-sports.io/football/players/${id}.png` : "")
       };
     };
@@ -308,6 +314,8 @@ async function collectApiFootballRows() {
           awayTeamId: fixture?.teams?.away?.id || null,
           leagueId: fixture?.league?.id || null,
           season: fixture?.league?.season || null,
+          leagueType: fixture?.league?.type || '',
+          leagueRound: fixture?.league?.round || '',
           leagueCountry,
           sourceFixtureId: fixture?.fixture?.id || "",
           channelSource: "trusted_source_required",
@@ -876,7 +884,9 @@ export async function enrichApiFootballMatchDetails(rows) {
         row.payload = {
           ...row.payload,
           ...(Array.isArray(detail.events) ? { events: normalizedEvents, ...eventSummary } : {}),
-          ...(Array.isArray(detail.lineups) ? { lineups: normalizeApiFootballLineups(detail.lineups) } : {}),
+          ...(Array.isArray(detail.lineups) ? { lineups: normalizeApiFootballLineups(detail.lineups, detail.players) } : {}),
+          ...(detail.league ? { leagueId: detail.league.id, season: detail.league.season,
+            leagueType: detail.league.type || '', leagueRound: detail.league.round || '' } : {}),
           ...(Array.isArray(detail.statistics) ? { statistics: normalizeApiFootballStatistics(detail.statistics) } : {}),
           ...(detail.fixture?.venue?.name ? { venue: String(detail.fixture.venue.name).slice(0, 120) } : {}),
           ...(detail.fixture?.venue?.city ? { venueCity: String(detail.fixture.venue.city).slice(0, 90) } : {}),
@@ -907,6 +917,20 @@ export async function enrichApiFootballMatchDetails(rows) {
         console.warn(`API-Football standings failed for league ${row.payload.leagueId}: ${error.message}`);
       }
     }
+  }
+  // Brackets are fetched in background, never during a visitor's Play request.
+  const dueCup = rows.find(row => row.payload?.leagueId && row.payload?.season
+    && (/^cup$/i.test(row.payload.leagueType || '') || /^semi[ -]?finals?$|^final$/i.test(row.payload.leagueRound || ''))
+    && (!row.payload.knockoutUpdatedAt || now - Date.parse(row.payload.knockoutUpdatedAt) >= knockoutRefreshMs));
+  if (dueCup) {
+    try {
+      const fixtures = await fetchApiFootball('/fixtures', { league: dueCup.payload.leagueId, season: dueCup.payload.season });
+      const knockout = normalizeKnockoutFixtures(fixtures, dueCup.payload.leagueId, dueCup.payload.season);
+      for (const related of rows.filter(row => String(row.payload?.leagueId) === String(dueCup.payload.leagueId)
+        && String(row.payload?.season) === String(dueCup.payload.season))) {
+        related.payload = { ...related.payload, ...(knockout ? { knockout } : {}), knockoutUpdatedAt: new Date(now).toISOString() };
+      }
+    } catch (error) { console.warn(`API-Football knockout refresh failed: ${error.message}`); }
   }
   return rows;
 }

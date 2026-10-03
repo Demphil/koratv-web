@@ -10,6 +10,49 @@ const {
   normalizeApiFootballStandings,
   normalizeApiFootballStatistics
 } = await import("../scripts/sync-matches-from-source.js");
+const { normalizeKnockoutFixtures } = await import('../../shared/knockout.mjs');
+
+test('player ratings use the existing fixture response and exact team/player identities', () => {
+  const lineups = [{team:{id:1,name:'Home'},startXI:[{player:{id:9,name:'Player'}},{player:{id:10,name:'Other'}}]}];
+  const stats = [{team:{id:2},players:[{player:{id:9},statistics:[{games:{rating:'9.9'}}]}]},
+    {team:{id:1},players:[{player:{id:9},statistics:[{games:{rating:'6.7'}}]},{player:{id:10},statistics:[{games:{rating:'99'}}]}]}];
+  const normalized = normalizeApiFootballLineups(lineups,stats);
+  assert.equal(normalized[0].startXI[0].rating,6.7);
+  assert.equal(normalized[0].startXI[1].rating,null);
+  assert.equal(normalizeApiFootballLineups(lineups)[0].startXI[0].rating,null);
+});
+
+test('knockout bracket includes only the exact competition, season and announced final rounds', () => {
+  const fixture = (id,round,league=1,season=2026) => ({fixture:{id,date:'2026-10-03T18:30:00Z',status:{short:'FT'}},
+    league:{id:league,season,round},teams:{home:{name:'Home'},away:{name:'Away'}},goals:{home:0,away:0}});
+  const bracket = normalizeKnockoutFixtures([fixture(1,'Semi-finals'),fixture(2,'Semi-finals'),fixture(3,'Quarter-finals'),
+    fixture(4,'Final',2),fixture(5,'Final',1,2025)],1,2026);
+  assert.equal(bracket.rounds[0].matches.length,2);
+  assert.equal(bracket.rounds[0].matches[0].score,'0 - 0');
+  assert.equal(bracket.rounds[1].matches.length,0,'unknown final is not invented');
+  assert.equal(normalizeKnockoutFixtures([fixture(3,'Regular Season - 1')],1,2026),null);
+});
+
+test('background bracket refresh is cached four hours and does not invent missing finals', async () => {
+  const originalFetch=globalThis.fetch, calls=[];
+  const now=Date.now();
+  const row={home_team:'Home',away_team:'Away',kickoff_time:new Date(now-600000).toISOString(),payload:{
+    sourceFixtureId:1,leagueId:7,season:2026,leagueRound:'Semi-finals',isLive:true,
+    standingsVersion:2,standingsUpdatedAt:new Date(now).toISOString(),detailsUpdatedAt:new Date(now).toISOString()}};
+  globalThis.fetch=async url=>{
+    calls.push(new URL(url));
+    return new Response(JSON.stringify({response:[1,2].map(id=>({fixture:{id,date:new Date(now).toISOString()},
+      league:{id:7,season:2026,round:'Semi-finals'},teams:{home:{name:`Home ${id}`},away:{name:`Away ${id}`}},goals:{home:0,away:0}}))}),{status:200});
+  };
+  try {
+    await enrichApiFootballMatchDetails([row]);
+    await enrichApiFootballMatchDetails([row]);
+    assert.equal(calls.length,1);
+    assert.equal(calls[0].searchParams.get('league'),'7');
+    assert.equal(row.payload.knockout.rounds[0].matches.length,2);
+    assert.equal(row.payload.knockout.rounds[1].matches.length,0);
+  } finally {globalThis.fetch=originalFetch;}
+});
 
 test("refreshing a fixture retains cached details while replacing current score data", () => {
   const previous = {

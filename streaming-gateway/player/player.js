@@ -293,7 +293,10 @@ function renderPlayerCard(player) {
   const slot = player.pitchSlot ? 'lineup-positioned' : grid ? `slot-${grid[1]}-${grid[2]}` : 'lineup-unplaced';
   const position = player.pitchSlot ? ` data-pitch-x="${player.pitchSlot.x}" data-pitch-y="${player.pitchSlot.y}"` : '';
   const photo = player.photo ? `<img src="${escapeHtml(player.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="lineup-player-placeholder">${escapeHtml(teamInitials(player.name))}</span>`;
-  return `<div class="lineup-player ${slot}"${position} title="${escapeHtml(player.name)}">${photo}<b>${escapeHtml(String(player.number || ''))}</b><span>${escapeHtml(cleanText(player.name, 'لاعب'))}</span></div>`;
+  const rating = Number(player.rating);
+  const badge = player.rating != null && Number.isFinite(rating) && rating >= 0 && rating <= 10 ? `<em class="player-rating">${rating.toFixed(1)}</em>` : '';
+  const card = (currentMatchInfo?.events || []).find(event => normalizeTeamNameForUi(event.player) === normalizeTeamNameForUi(player.name) && event.type === 'Card');
+  return `<div class="lineup-player ${slot}"${position} title="${escapeHtml(player.name)}"><div class="player-portrait">${photo}<b>${escapeHtml(String(player.number ?? ''))}</b>${badge}${card ? `<i class="player-card ${/red/i.test(card.detail) ? 'red' : 'yellow'}" aria-label="${escapeHtml(card.detail)}"></i>` : ''}</div><span>${escapeHtml(cleanText(player.name, 'لاعب'))}</span></div>`;
 }
 
 function positionLineup(players) {
@@ -307,7 +310,7 @@ function positionLineup(players) {
   }
   return [...rows.keys()].sort((a, b) => a - b).flatMap((row, index, keys) =>
     rows.get(row).sort((a, b) => a.column - b.column).map((player, column, group) => ({
-      ...player, pitchSlot: { x: 100 * (column + 1) / (group.length + 1), y: 12 + index * 76 / Math.max(1, keys.length - 1) },
+      ...player, pitchSlot: { x: 100 * (column + 1) / (group.length + 1), y: 88 - index * 76 / Math.max(1, keys.length - 1) },
     })));
 }
 
@@ -345,42 +348,67 @@ function renderLineups(match) {
   const unplaced = players.filter((player) => !/^([1-5]):([1-5])$/.test(String(player.grid || '')));
   const teamButtons = `
     <div class="lineup-team-switch" role="group" aria-label="اختيار الفريق">
-      <button type="button" data-lineup-side="home" aria-pressed="${home}">${escapeHtml(match.homeTeam)}</button>
-      <button type="button" data-lineup-side="away" aria-pressed="${!home}">${escapeHtml(match.awayTeam)}</button>
+      <button type="button" data-lineup-side="home" aria-pressed="${home}">${match.homeLogo ? `<img src="${escapeHtml(match.homeLogo)}" alt="">` : ''}${escapeHtml(arabicTeamLabel(match, 'home') || match.homeTeam)}</button>
+      <button type="button" data-lineup-side="away" aria-pressed="${!home}">${match.awayLogo ? `<img src="${escapeHtml(match.awayLogo)}" alt="">` : ''}${escapeHtml(arabicTeamLabel(match, 'away') || match.awayTeam)}</button>
     </div>`;
   if (!lineup || !players.length) return `${teamButtons}<p class="empty-match-data">لم تصل التشكيلة الرسمية لهذه المباراة بعد.</p>`;
   const pitch = placed.length ? `
     <div class="lineup-pitch lineup-coordinate-pitch" aria-label="تشكيلة ${escapeHtml(teamName)}">
-      <div class="pitch-lines" aria-hidden="true"></div>
+      <div class="pitch-lines" aria-hidden="true"><i class="pitch-circle"></i><i class="pitch-box top"></i><i class="pitch-box bottom"></i></div>
       ${placed.map(renderPlayerCard).join('')}
+      <span class="pitch-formation" dir="ltr">${escapeHtml(lineup.formation || '')}</span>
     </div>` : '';
+  const bench = (lineup.substitutes || []).map(player => {
+    const substitution = (match.events || []).find(event => /^subst/i.test(event.type) && normalizeTeamNameForUi(event.assist) === normalizeTeamNameForUi(player.name));
+    const photo = player.photo ? `<img src="${escapeHtml(player.photo)}" alt="" loading="lazy">` : `<span class="bench-initials">${escapeHtml(teamInitials(player.name))}</span>`;
+    return `<div class="bench-player"><span class="bench-portrait">${photo}<b>${escapeHtml(player.number ?? '')}</b></span><span><strong>${escapeHtml(player.name)}</strong>${substitution ? `<small>بدل ${escapeHtml(substitution.player)}</small>` : ''}</span>${substitution ? `<time>${escapeHtml(formatEventMinute(substitution))} ↑</time>` : ''}</div>`;
+  }).join('');
   return `${teamButtons}
-    <div class="lineup-heading"><strong>${escapeHtml(teamName)}</strong><span>${escapeHtml(lineup.formation || 'التشكيلة الأساسية')}</span></div>
     ${pitch}
     ${unplaced.length ? `<div class="lineup-gallery">${unplaced.map(renderPlayerCard).join('')}</div>` : ''}
-    <div class="lineup-meta">${lineup.coach ? `<span>المدرب: ${escapeHtml(lineup.coach)}</span>` : ''}<span>البدلاء: ${(lineup.substitutes || []).length}</span></div>
-    ${(lineup.substitutes || []).length ? `<h4 class="lineup-subtitle">البدلاء</h4><div class="lineup-gallery">${lineup.substitutes.map(renderPlayerCard).join('')}</div>` : ''}`;
+    ${bench ? `<section class="lineup-bench"><h4>مقاعد البدلاء <small>${lineup.substitutes.length} بدلاء</small></h4>${bench}</section>` : ''}
+    ${lineup.coach ? `<section class="lineup-coach">${lineup.coachPhoto ? `<img src="${escapeHtml(lineup.coachPhoto)}" alt="" loading="lazy">` : ''}<span><small>المدرب</small><strong>${escapeHtml(lineup.coach)}</strong></span></section>` : ''}`;
+}
+
+function matchInfoItem(icon, label, value) {
+  return `<div class="match-info-item"><span class="match-info-icon"><img src="./icons/${icon}.svg" alt="" width="20" height="20"></span><span><small>${label}</small><strong>${escapeHtml(cleanText(value, 'غير متوفر حالياً'))}</strong></span></div>`;
+}
+
+function renderKnockout(match) {
+  const rounds = Array.isArray(match.knockout?.rounds) ? match.knockout.rounds : [];
+  if (!rounds.some(round => round.matches?.length)) return `<div class="knockout-view"><img class="knockout-trophy" src="./icons/trophy.svg" alt="" width="36" height="36"><h4>خروج المغلوب</h4><p class="empty-match-data">لم تصل بيانات أدوار خروج المغلوب لهذه البطولة من المصدر بعد.</p><div class="bracket-fixture"><span>${escapeHtml(match.homeTeam)}</span><b dir="ltr">${escapeHtml(cleanScore(match.score))}</b><span>${escapeHtml(match.awayTeam)}</span></div></div>`;
+  const fixtureCard = fixture => `<div class="bracket-fixture ${String(fixture.fixtureId) === String(match.sourceFixtureId) ? 'current-fixture' : ''}"><span>${fixture.homeLogo ? `<img src="${escapeHtml(fixture.homeLogo)}" alt="">` : ''}${escapeHtml(fixture.homeTeam || 'لم يتحدد بعد')}<b>${escapeHtml(cleanScore(fixture.score).split(' - ')[0] === 'VS' ? '' : cleanScore(fixture.score).split(' - ')[0])}</b></span><span>${fixture.awayLogo ? `<img src="${escapeHtml(fixture.awayLogo)}" alt="">` : ''}${escapeHtml(fixture.awayTeam || 'لم يتحدد بعد')}<b>${escapeHtml(cleanScore(fixture.score).split(' - ')[1] || '')}</b></span></div>`;
+  const semis = rounds.find(round => round.key === 'semifinal')?.matches || [];
+  const finals = rounds.find(round => round.key === 'final')?.matches || [];
+  if (semis.length === 2 && finals.length <= 1) return `<div class="knockout-view"><div class="final-four" dir="ltr"><section>${fixtureCard(semis[0])}<small>نصف النهائي</small></section><section class="bracket-final"><img class="knockout-trophy" src="./icons/trophy.svg" alt="" width="36" height="36"><h4>النهائي</h4>${finals.length ? fixtureCard(finals[0]) : '<div class="bracket-fixture bracket-pending"><span>لم يتحدد بعد</span><span>لم يتحدد بعد</span></div>'}</section><section>${fixtureCard(semis[1])}<small>نصف النهائي</small></section></div></div>`;
+  return `<div class="knockout-view"><img class="knockout-trophy" src="./icons/trophy.svg" alt="" width="36" height="36"><div class="bracket-rounds">${rounds.map(round => `<section class="bracket-round"><h4>${escapeHtml(round.name)}</h4>${(round.matches || []).map(fixture => `<div class="bracket-fixture"><span>${escapeHtml(fixture.homeTeam || 'لم يتحدد بعد')}</span><b dir="ltr">${escapeHtml(cleanScore(fixture.score))}</b><span>${escapeHtml(fixture.awayTeam || 'لم يتحدد بعد')}</span></div>`).join('')}</section>`).join('')}</div></div>`;
 }
 
 function renderMatchDetail(tab, match) {
   if (!match) return '<p class="empty-match-data">جاري تحميل بيانات المباراة...</p>';
   if (tab === 'lineups') return renderLineups(match);
   if (tab === 'standings') {
-    const table = Array.isArray(match.standings) ? match.standings : [];
-    return table.length ? `<div class="standings-table-wrap"><table class="match-standings"><thead><tr><th>#</th><th>الفريق</th><th>لعب</th><th>فارق</th><th>نقاط</th></tr></thead><tbody>${table.map((row) => `<tr><td>${escapeHtml(row.rank || '')}</td><th>${escapeHtml(row.team || row.name || '')}</th><td>${escapeHtml(row.played ?? '')}</td><td>${escapeHtml(row.goalDifference ?? '')}</td><td><strong>${escapeHtml(row.points ?? '')}</strong></td></tr>`).join('')}</tbody></table></div>`
-      : '<p class="empty-match-data">جدول الترتيب غير متوفر في بيانات هذه المباراة حالياً.</p>';
+    return renderKnockout(match);
   }
   const statisticGroups = Array.isArray(match.statistics) ? match.statistics : [];
-  const stats = statisticGroups.length === 2 ? new Map(statisticGroups.map((team) => [team.team, new Map(team.statistics.map((item) => [item.type, item.value]))])) : null;
-  const statRows = stats ? [...new Set(statisticGroups.flatMap((team) => team.statistics.map((item) => item.type)))].map((type) => {
-    const values = statisticGroups.map((team) => [...team.statistics].find((item) => item.type === type)?.value ?? '--');
-    return `<div class="match-stat-row"><b>${escapeHtml(String(values[0]))}</b><span>${escapeHtml(type)}</span><b>${escapeHtml(String(values[1]))}</b></div>`;
+  const homeStats = statisticGroups.find(group => normalizeTeamNameForUi(group.team) === normalizeTeamNameForUi(match.homeTeam)) || statisticGroups[0];
+  const awayStats = statisticGroups.find(group => normalizeTeamNameForUi(group.team) === normalizeTeamNameForUi(match.awayTeam)) || statisticGroups[1];
+  const value = (group, type) => group?.statistics?.find(item => item.type === type)?.value ?? '--';
+  const possession = [value(homeStats, 'Ball Possession'), value(awayStats, 'Ball Possession')];
+  const percentages = possession.map(v => /^\d+(?:\.\d+)?%$/.test(String(v)) ? Number(String(v).replace('%', '')) : NaN);
+  const possessionBar = percentages.every(v => Number.isFinite(v) && v >= 0 && v <= 100) && Math.abs(percentages[0] + percentages[1] - 100) < 2
+    ? `<div class="match-possession"><small>الاستحواذ</small><div class="possession-track" role="img" aria-label="${escapeHtml(match.homeTeam)} ${escapeHtml(possession[0])}، ${escapeHtml(match.awayTeam)} ${escapeHtml(possession[1])}"><i data-possession="${percentages[0]}"></i></div><div><b>${escapeHtml(possession[0])}</b><b>${escapeHtml(possession[1])}</b></div></div>` : '';
+  const statTypes = [['Total Shots', 'إجمالي التسديدات'], ['Shots on Goal', 'التسديدات على المرمى'], ['Shots insidebox', 'التسديدات داخل المنطقة'], ['Passes accurate', 'تمريرات ناجحة']];
+  const statRows = statisticGroups.length === 2 ? statTypes.map(([type, label]) => {
+    const values = [value(homeStats, type), value(awayStats, type)];
+    if (values.every(v => v === '--')) return '';
+    return `<div class="match-stat-row"><b>${escapeHtml(values[0])}</b><span>${label}</span><b>${escapeHtml(values[1])}</b></div>`;
   }).join('') : '<p class="empty-match-data">إحصاءات الاستحواذ والتسديد تظهر عند وصولها من مزود المباراة.</p>';
   const events = Array.isArray(match.events) && match.events.length ? match.events : (match.goals || []).map((goal) => ({ ...goal, type: 'Goal', detail: 'Goal' }));
-  const eventHtml = events.map((event) => `<div class="match-event"><time>${escapeHtml(formatEventMinute(event))}</time><span><b>${escapeHtml(event.player || event.detail || event.type || 'حدث')}</b><small>${escapeHtml([event.team, event.assist ? `تمريرة: ${event.assist}` : '', event.detail].filter(Boolean).join(' · '))}</small></span></div>`).join('');
-  return `<div class="match-context-row"><span>${escapeHtml(cleanText(match.league, ''))}</span><b>${escapeHtml(cleanText(match.venue, ''))}${match.venueCity ? ` · ${escapeHtml(match.venueCity)}` : ''}</b>${match.referee ? `<span>الحكم: ${escapeHtml(match.referee)}</span>` : ''}</div>
-    <div class="live-match-events">${eventHtml || `<p class="empty-match-data">${match.eventDetailsLoaded ? 'لا توجد أحداث مسجلة حتى الآن.' : 'ستظهر أحدث أحداث المباراة هنا عند وصولها من المصدر.'}</p>`}</div>
-    <div class="live-match-statistics">${statRows}</div>`;
+  const eventHtml = events.map((event) => `<div class="match-event"><time>${escapeHtml(formatEventMinute(event))}</time><span><b>${escapeHtml(event.player || event.detail || event.type || 'حدث')}</b><small>${escapeHtml([event.team, event.assist ? `${/^subst/i.test(event.type) ? 'دخول' : 'تمريرة'}: ${event.assist}` : '', event.detail].filter(Boolean).join(' · '))}</small></span></div>`).join('');
+  return `<section class="match-statistics-section"><div class="stats-inner">${possessionBar}${statRows}</div></section>
+    <section class="match-information"><h3>معلومات المباراة</h3><div class="match-info-list">${matchInfoItem('scale', 'الحكم', match.referee)}${matchInfoItem('landmark', 'الملعب', [match.venue, match.venueCity].filter(Boolean).join(' · '))}${matchInfoItem('tv', 'القناة الناقلة الموثقة', match.channelName)}</div></section>
+    <section class="match-events-section"><h3>أحداث المباراة</h3><div class="live-match-events">${eventHtml || `<p class="empty-match-data">${match.eventDetailsLoaded ? 'لا توجد أحداث مسجلة حتى الآن.' : 'ستظهر أحدث أحداث المباراة هنا عند وصولها من المصدر.'}</p>`}</div></section>`;
 }
 
 function activateMatchApiNode(node) {
@@ -399,6 +427,7 @@ function activateMatchApiNode(node) {
       player.style.left = `${Number(player.dataset.pitchX)}%`;
       player.style.top = `${Number(player.dataset.pitchY)}%`;
     });
+    detail.querySelectorAll('[data-possession]').forEach(bar => { bar.style.width = `${Number(bar.dataset.possession)}%`; });
   }
 }
 
@@ -432,9 +461,16 @@ async function loadMatchPanel(matchId) {
     if (homeArabic) { homeArabic.textContent = arabicTeamLabel(match, 'home'); homeArabic.hidden = !homeArabic.textContent || homeArabic.textContent === match.homeTeam; }
     if (awayArabic) { awayArabic.textContent = arabicTeamLabel(match, 'away'); awayArabic.hidden = !awayArabic.textContent || awayArabic.textContent === match.awayTeam; }
     setText('match-score', cleanScore(match.score));
-    setText('match-minute', match.playbackState === 'ended' ? 'النتيجة النهائية' : match.liveMinute != null && Number.isFinite(Number(match.liveMinute)) ? `الدقيقة ${match.liveMinute}` : match.time || '');
+    setText('match-minute', match.playbackState === 'ended' ? 'النتيجة النهائية' : match.liveMinute != null && Number.isFinite(Number(match.liveMinute)) ? `${match.liveMinute}' •` : match.time || '');
     setText('match-yellow-cards', String(cardTotal(match.yellowCards)));
     setText('match-red-cards', String(cardTotal(match.redCards)));
+    for (const side of ['home','away']) {
+      const cards = document.getElementById(`match-${side}-cards`);
+      if (cards) cards.innerHTML = ['yellow','red'].map(color => {
+        const count = Number(match[`${color}Cards`]?.[side]);
+        return count > 0 && Number.isFinite(count) ? `<span><i class="card-dot ${color}"></i>${Math.min(99,count)}</span>` : '';
+      }).join('');
+    }
     setImage('match-home-logo', match.homeLogo);
     setImage('match-away-logo', match.awayLogo);
     updateChannelLabel(match.channelName);

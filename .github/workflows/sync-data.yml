@@ -66,6 +66,8 @@ jobs:
             --exclude "*.log" \
             --exclude "scripts/audit-provider-accounts.js"
           rsync -a shared/ _oracle-sync/shared/
+          mkdir -p _oracle-sync/metadata
+          cp secure-streaming/scripts/sync-matches-from-source.js _oracle-sync/metadata/
           cp ecosystem.oracle.config.js _oracle-sync/ecosystem.oracle.config.js
       - name: Check Oracle SSH configuration
         env:
@@ -107,6 +109,27 @@ jobs:
               --exclude dist \
               --exclude "*.log"
             rsync -a --delete "$STAGING/shared/" "$RELEASE/shared/"
+            # Keep the running metadata worker on the same public match schema.
+            LEGACY="/home/ubuntu/iptv-system/secure-streaming"
+            if test -f "$LEGACY/scripts/sync-matches-from-source.js"; then
+              test -d /home/ubuntu/iptv-system/shared
+              tar -czf "/opt/koratv/backups/metadata-${{ github.run_id }}.tgz" \
+                -C /home/ubuntu/iptv-system secure-streaming/scripts/sync-matches-from-source.js shared
+              install -m 0644 "$STAGING/metadata/sync-matches-from-source.js" "$LEGACY/scripts/sync-matches-from-source.js"
+              for MODULE in knockout.mjs match-details.mjs; do
+                install -m 0644 "$STAGING/shared/$MODULE" "/home/ubuntu/iptv-system/shared/$MODULE"
+              done
+              node --check "$LEGACY/scripts/sync-matches-from-source.js"
+              node -e '
+                const {execFileSync}=require("node:child_process");
+                const apps=JSON.parse(execFileSync("pm2",["jlist"],{encoding:"utf8"}));
+                for(const app of apps){
+                  const env=app.pm2_env||{};
+                  if(env.pm_cwd==="/home/ubuntu/iptv-system/secure-streaming" && /[\\/]match-sync-cron\.js$/.test(env.pm_exec_path||""))
+                    execFileSync("pm2",["restart",String(app.pm_id)],{stdio:"inherit"});
+                }
+              '
+            fi
             install -m 0644 "$STAGING/ecosystem.oracle.config.js" "$RELEASE/ecosystem.oracle.config.js"
 
             cd /opt/koratv/current/streaming-gateway

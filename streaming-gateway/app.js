@@ -169,6 +169,7 @@ function normalizeMatch(row, config) {
     venueCity: cleanText(payload.venueCity).slice(0, 90),
     referee: cleanText(payload.referee).slice(0, 90),
     standings: payload.standingsVersion === 2 && Array.isArray(payload.standings) ? payload.standings.slice(0, 40) : [],
+    knockout: normalizeKnockout(payload.knockout),
     dataSource: payload.dataSource || row.source || '',
     sourceFixtureId: payload.sourceFixtureId || payload.sourceMatchId || '',
     eventDetailsLoaded: payload.eventDetailsLoaded === true,
@@ -196,18 +197,31 @@ function normalizeLineups(value) {
       number: Number(entry?.number) || null,
       position: cleanText(entry?.position).slice(0, 12),
       grid: cleanText(entry?.grid).slice(0, 12),
+      rating: entry?.rating != null && Number.isFinite(Number(entry.rating)) && Number(entry.rating) >= 0 && Number(entry.rating) <= 10 ? Number(entry.rating) : null,
       photo: safePlayerPhoto(entry?.photo)
     }));
     return {
-      team: cleanText(lineup?.team?.name).slice(0, 90),
-      teamId: lineup?.team?.id || null,
+      team: cleanText(typeof lineup?.team === 'string' ? lineup.team : lineup?.team?.name).slice(0, 90),
+      teamId: lineup?.team?.id || lineup?.teamId || null,
       formation: cleanText(lineup?.formation).slice(0, 16),
-      coach: cleanText(lineup?.coach?.name).slice(0, 90),
+      coach: cleanText(typeof lineup?.coach === 'string' ? lineup.coach : lineup?.coach?.name).slice(0, 90),
       coachPhoto: safePlayerPhoto(lineup?.coach?.photo),
       startXI: normalizePlayers(lineup?.startXI, 11),
       substitutes: normalizePlayers(lineup?.substitutes, 15)
     };
   });
+}
+
+function normalizeKnockout(value) {
+  if (!value || !Array.isArray(value.rounds)) return null;
+  return { rounds: value.rounds.slice(0,2).filter(round => ['semifinal','final'].includes(round?.key)).map(round => ({
+    key: round.key, name: round.key === 'final' ? 'النهائي' : 'نصف النهائي',
+    matches: (Array.isArray(round.matches) ? round.matches : []).slice(0,8).map(item => ({
+      fixtureId: cleanText(item.fixtureId).slice(0,40), homeTeam: cleanText(item.homeTeam).slice(0,90),
+      awayTeam: cleanText(item.awayTeam).slice(0,90), homeLogo: safePlayerPhoto(item.homeLogo), awayLogo: safePlayerPhoto(item.awayLogo),
+      score: cleanText(item.score).slice(0,20), scheduledAt: cleanText(item.scheduledAt).slice(0,40), status: cleanText(item.status).slice(0,16),
+    })),
+  })) };
 }
 
 function normalizeMatchStatistics(value) {

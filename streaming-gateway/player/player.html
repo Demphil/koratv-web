@@ -10,6 +10,7 @@
   <script src="./embed-mode.js"></script>
   <link rel="stylesheet" href="./plyr.css">
   <link rel="stylesheet" href="./player.css">
+  <link rel="stylesheet" href="./match-ui.css">
 </head>
 <body>
   <div class="layout-wrapper">
@@ -38,6 +39,7 @@
 
       <section id="match-panel" class="match-panel" tabindex="-1" hidden>
         <div class="match-panel-header">
+          <span id="match-minute"></span>
           <span id="match-state-pill" class="match-state-pill">مباشر</span>
           <div class="match-panel-meta"><strong id="match-league"></strong><span id="match-channel-name"></span></div>
         </div>
@@ -46,15 +48,16 @@
             <img id="match-home-logo" alt="" loading="lazy">
             <span id="match-home-name"></span>
             <small id="match-home-name-ar" lang="ar" dir="rtl" hidden></small>
+            <small id="match-home-cards"></small>
           </div>
           <div class="match-panel-score">
             <strong id="match-score">VS</strong>
-            <span id="match-minute"></span>
           </div>
           <div class="match-panel-team">
             <img id="match-away-logo" alt="" loading="lazy">
             <span id="match-away-name"></span>
             <small id="match-away-name-ar" lang="ar" dir="rtl" hidden></small>
+            <small id="match-away-cards"></small>
           </div>
         </div>
         <div class="match-panel-stats">
@@ -64,11 +67,17 @@
         <div id="match-api-map" class="match-api-map" role="tablist" aria-label="معلومات المباراة">
           <button class="match-api-node is-selected" type="button" role="tab" aria-selected="true" data-endpoint="details">التفاصيل</button>
           <button class="match-api-node" type="button" role="tab" aria-selected="false" data-endpoint="lineups">التشكيلة</button>
-          <button class="match-api-node" type="button" role="tab" aria-selected="false" data-endpoint="standings">الترتيب</button>
+          <button class="match-api-node" type="button" role="tab" aria-selected="false" data-endpoint="standings">خروج المغلوب</button>
         </div>
         <div id="match-api-detail" class="match-api-detail" aria-live="polite"></div>
         <div id="match-goals" class="match-goals"></div>
       </section>
+
+      <footer class="player-contact">
+        <img src="./icons/mail.svg" width="20" height="20" alt="">
+        <span>راسلونا للاقتراحات والدعم</span>
+        <a href="mailto:tvkora201@gmail.com" dir="ltr">tvkora201@gmail.com</a>
+      </footer>
 
       <section class="watch-news-section">
         <h3 class="watch-news-title">أحدث الأخبار الرياضية</h3>
@@ -84,9 +93,7 @@
   <script src="./player-branding.js"></script>
   <script>
     (() => {
-      const AD_START_DELAY_MS = 2 * 60 * 1000;
       const AD_COOLDOWN_MS = 5 * 60 * 1000;
-      const AD_ACTIVE_WINDOW_MS = 45 * 1000;
       const DIRECT_CLICK_URL = 'https://omg10.com/4/11908572';
       const MONETAG_SCRIPTS = [
         { zone: '11908579', src: 'https://nap5k.com/tag.min.js' },
@@ -94,56 +101,39 @@
       ];
       const container = document.getElementById('player-container');
       const video = document.getElementById('video');
-      let clickShield = null;
+      let lastClickAdAt = -Infinity;
+      let adsStarted = false;
 
-      function removeMonetagScripts() {
-        document.querySelectorAll('script[data-koratv-monetag="true"]').forEach((script) => script.remove());
-      }
-
-      function injectMonetagScripts() {
-        removeMonetagScripts();
+      // The provider tags install their own listeners. Load once, never duplicate them.
+      function startMonetagAfterPlayback() {
+        if (adsStarted || video.paused || document.documentElement.classList.contains('live-updates-view')) return;
+        adsStarted = true;
         for (const item of MONETAG_SCRIPTS) {
+          // Full-page vignette overlays must not cover a phone or embedded video.
+          if (item.zone === '11908582' && (window.self !== window.top || window.matchMedia('(max-width: 620px)').matches)) continue;
           const script = document.createElement('script');
           script.dataset.koratvMonetag = 'true';
           script.dataset.zone = item.zone;
           script.dataset.cfasync = 'false';
           script.async = true;
-          script.src = `${item.src}?kt=${Date.now()}`;
+          script.src = item.src;
           document.body.appendChild(script);
         }
       }
 
-      function runMonetagCycle() {
-        injectMonetagScripts();
-        window.setTimeout(removeMonetagScripts, AD_ACTIVE_WINDOW_MS);
-        window.setTimeout(runMonetagCycle, AD_COOLDOWN_MS);
+      function onPlayGesture(event) {
+        if (!event.isTrusted || !video.paused || document.documentElement.classList.contains('live-updates-view')) return;
+        const playControl = event.target.closest?.('[data-plyr="play"]');
+        if (!playControl && event.target !== video) return;
+        const now = performance.now();
+        if (now - lastClickAdAt < AD_COOLDOWN_MS) return;
+        lastClickAdAt = now;
+        // Keep the original Play event intact even when the popup is blocked.
+        try { window.open(DIRECT_CLICK_URL, '_blank', 'noopener,noreferrer'); } catch {}
       }
 
-      function armClickAd() {
-        if (clickShield || !container) return;
-        if (document.documentElement.classList.contains('live-updates-view')) {
-          window.setTimeout(armClickAd, AD_COOLDOWN_MS);
-          return;
-        }
-        const shield = document.createElement('button');
-        shield.type = 'button';
-        shield.className = 'ad-click-shield';
-        shield.setAttribute('aria-label', 'تشغيل الفيديو');
-        shield.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          clickShield = null;
-          shield.remove();
-          try { window.open(DIRECT_CLICK_URL, '_blank', 'noopener,noreferrer'); } catch {}
-          video?.play?.().catch(() => {});
-          window.setTimeout(armClickAd, AD_COOLDOWN_MS);
-        }, { once: true });
-        clickShield = shield;
-        container.appendChild(shield);
-      }
-
-      window.setTimeout(runMonetagCycle, AD_START_DELAY_MS);
-      window.setTimeout(armClickAd, AD_START_DELAY_MS);
+      container?.addEventListener('click', onPlayGesture, true);
+      video?.addEventListener('playing', startMonetagAfterPlayback);
     })();
   </script>
 </body>
