@@ -1,4 +1,5 @@
 import { isAllowedMatch } from '../../shared/league-whitelist.mjs';
+import { sameFixture } from '../../shared/match-broadcasts.mjs';
 
 function json(body, status, origin = '*') {
   return new Response(JSON.stringify(body), {
@@ -55,11 +56,57 @@ function toFrontendMatch(row) {
     score: payload.score || 'VS',
     league: row.league || payload.league || '',
     channel: row.channel || payload.channel || '',
+    channelName: row.channel || payload.channel || '',
+    source: row.source || '',
     leagueCountry: payload.leagueCountry || payload.country || '',
     commentator: payload.commentator || '',
     streams: Array.isArray(payload.streams) ? payload.streams : [],
     isLive: Boolean(payload.isLive),
+    sourceAvailable: Boolean(row.channel || payload.channel || payload.broadcast?.channels?.length),
     updatedAt: row.updated_at
+  };
+}
+
+function rowLike(match) {
+  return {
+    home_team: match.homeTeam,
+    away_team: match.awayTeam,
+    kickoff_time: match.scheduledAt,
+    league: match.league
+  };
+}
+
+function isKoooraMatch(match) {
+  return String(match.source || '').startsWith('kooora') || String(match.matchId || '').startsWith('kooora_');
+}
+
+function detailsScore(match) {
+  return Number(match.score && match.score !== 'VS') * 4
+    + (Array.isArray(match.goals) ? match.goals.length : 0)
+    + Number(match.eventDetailsLoaded === true) * 5;
+}
+
+function enrichFromDetails(base, rows) {
+  const details = rows
+    .filter((candidate) => candidate !== base && sameFixture(rowLike(base), rowLike(candidate)))
+    .sort((a, b) => detailsScore(b) - detailsScore(a))[0];
+  if (!details || detailsScore(details) <= detailsScore(base)) return base;
+  return {
+    ...base,
+    score: details.score || base.score,
+    status: details.status || base.status,
+    isLive: Boolean(base.isLive || details.isLive),
+    goals: Array.isArray(details.goals) ? details.goals : base.goals,
+    events: Array.isArray(details.events) ? details.events : base.events,
+    lineups: Array.isArray(details.lineups) ? details.lineups : base.lineups,
+    statistics: Array.isArray(details.statistics) ? details.statistics : base.statistics,
+    yellowCards: details.yellowCards || base.yellowCards,
+    redCards: details.redCards || base.redCards,
+    venue: details.venue || base.venue,
+    venueCity: details.venueCity || base.venueCity,
+    referee: details.referee || base.referee,
+    dataSource: details.source || details.dataSource || base.dataSource,
+    detailsState: details.detailsState || base.detailsState
   };
 }
 
@@ -85,7 +132,7 @@ export async function onRequestGet({ request, env }) {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)) return json({ error: 'Invalid matches table configuration' }, 500, origin);
 
   const endpoint = new URL(`${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}`);
-  endpoint.searchParams.set('select', 'id,match_id,home_team,away_team,league,kickoff_time,channel,payload,active,updated_at');
+  endpoint.searchParams.set('select', 'id,match_id,home_team,away_team,league,kickoff_time,channel,payload,source,active,updated_at');
   endpoint.searchParams.set('active', 'eq.true');
   endpoint.searchParams.set('order', 'kickoff_time.asc.nullslast');
   endpoint.searchParams.set('limit', '150');
@@ -107,8 +154,7 @@ export async function onRequestGet({ request, env }) {
 
   if (!response.ok) return json({ error: 'Unable to read match storage' }, 502, origin);
   const rows = await response.json();
-  const seen = new Set();
-  const matches = (Array.isArray(rows) ? rows : [])
+  const rowsForDisplay = (Array.isArray(rows) ? rows : [])
     .map(toFrontendMatch)
     .filter((match) => match.homeTeam && match.awayTeam && match.scheduledAt)
     .filter((match) => String(match.homeTeam).trim() !== String(match.awayTeam).trim())
@@ -118,13 +164,17 @@ export async function onRequestGet({ request, env }) {
       leagueCountry: match.leagueCountry,
       homeTeam: match.homeTeam,
       awayTeam: match.awayTeam
-    }))
-    .filter((match) => {
-      const key = `${String(match.homeTeam).trim().normalize('NFKC').toLocaleLowerCase('ar')}|${String(match.awayTeam).trim().normalize('NFKC').toLocaleLowerCase('ar')}|${String(match.scheduledAt).slice(0, 10)}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    }));
+  const koooraRows = rowsForDisplay.filter(isKoooraMatch);
+  const canonicalRows = koooraRows.length
+    ? koooraRows
+    : rowsForDisplay.filter((match) => match.source !== 'api-football');
+  const bases = canonicalRows.length ? canonicalRows : rowsForDisplay;
+  const matches = [];
+  for (const base of bases) {
+    if (matches.some((current) => sameFixture(rowLike(current), rowLike(base)))) continue;
+    matches.push(enrichFromDetails(base, rowsForDisplay));
+  }
 
   const day = new URL(request.url).searchParams.get('day');
   const today = moroccoDate(new Date());

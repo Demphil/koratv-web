@@ -8,7 +8,7 @@ const valid = {
   HMAC_SECRET: 'h'.repeat(48),
   PUBLIC_API_ORIGIN: 'https://stream-api.koratv.click',
   FRONTEND_ORIGIN: 'https://koratv.click',
-  FRONTEND_ORIGINS: 'https://fraja.online,https://frajatv.fun,https://www.frajatv.fun,https://koratv.click,https://www.koratv.click',
+  FRONTEND_ORIGINS: 'https://fraja.online,https://www.fraja.online,https://frajatv.online,https://www.frajatv.online,https://frajatv.fun,https://www.frajatv.fun,https://koratv.click,https://www.koratv.click',
   PLAYER_ORIGIN: 'https://fabor.sbs',
   NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
   NEXT_PUBLIC_SUPABASE_ANON_KEY: 'public-test-key',
@@ -20,6 +20,7 @@ test('configuration accepts independent secrets and HTTPS origins', () => {
   const config = loadConfig(valid);
   assert.equal(config.api, valid.PUBLIC_API_ORIGIN);
   assert.ok(config.frontendOrigins.has('https://fraja.online'));
+  assert.ok(config.frontendOrigins.has('https://frajatv.online'));
   assert.ok(config.frontendOrigins.has('https://frajatv.fun'));
   assert.ok(config.frontendOrigins.has('https://koratv.click'));
   assert.equal(config.enableAntiBot, true);
@@ -61,30 +62,36 @@ test('match identifiers pin player metadata to their originating feed', () => {
 test('Fraja frontend uses the Kooora feed so live cards inherit verified broadcasters', () => {
   const config = loadConfig(valid);
   assert.equal(config.sourceForOrigin('https://fraja.online'), 'kooora');
+  assert.equal(config.sourceForOrigin('https://frajatv.online'), 'kooora');
   assert.equal(config.sourceForOrigin('https://frajatv.fun'), 'kooora');
 });
 
 test('Kora feed keeps Kooora primary and adds only allowed Gulf Cup API fixtures', async () => {
   const originalFetch = globalThis.fetch;
   const matchSourceFilters = [];
+  const kickoff = '2026-09-30T17:30:00Z';
+  const koooraFixtures = [
+    { id: 'kooora-gulf', match_id: 'kooora-gulf', home_team: 'البحرين', away_team: 'اليمن', league: 'كأس الخليج العربي', kickoff_time: kickoff, source: 'kooora', active: true, channel: 'Dubai Sports 1', payload: { broadcast: { source: 'kooora', channels: ['Dubai Sports 1'] } } },
+  ];
   const apiFixtures = [
-    { id: 'api-football-gulf', match_id: 'api-football-gulf', home_team: 'Bahrain', away_team: 'Yemen', league: 'Gulf Cup of Nations', kickoff_time: '2026-09-30T17:30:00Z', source: 'api-football', active: true, payload: {} },
-    { id: 'api-football-other', match_id: 'api-football-other', home_team: 'Arsenal', away_team: 'Chelsea', league: 'Premier League', kickoff_time: '2026-09-30T17:30:00Z', source: 'api-football', active: true, payload: {} },
-    { id: 'api-football-women', match_id: 'api-football-women', home_team: 'Bahrain Women', away_team: 'Yemen Women', league: 'Gulf Cup of Nations', kickoff_time: '2026-09-30T17:30:00Z', source: 'api-football', active: true, payload: {} },
+    { id: 'api-football-gulf', match_id: 'api-football-gulf', home_team: 'Bahrain', away_team: 'Yemen', league: 'Gulf Cup of Nations', kickoff_time: kickoff, source: 'api-football', active: true, payload: {} },
+    { id: 'api-football-qatar', match_id: 'api-football-qatar', home_team: 'Qatar', away_team: 'Saudi Arabia', league: 'Gulf Cup of Nations', kickoff_time: '2026-09-30T19:30:00Z', source: 'api-football', active: true, payload: {} },
+    { id: 'api-football-other', match_id: 'api-football-other', home_team: 'Arsenal', away_team: 'Chelsea', league: 'Premier League', kickoff_time: kickoff, source: 'api-football', active: true, payload: {} },
+    { id: 'api-football-women', match_id: 'api-football-women', home_team: 'Bahrain Women', away_team: 'Yemen Women', league: 'Gulf Cup of Nations', kickoff_time: kickoff, source: 'api-football', active: true, payload: {} },
   ];
   globalThis.fetch = async (input) => {
     const url = new URL(input);
     if (url.pathname.endsWith('/matches')) {
       const source = url.searchParams.get('source') || '';
       matchSourceFilters.push(source);
-      return new Response(JSON.stringify(source === 'in.(api-football)' ? apiFixtures : []), { headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify(source === 'in.(api-football)' ? apiFixtures : koooraFixtures), { headers: { 'content-type': 'application/json' } });
     }
     return new Response('[]', { headers: { 'content-type': 'application/json' } });
   };
   try {
     const rows = await loadConfig(valid).getMatchesForOrigin('https://koratv.click');
     assert.deepEqual(matchSourceFilters.sort(), ['in.(api-football)', 'in.(kooora)']);
-    assert.deepEqual(rows.map(row => row.match_id), ['api-football-gulf']);
+    assert.deepEqual(rows.map(row => row.match_id), ['kooora-gulf', 'api-football-qatar']);
   } finally {
     globalThis.fetch = originalFetch;
   }

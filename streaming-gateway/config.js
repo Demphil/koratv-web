@@ -1,5 +1,6 @@
 import { createMatchesReader, createPlaybackResolver } from './supabase.js';
 import { attachApiFootballDetails } from '../shared/match-details.mjs';
+import { sameFixture } from '../shared/match-broadcasts.mjs';
 import { isAllowedMatch, isGulfCupLeague } from '../shared/league-whitelist.mjs';
 import { createProviderCatalog } from './provider-catalog.js';
 import { createProviderLiveResolver } from './provider-live-resolver.js';
@@ -38,7 +39,7 @@ export function loadConfig(env = process.env) {
     .filter(Boolean)
     .map((item) => publicOrigin(name, item)));
   const koratvOrigins = publicOrigins('KORATV_FRONTEND_ORIGINS', env.KORATV_FRONTEND_ORIGINS || 'https://koratv.click,https://www.koratv.click');
-  const frajaOrigins = publicOrigins('FRAJA_FRONTEND_ORIGINS', env.FRAJA_FRONTEND_ORIGINS || 'https://fraja.online,https://frajatv.fun,https://www.frajatv.fun');
+  const frajaOrigins = publicOrigins('FRAJA_FRONTEND_ORIGINS', env.FRAJA_FRONTEND_ORIGINS || 'https://fraja.online,https://www.fraja.online,https://frajatv.online,https://www.frajatv.online,https://frajatv.fun,https://www.frajatv.fun');
   const upstreamOrigin = (value) => {
     let url;
     try {
@@ -86,7 +87,7 @@ export function loadConfig(env = process.env) {
     hmacSecret,
     enableAntiBot: String(env.ENABLE_ANTI_BOT || 'true').trim().toLowerCase() !== 'false',
     frontend: publicOrigin('FRONTEND_ORIGIN', env.FRONTEND_ORIGIN || 'https://koratv.click'),
-    frontendOrigins: publicOrigins('FRONTEND_ORIGINS', env.FRONTEND_ORIGINS || env.FRONTEND_ORIGIN || 'https://fraja.online,https://frajatv.fun,https://www.frajatv.fun,https://koratv.click,https://www.koratv.click'),
+    frontendOrigins: publicOrigins('FRONTEND_ORIGINS', env.FRONTEND_ORIGINS || env.FRONTEND_ORIGIN || 'https://fraja.online,https://www.fraja.online,https://frajatv.online,https://www.frajatv.online,https://frajatv.fun,https://www.frajatv.fun,https://koratv.click,https://www.koratv.click'),
     koratvOrigins,
     frajaOrigins,
     player: publicOrigin('PLAYER_ORIGIN', env.PLAYER_ORIGIN || 'https://fabor.sbs'),
@@ -114,7 +115,8 @@ export function loadConfig(env = process.env) {
               leagueCountry: row.payload?.leagueCountry,
               homeTeam: row.home_team,
               awayTeam: row.away_team
-            }));
+            })
+            && !rows.some(koooraRow => sameFixture(koooraRow, row)));
           return [...rows, ...gulfFixtures];
         }
         const row = rows.find(item => item.match_id === matchId || item.id === matchId);
