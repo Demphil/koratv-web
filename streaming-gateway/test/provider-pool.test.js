@@ -248,6 +248,33 @@ test('higher scores never preempt a lease with active viewers', t => {
   assert.equal(pool.snapshot().find(row => row.provider === 'A').score, 140);
 });
 
+test('encoder sequence regression changes the timeline epoch, not the account health', () => {
+  const monitor = new HlsProgressMonitor();
+  const manifest = seq => `#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:${seq}\n#EXTINF:6,\n${seq}.ts`;
+  assert.equal(monitor.observe('A', 'channel', manifest(935)).epoch, 0);
+  const reset = monitor.observe('A', 'channel', manifest(361));
+  assert.equal(reset.reset, true);
+  assert.equal(reset.epoch, 1);
+  assert.equal(reset.stalled, false);
+  assert.equal(monitor.observe('A', 'channel', manifest(362)).epoch, 1);
+  assert.equal(monitor.observe('B', 'channel', manifest(10)).epoch, 0);
+});
+
+test('renewed source URLs fence old media descriptors without stealing another account', t => {
+  const pool = new ProviderPool(); t.after(() => pool.close());
+  const target = playback('target', 100, { A: 'https://a.example/old.m3u8' });
+  const lease = pool.acquire(target, 'viewer');
+  const id = lease.id;
+  assert.equal(pool.updateSource(lease, lease.url), true);
+  assert.equal(lease.id, id);
+  const renewed = { ...target, provider_sources: { A: 'https://a.example/new.m3u8' } };
+  pool.acquire(renewed, 'viewer');
+  assert.equal(pool.updateSource(lease, renewed.provider_sources.A), true);
+  assert.notEqual(lease.id, id);
+  assert.equal(lease.provider, 'A');
+  assert.equal(pool.valid(lease), true);
+});
+
 test('stalled HLS refreshes first, then fails over only to an idle same-channel account', t => {
   let now = 50_000;
   const order = [];

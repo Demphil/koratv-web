@@ -5,8 +5,9 @@ import { createHmac } from 'node:crypto';
 import { HlsProgressMonitor } from '../hls-progress.js';
 
 test('urgent source renewal resolves relative segments against the renewed final manifest URL', async t => {
+  let epoch = 0;
   t.mock.method(HlsProgressMonitor.prototype, 'observe', (_provider, _channel, manifest) => ({
-    stalled: manifest.includes('SEQUENCE:1\n'),
+    stalled: manifest.includes('SEQUENCE:1\n'), epoch,
   }));
   const store = new Map(), calls = [];
   const config = {
@@ -48,6 +49,12 @@ test('urgent source renewal resolves relative segments against the renewed final
   assert.equal((await request(resource.pathname + resource.search, session.token)).status, 200);
   assert.ok(calls.includes('/renewed/final/one.ts'));
   assert.equal(calls.includes('/old/one.ts'), false);
+  epoch = 1;
+  const restarted = await request('/api/stream.m3u8', session.token);
+  assert.equal(restarted.status, 409);
+  assert.equal((await restarted.json()).error, 'hls_timeline_changed');
+  assert.equal((await request('/api/stream.m3u8', session.token)).status, 200,
+    'the same protected viewer can reconnect once the new timeline is acknowledged');
 });
 
 test('pool gateway coalesces viewers, ignores quality overrides, fences old resources, and preserves the second account on upstream failures', async t => {

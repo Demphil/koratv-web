@@ -826,6 +826,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       let upstream;
       let runtimeOrigins;
       let cacheVersion = '';
+      let resourceLeaseId = '';
       for (const sourceHref of rootUrls) {
         const rootUrl = new URL(sourceHref);
         runtimeOrigins = new Set([rootUrl.origin]);
@@ -835,6 +836,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           const sealedResource = unseal(req.query.resource, claims.jti);
           const descriptor = typeof sealedResource === 'string' ? { url: sealedResource } : sealedResource;
           if (lease && descriptor.leaseId !== lease.id) throw new PoolError('pool_reassigned', 409);
+          resourceLeaseId = lease?.id || '';
           source = allowedUrl(descriptor.url, runtimeOrigins, { sealed: true });
           cacheVersion = String(descriptor.version || '');
         }
@@ -904,6 +906,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       if (!upstream.ok) {
         return res.sendStatus(502);
       }
+      if (resourceLeaseId && lease?.id !== resourceLeaseId) throw new PoolError('pool_reassigned', 409);
       const type = upstream.headers.get('content-type') || '';
       if (/mpegurl/i.test(type) || source.pathname.endsWith('.m3u8')) {
         // Relative segments belong to the final playlist URL after redirects.
@@ -957,6 +960,15 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         runtimeOrigins.add(source.origin);
         if (upstream.url) runtimeOrigins.add(new URL(upstream.url).origin);
         const manifestUrl = allowedUrl(upstream.url || source.href, runtimeOrigins);
+        if (lease && !rawText.includes('#EXT-X-STREAM-INF:')) {
+          const progress = hlsProgress.observe(lease.provider, playback.channel_id, rawText);
+          const timeline = `${lease.id}:${progress.epoch || 0}`;
+          const timelineKey = `hls-timeline:${claims.jti}`;
+          const previous = await redis.get(timelineKey);
+          await redis.set(timelineKey, timeline, { EX: config.sessionTtl });
+          // Never append a restarted encoder/source to a viewer's old MSE timeline.
+          if (previous && previous !== timeline) throw new PoolError('hls_timeline_changed', 409);
+        }
         const text = providerPool ? singleQualityManifest(rawText) : rawText;
         if (!text.trimStart().startsWith('#EXTM3U')) {
           console.error('[stream-proxy] upstream response is not an HLS manifest', {

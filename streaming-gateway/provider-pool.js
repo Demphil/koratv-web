@@ -109,6 +109,11 @@ export class ProviderPool {
     if (!this.valid(lease) || typeof sourceUrl !== 'string' || !sourceUrl) return false;
     const demand = this.demands.get(lease.key);
     if (!demand || demand.sources[lease.provider] !== sourceUrl) return false;
+    if (lease.url !== sourceUrl) {
+      // A new source may have unrelated media timestamps and sequence numbers.
+      lease.id = randomUUID();
+      lease.transientFailures = 0;
+    }
     lease.url = sourceUrl;
     return true;
   }
