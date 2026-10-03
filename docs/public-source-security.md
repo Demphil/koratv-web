@@ -39,6 +39,22 @@ keys, rendered match data, and browser logic remain inspectable. Never place
 provider credentials, service-role keys, signing secrets, or account passwords
 in these assets. Keep private originals and credentials on authenticated servers.
 
+## Live Verification
+
+- Frontend publication runs `37159134802` (Kora) and `37159143090` (Fraja)
+  succeeded; Unified Data Refresh `37159148639` deployed the player successfully.
+- Seven internal/source-map paths on each frontend returned 404, including
+  previously exposed backend JavaScript and PHP source. Five internal/document
+  paths on fabor returned 404.
+- Public API/player JavaScript was minified with no source-map references.
+- Browser QA at 1366px and 390px rendered 60 match cards on each frontend with
+  no JavaScript exceptions or horizontal overflow.
+- Both player routes rendered Raja fixture 1640792 and its 15 events. A real
+  mobile iframe loaded the same fixture without horizontal overflow.
+- 153 gateway tests and the public build/generation tests passed. Verification
+  concerns publication boundaries and UI behavior, not uninterrupted video.
+- No DevTools reload loop or browser inspection blocking was implemented.
+
 References:
 - https://cheatsheetseries.owasp.org/Web_Frontend_Security_Cheat_Sheet.html
 - https://developer.chrome.com/docs/devtools/javascript/source-maps
