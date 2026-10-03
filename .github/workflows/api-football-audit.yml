@@ -1,0 +1,26 @@
+name: Read Only API Football Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_MATCHES_TABLE: matches
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: secure-streaming/package-lock.json
+      - run: npm ci --no-audit --fund=false
+        working-directory: secure-streaming
+      - name: Compare stored match data with the provider without database writes
+        run: node scripts/audit-api-football.mjs
+        working-directory: secure-streaming
