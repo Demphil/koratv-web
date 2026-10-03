@@ -438,7 +438,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
 
   const warmPlaybackManifest = async (playback, lease) => {
     const headers = { 'User-Agent': config.upstreamUserAgent, Accept: '*/*' };
-    let url = new URL(lease.url);
+    let url = new URL(lease.mediaUrl || lease.url);
     for (let depth = 0; depth < 3; depth += 1) {
       const response = await fetchCachedUpstream(url, { headers, redirect: 'follow' }, '', lease);
       if (!response.ok) {
@@ -454,6 +454,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         url = new URL(lines[0], base);
         continue;
       }
+      lease.mediaUrl = allowedUrl(base, new Set([new URL(base).origin])).href;
       const sequence = Number(text.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/m)?.[1]);
       const hasSequence = Number.isSafeInteger(sequence) && sequence >= 0;
       const hash = hasSequence ? '' : createHash('sha256').update(text).digest('hex').slice(0, 16);
@@ -810,7 +811,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         playback = await resolvePlayback(claims);
         if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
         if (providerPool) lease = providerPool.acquire(playback, claims.jti);
-        candidateSources = lease ? [lease.url] : streamCandidates(playback, req.query.quality);
+        candidateSources = lease ? [lease.mediaUrl || lease.url] : streamCandidates(playback, req.query.quality);
         if (!candidateSources.length) return res.sendStatus(403);
         await redis.set(`stream-source:${claims.sourceId}`, candidateSources[0], { EX: config.sessionTtl });
       }
@@ -842,6 +843,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         }
         runtimeOrigins.add(source.origin);
         const attemptedProviders = new Set();
+        let retriedProviderEntry = false;
         while (true) {
           try {
             upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, cacheVersion, lease);
@@ -861,6 +863,12 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
               throw new PoolError('pool_reassigned', 409);
             }
             if (!lease || req.path !== '/api/stream.m3u8') throw error;
+            if (lease.mediaUrl && lease.mediaUrl !== lease.url && !retriedProviderEntry) {
+              retriedProviderEntry = true;
+              lease.mediaUrl = '';
+              source = allowedUrl(lease.url, new Set([new URL(lease.url).origin]));
+              continue;
+            }
             console.warn('[stream-proxy] upstream provider failed before response, trying alternate', {
               provider: lease.provider,
               message: error?.message || String(error),
@@ -878,6 +886,12 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           }
           if (!lease || !failoverStatus(upstream.status)) break;
           await upstream.body?.cancel();
+          if (req.path === '/api/stream.m3u8' && lease.mediaUrl && lease.mediaUrl !== lease.url && !retriedProviderEntry) {
+            retriedProviderEntry = true;
+            lease.mediaUrl = '';
+            source = allowedUrl(lease.url, new Set([new URL(lease.url).origin]));
+            continue;
+          }
           if (req.path === '/api/resource' && hlsResourceKind(source) === 'segment'
             && retryableStatus(upstream.status) && (lease.transientFailures || 0) < 3) return res.sendStatus(502);
           attemptedProviders.add(lease.provider);
@@ -961,6 +975,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         if (upstream.url) runtimeOrigins.add(new URL(upstream.url).origin);
         const manifestUrl = allowedUrl(upstream.url || source.href, runtimeOrigins);
         if (lease && !rawText.includes('#EXT-X-STREAM-INF:')) {
+          lease.mediaUrl = manifestUrl.href;
           const progress = hlsProgress.observe(lease.provider, playback.channel_id, rawText);
           const timeline = `${lease.id}:${progress.epoch || 0}`;
           const timelineKey = `hls-timeline:${claims.jti}`;

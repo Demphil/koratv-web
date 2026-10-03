@@ -17,8 +17,12 @@ export class HlsProgressMonitor {
     const thresholdMs = Math.max(this.minimumStallMs, targetDuration * 2000);
     const now = this.now();
     const previous = this.channels.get(key);
-    const reset = Number.isSafeInteger(sequence) && Number.isSafeInteger(previous?.sequence)
+    const regressed = Number.isSafeInteger(sequence) && Number.isSafeInteger(previous?.sequence)
       && sequence < previous.sequence;
+    // Concurrent readers can finish an older, overlapping playlist after a newer one.
+    const reset = regressed && sequence + Math.max(1, segments.length) <= previous.sequence;
+    if (regressed && !reset) return { stalled: false, stagnantForMs: 0, thresholdMs,
+      reset: false, epoch: previous.epoch || 0, sequence, stale: true };
     const epoch = (previous?.epoch || 0) + Number(reset);
     const since = previous?.signature === signature ? previous.since : now;
     this.channels.set(key, { signature, since, lastSeen: now, epoch, sequence: Number.isSafeInteger(sequence) ? sequence : null });

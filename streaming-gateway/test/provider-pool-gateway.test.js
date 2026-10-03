@@ -28,7 +28,7 @@ test('urgent source renewal resolves relative segments against the renewed final
   const app = createApp({ config, redis, fetchImpl: async url => {
     calls.push(url.pathname);
     const manifest = url.pathname.endsWith('.m3u8');
-    const renewed = url.pathname.includes('/new/');
+    const renewed = /\/new\/|\/renewed\/final\//.test(url.pathname);
     const response = new Response(manifest
       ? `#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:${renewed ? 2 : 1}\n#EXTINF:6,\none.ts\n`
       : new Uint8Array([71, 0, 1]), { headers: { 'Content-Type': manifest ? 'application/vnd.apple.mpegurl' : 'video/mp2t' } });
@@ -55,6 +55,9 @@ test('urgent source renewal resolves relative segments against the renewed final
   assert.equal((await restarted.json()).error, 'hls_timeline_changed');
   assert.equal((await request('/api/stream.m3u8', session.token)).status, 200,
     'the same protected viewer can reconnect once the new timeline is acknowledged');
+  assert.ok(calls.includes('/renewed/final/index.m3u8'));
+  assert.equal(calls.filter(path => path === '/new/main.m3u8').length, 1,
+    'subsequent playlist polls reuse the final media destination rather than the redirect entry');
 });
 
 test('pool gateway coalesces viewers, ignores quality overrides, fences old resources, and preserves the second account on upstream failures', async t => {

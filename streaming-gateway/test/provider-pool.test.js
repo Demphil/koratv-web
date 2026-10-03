@@ -260,6 +260,17 @@ test('encoder sequence regression changes the timeline epoch, not the account he
   assert.equal(monitor.observe('B', 'channel', manifest(10)).epoch, 0);
 });
 
+test('an older overlapping playlist does not reset every viewer timeline', () => {
+  const monitor = new HlsProgressMonitor();
+  const manifest = seq => `#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:${seq}\n${Array.from({ length: 6 }, (_, i) => `#EXTINF:6,\n${seq + i}.ts`).join('\n')}`;
+  monitor.observe('A', 'channel', manifest(2312));
+  const delayed = monitor.observe('A', 'channel', manifest(2311));
+  assert.equal(delayed.epoch, 0);
+  assert.equal(delayed.stale, true);
+  assert.equal(monitor.channels.get('A:channel').sequence, 2312);
+  assert.equal(monitor.observe('A', 'channel', manifest(2313)).epoch, 0);
+});
+
 test('renewed source URLs fence old media descriptors without stealing another account', t => {
   const pool = new ProviderPool(); t.after(() => pool.close());
   const target = playback('target', 100, { A: 'https://a.example/old.m3u8' });

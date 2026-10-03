@@ -113,6 +113,7 @@ export class ProviderPool {
       // A new source may have unrelated media timestamps and sequence numbers.
       lease.id = randomUUID();
       lease.transientFailures = 0;
+      lease.mediaUrl = '';
     }
     lease.url = sourceUrl;
     return true;
