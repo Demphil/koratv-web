@@ -13,13 +13,13 @@ test('live controls omit seek, time and quality UI and disable keyboard seeking'
   assert.match(source, /liveButton\.addEventListener\('click', returnToLive\)/);
 });
 
-test('manifest and fragment progress cancel the initial playback timeout', () => {
+test('first-frame readiness, not successful downloads, cancels the playback timeout', () => {
   const parsedStart = source.indexOf('hls.on(Hls.Events.MANIFEST_PARSED');
   const parsedEnd = source.indexOf('hls.on(Hls.Events.LEVEL_SWITCHED', parsedStart);
   const parsedBlock = source.slice(parsedStart, parsedEnd);
-  assert.match(parsedBlock, /clearTimeout\(loadTimer\)/);
-  assert.doesNotMatch(parsedBlock, /readyState\s*>=\s*3\)\s*clearTimeout\(loadTimer\)/);
-  assert.match(source, /hls\.on\(Hls\.Events\.FRAG_LOADED[\s\S]*clearTimeout\(loadTimer\)/);
+  assert.doesNotMatch(parsedBlock, /clearTimeout\(loadTimer\)/);
+  assert.match(source, /video\.addEventListener\('playing',[\s\S]*clearTimeout\(loadTimer\)/);
+  assert.match(source, /video\.addEventListener\('canplay',[\s\S]*clearTimeout\(loadTimer\)/);
 });
 
 test('pool heartbeat keeps live leases during buffering and network recovery is tolerant', () => {

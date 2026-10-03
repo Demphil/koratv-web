@@ -910,7 +910,6 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         if (upstream.url) {
           runtimeOrigins.add(new URL(upstream.url).origin);
         }
-        const manifestUrl = allowedUrl(upstream.url || source.href, runtimeOrigins);
         let rawText = await upstream.text();
         if (providerPool && lease && hlsResourceKind(source) === 'manifest' && !rawText.includes('#EXT-X-STREAM-INF:')) {
           const progress = hlsProgress.observe(lease.provider, playback.channel_id, rawText);
@@ -955,6 +954,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
             await redis.set(`stream-source:${claims.sourceId}`, lease.url, { EX: config.sessionTtl });
           }
         }
+        runtimeOrigins.add(source.origin);
+        if (upstream.url) runtimeOrigins.add(new URL(upstream.url).origin);
+        const manifestUrl = allowedUrl(upstream.url || source.href, runtimeOrigins);
         const text = providerPool ? singleQualityManifest(rawText) : rawText;
         if (!text.trimStart().startsWith('#EXTM3U')) {
           console.error('[stream-proxy] upstream response is not an HLS manifest', {

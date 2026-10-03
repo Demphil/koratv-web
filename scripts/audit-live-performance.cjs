@@ -9,8 +9,8 @@ const output = path.resolve(__dirname, '../streaming-gateway/dist/qa-live');
   await fs.mkdir(output, { recursive: true });
   const browser = await puppeteer.launch({ headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
   try {
-    let watchUrl = '';
-    for (const host of ['koratv.click', 'fraja.online']) {
+    let watchUrl = process.env.PLAYER_TEST_URL || '';
+    for (const host of (watchUrl ? [] : ['koratv.click', 'fraja.online'])) {
       for (const width of [1366, 390]) {
         const context = await browser.createBrowserContext();
         const page = await context.newPage();
@@ -26,7 +26,8 @@ const output = path.resolve(__dirname, '../streaming-gateway/dist/qa-live');
           fcpMs: Math.round(performance.getEntriesByName('first-contentful-paint')[0]?.startTime || 0),
           overflow: document.documentElement.scrollWidth > innerWidth,
           player: [...document.querySelectorAll('.match-card-link.clickable')].find(link => link.textContent.includes('كرواتيا'))?.querySelector('a[data-secure-match-id]')?.href
-            || [...document.querySelectorAll('a.match-card-link.clickable')].find(link => link.textContent.includes('كرواتيا'))?.href,
+            || [...document.querySelectorAll('a.match-card-link.clickable')].find(link => link.textContent.includes('كرواتيا'))?.href
+            || document.querySelector('a[data-secure-match-id]')?.href,
         }));
         if (metrics.player) watchUrl = metrics.player;
         await page.screenshot({ path: path.join(output, `${host}-${width}.png`) });
@@ -34,33 +35,55 @@ const output = path.resolve(__dirname, '../streaming-gateway/dist/qa-live');
         await context.close();
       }
     }
-    if (!watchUrl) throw new Error('No prepared live Croatia fixture is available for playback verification');
+    if (!watchUrl) throw new Error('No prepared live fixture is available for playback verification');
     const context = await browser.createBrowserContext();
     const page = await context.newPage();
     await page.setUserAgent(ua);
     await page.setViewport({ width: Number(process.env.PLAYER_TEST_WIDTH || 1366), height: 900 });
     const media = [];
-    page.on('response', response => {
+    page.on('response', async response => {
       const url = new URL(response.url());
       if (['/api/stream.m3u8', '/api/resource', '/api/generate-token', '/api/redeem-token'].includes(url.pathname)) {
         media.push({ path: url.pathname, status: response.status() });
       }
+      if (url.pathname === '/api/stream.m3u8' && response.status() === 200) {
+        const text = await response.text().catch(() => '');
+        console.log(JSON.stringify({ manifest: { ms: Date.now(),
+          sequence: text.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/m)?.[1],
+          target: text.match(/^#EXT-X-TARGETDURATION:(\d+)/m)?.[1],
+          end: text.includes('#EXT-X-ENDLIST'), count: text.split(/\r?\n/).filter(line => line.startsWith('#EXTINF:')).length } }));
+      }
     });
     await page.goto(watchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.exposeFunction('recordHlsError', value => console.log(JSON.stringify({ hlsError: value })));
+    await page.waitForFunction(() => typeof hls !== 'undefined' && hls, { timeout: 30000 });
+    await page.evaluate(() => hls.on(Hls.Events.ERROR, (_, data) => recordHlsError({
+      type: data.type, details: data.details, fatal: data.fatal, code: data.response?.code, sn: data.frag?.sn,
+    })));
     await page.evaluate(() => { const video = document.querySelector('video'); video.muted = true; video.play().catch(() => {}); });
     const state = () => page.evaluate(() => {
       const video = document.querySelector('video');
       return { ms: Math.round(performance.now()), time: video.currentTime, paused: video.paused,
         ready: video.readyState, frames: video.getVideoPlaybackQuality?.().totalVideoFrames || 0,
         buffered: video.buffered.length ? video.buffered.end(video.buffered.length - 1) - video.currentTime : 0,
-        status: document.querySelector('#status')?.textContent.trim() || '' };
+        status: document.querySelector('#status')?.textContent.trim() || '',
+        ranges: Array.from({ length: video.buffered.length }, (_, i) => [video.buffered.start(i), video.buffered.end(i)]),
+        live: hls?.liveSyncPosition, details: hls?.levels?.[hls.currentLevel]?.details && {
+          start: hls.levels[hls.currentLevel].details.startSN, end: hls.levels[hls.currentLevel].details.endSN,
+          edge: hls.levels[hls.currentLevel].details.edge, live: hls.levels[hls.currentLevel].details.live,
+        } };
     });
     try {
       await page.waitForFunction(() => document.querySelector('video')?.getVideoPlaybackQuality?.().totalVideoFrames > 0, { timeout: 40000 });
       console.log(JSON.stringify({ playerFirstFrame: await state() }));
+      let lastFrames = 0, stagnantSamples = 0;
       for (let i = 0; i < Number(process.env.PLAYER_TEST_SAMPLES || 6); i++) {
         await new Promise(resolve => setTimeout(resolve, 15000));
-        console.log(JSON.stringify({ playerSample: await state() }));
+        const sample = await state();
+        stagnantSamples = sample.frames > lastFrames ? 0 : stagnantSamples + 1;
+        lastFrames = sample.frames;
+        if (stagnantSamples >= 2) process.exitCode = 1;
+        console.log(JSON.stringify({ playerSample: sample }));
       }
     } catch {
       console.log(JSON.stringify({ playerFailure: await state() }));

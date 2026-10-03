@@ -2,6 +2,53 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../app.js';
 import { createHmac } from 'node:crypto';
+import { HlsProgressMonitor } from '../hls-progress.js';
+
+test('urgent source renewal resolves relative segments against the renewed final manifest URL', async t => {
+  t.mock.method(HlsProgressMonitor.prototype, 'observe', (_provider, _channel, manifest) => ({
+    stalled: manifest.includes('SEQUENCE:1\n'),
+  }));
+  const store = new Map(), calls = [];
+  const config = {
+    providerPoolEnabled: true, enableAntiBot: false,
+    secret: 'test-pool-secret-longer-than-32-characters', hmacSecret: 'test-pool-hmac-independent-longer-than-32',
+    frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example',
+    frontendOrigins: new Set(['https://koratv.click']), upstreamOrigins: new Set(), trustedProxies: [],
+    sessionTtl: 300, sourceForOrigin: () => 'kooora', upstreamUserAgent: 'test',
+    getPlaybackForSource: async (_, id, options = {}) => {
+      const url = `https://a.example/${options.fresh ? 'new' : 'old'}/main.m3u8`;
+      return { is_streaming_active: true, match_id: id, pool_key: id, channel_id: 'channel-1',
+        stream_url: url, provider_sources: { A: url } };
+    },
+  };
+  const redis = { ping: async () => 'PONG', incr: async () => 1, expire: async () => 1,
+    set: async (key, value, options = {}) => { if (options.NX && store.has(key)) return null; store.set(key, value); return 'OK'; },
+    get: async key => store.get(key) };
+  const app = createApp({ config, redis, fetchImpl: async url => {
+    calls.push(url.pathname);
+    const manifest = url.pathname.endsWith('.m3u8');
+    const renewed = url.pathname.includes('/new/');
+    const response = new Response(manifest
+      ? `#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:${renewed ? 2 : 1}\n#EXTINF:6,\none.ts\n`
+      : new Uint8Array([71, 0, 1]), { headers: { 'Content-Type': manifest ? 'application/vnd.apple.mpegurl' : 'video/mp2t' } });
+    Object.defineProperty(response, 'url', { value: manifest && renewed ? 'https://a.example/renewed/final/index.m3u8' : url.href });
+    return response;
+  } });
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => { app.locals.providerPool.close(); server.closeAllConnections(); server.close(); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const request = (path, token, body) => fetch(base + path, { method: body ? 'POST' : 'GET', headers: {
+    Origin: config.player, 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}) });
+  const ticket = await (await request('/api/generate-token', '', { matchId: 'match-1' })).json();
+  const session = await (await request('/api/redeem-token', '', { token: ticket.token })).json();
+  const manifest = await request('/api/stream.m3u8', session.token);
+  assert.equal(manifest.status, 200);
+  const resource = new URL((await manifest.text()).split('\n').find(line => line.startsWith('https:')));
+  assert.equal((await request(resource.pathname + resource.search, session.token)).status, 200);
+  assert.ok(calls.includes('/renewed/final/one.ts'));
+  assert.equal(calls.includes('/old/one.ts'), false);
+});
 
 test('pool gateway coalesces viewers, ignores quality overrides, fences old resources, and preserves the second account on upstream failures', async t => {
   const store = new Map(); const calls = [];

@@ -24,6 +24,12 @@ let loadTimer;
 let retryTimer;
 let qualityStallTimer;
 let stallRecoveryTimer;
+let playbackProgressTimer;
+let playbackProgressAt = 0;
+let playbackProgressTime = 0;
+let playbackProgressFrames = 0;
+let playbackRecoveryStage = 0;
+let resumePlayback = false;
 let matchTimer;
 let networkRetries = 0;
 let mediaRetries = 0;
@@ -597,8 +603,13 @@ function hlsOptions() {
 
 function connectStream(attempt = 0) {
   clearTimeout(retryTimer);
+  retryTimer = null;
   clearTimeout(qualityStallTimer);
+  resumePlayback = resumePlayback || !video.paused;
   hls?.destroy();
+  playbackProgressAt = Date.now();
+  playbackProgressTime = video.currentTime;
+  playbackProgressFrames = video.getVideoPlaybackQuality?.().totalVideoFrames || 0;
   reconnectAttempt = attempt;
   networkRetries = 0;
   mediaRetries = 0;
@@ -635,6 +646,7 @@ function connectStream(attempt = 0) {
       const delay = Math.min(5000, networkRetries * 1200);
       showLoading('البث غير متوفر حالياً - جاري المحاولة...', `إعادة تحميل المقطع ${networkRetries}/${MAX_NETWORK_RECOVERIES}`);
       retryTimer = setTimeout(() => {
+        retryTimer = null;
         if (networkRetries >= 3) hls?.startLoad(-1);
         else hls?.startLoad();
       }, delay);
@@ -647,11 +659,7 @@ function connectStream(attempt = 0) {
     }
   });
   hls.on(Hls.Events.MANIFEST_PARSED, () => {
-    clearTimeout(loadTimer);
     setupQualityControl();
-    lastReadyAt = Date.now();
-    hideStatus();
-    notifyParent('ready');
     if (resumeAfterQualityChange) {
       video.addEventListener('canplay', () => {
         if (!resumeAfterQualityChange) return;
@@ -661,7 +669,6 @@ function connectStream(attempt = 0) {
     }
   });
   hls.on(Hls.Events.FRAG_LOADED, () => {
-    clearTimeout(loadTimer);
     lastReadyAt = Date.now();
   });
   hls.on(Hls.Events.LEVEL_SWITCHED, () => {
@@ -669,6 +676,38 @@ function connectStream(attempt = 0) {
   });
   hls.loadSource(streamUrlForQuality(currentQuality));
   hls.attachMedia(video);
+}
+
+function checkPlaybackProgress() {
+  const now = Date.now();
+  const frames = video.getVideoPlaybackQuality?.().totalVideoFrames;
+  if (!hlsSessionToken || sessionExpiresAt <= now || document.hidden || video.paused) {
+    playbackProgressAt = now;
+    playbackProgressTime = video.currentTime;
+    playbackProgressFrames = frames || 0;
+    return;
+  }
+  const progressed = video.currentTime > playbackProgressTime + 0.1
+    && (frames === undefined || frames > playbackProgressFrames);
+  if (progressed) {
+    playbackProgressAt = now;
+    playbackProgressTime = video.currentTime;
+    playbackProgressFrames = frames || 0;
+    playbackRecoveryStage = 0;
+    hideStatus();
+    return;
+  }
+  if (now - playbackProgressAt < 12000 || retryTimer) return;
+  playbackProgressAt = now;
+  showLoading('جاري استعادة البث...', 'تتم إعادة الاتصال تلقائياً');
+  if (playbackRecoveryStage === 0 && video.readyState >= 2 && video.seekable.length) {
+    playbackRecoveryStage = 1;
+    returnToLive();
+    hls?.startLoad(-1);
+  } else {
+    playbackRecoveryStage += 1;
+    scheduleReconnect('توقف تقدم الفيديو.');
+  }
 }
 
 function scheduleStallRecovery() {
@@ -698,6 +737,7 @@ function armLoadTimeout() {
 function scheduleReconnect(reason) {
   clearTimeout(loadTimer);
   clearTimeout(retryTimer);
+  retryTimer = null;
   if (reconnectAttempt < MAX_RECONNECT_ATTEMPTS && sessionExpiresAt > Date.now()) {
     const nextAttempt = reconnectAttempt + 1;
     const delay = retryDelay(nextAttempt);
@@ -928,6 +968,10 @@ video.addEventListener('playing', () => {
   lastReadyAt = Date.now();
   hideStatus();
   notifyParent('playing');
+  resumePlayback = false;
+  playbackProgressAt = Date.now();
+  playbackProgressTime = video.currentTime;
+  playbackProgressFrames = video.getVideoPlaybackQuality?.().totalVideoFrames || 0;
 });
 // Convenience restrictions only. Browser menus and network inspection remain accessible.
 document.addEventListener('contextmenu', (event) => event.preventDefault());
@@ -985,7 +1029,11 @@ copyEmbedCode?.addEventListener('click', async () => {
 });
 video.addEventListener('canplay', () => {
   clearTimeout(loadTimer); clearTimeout(stallRecoveryTimer); lastReadyAt = Date.now();
-  if (!Hls.isSupported()) { hideStatus(); notifyParent('ready'); }
+  hideStatus(); notifyParent('ready');
+  if (resumePlayback) video.play().catch(() => {});
+});
+video.addEventListener('pause', () => {
+  if (video.readyState >= 3) resumePlayback = false;
 });
 video.addEventListener('error', () => {
   if (!Hls.isSupported() && hlsSessionToken) scheduleReconnect('تعذر تحميل مقطع الفيديو.');
@@ -997,6 +1045,7 @@ window.addEventListener('pagehide', () => {
   clearInterval(poolHeartbeatTimer);
   clearTimeout(expiryTimer); clearTimeout(loadTimer); clearTimeout(retryTimer); clearTimeout(stallRecoveryTimer);
   clearInterval(matchTimer); hls?.destroy();
+  clearInterval(playbackProgressTimer);
 });
 window.addEventListener('resize', () => {
   if (hlsSessionToken) enforceTamperState();
@@ -1007,6 +1056,7 @@ setInterval(() => {
 startTamperObserver();
 loadWatchNews();
 setupQualityControl();
+playbackProgressTimer = setInterval(checkPlaybackProgress, 2000);
 start().catch((error) => {
   showError('البث غير متوفر حالياً', error.name === 'TimeoutError' ? 'تعذر الاتصال بالخادم في الوقت المحدد. افتح المباراة مجدداً.' : error.message);
   notifyParent('error', 'تعذر إنشاء اتصال آمن مع البث.');

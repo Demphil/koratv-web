@@ -102,12 +102,39 @@ test('native HLS uses the protected stream endpoint without constructing Hls', (
   let loads = 0;
   const video = { load: () => loads++ };
   const context = { clearTimeout: () => {}, retryTimer: null, qualityStallTimer: null, hls: null,
+    resumePlayback: false,
     reconnectAttempt: 0, networkRetries: 0, mediaRetries: 0, showLoading: () => {}, armLoadTimeout: () => {},
     Hls: { isSupported: () => false }, video, currentQuality: '',
     streamUrlForQuality: () => 'https://stream-api.koratv.click/api/stream.m3u8?token=protected-session' };
   vm.runInNewContext(block + ';connectStream(0)', context);
   assert.equal(loads, 1);
   assert.equal(video.src, context.streamUrlForQuality());
+});
+
+test('playback watchdog measures decoded progress rather than successful downloads', () => {
+  const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
+  const block = source.slice(source.indexOf('function checkPlaybackProgress()'), source.indexOf('function scheduleStallRecovery()'));
+  let now = 1000, frames = 100, seeks = 0, reconnects = 0;
+  const video = { paused: false, currentTime: 4, readyState: 4, seekable: { length: 1 },
+    getVideoPlaybackQuality: () => ({ totalVideoFrames: frames }) };
+  const context = vm.createContext({ Date: { now: () => now }, video, document: { hidden: false },
+    hlsSessionToken: 'protected', sessionExpiresAt: 1000000, playbackProgressAt: 0,
+    playbackProgressTime: 0, playbackProgressFrames: 0, playbackRecoveryStage: 0, retryTimer: null,
+    hideStatus: () => {}, showLoading: () => {}, returnToLive: () => seeks++,
+    hls: { startLoad: () => {} }, scheduleReconnect: () => reconnects++ });
+  vm.runInContext(block, context);
+  const check = () => vm.runInContext('checkPlaybackProgress()', context);
+  check();
+  now += 13000; video.currentTime += 4;
+  check();
+  assert.equal(seeks, 1, 'clock movement without new decoded frames is not healthy playback');
+  now += 13000; check();
+  assert.equal(reconnects, 1, 'a persistent silent stall reconnects instead of remaining blank');
+  frames += 30; video.currentTime += 1; now += 2000; check();
+  assert.equal(context.playbackRecoveryStage, 0);
+  video.paused = true; now += 20000; check();
+  context.document.hidden = true; video.paused = false; now += 20000; check();
+  assert.equal(reconnects, 1, 'user pauses and background tabs must not cause reconnections');
 });
 
 test('both frontend readers coalesce concurrent initial loads', async () => {
