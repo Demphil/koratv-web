@@ -420,6 +420,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     failed: 0,
     results: []
   };
+  const prewarmKeepalive = new Map();
   app.locals.providerPrewarm = prewarmState;
 
   const warmPlaybackManifest = async (playback, lease) => {
@@ -462,6 +463,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     prewarmState.lastRunAt = new Date().toISOString();
     prewarmState.lastReason = reason;
     const results = [];
+    const currentKeys = new Set();
     try {
       const assignments = (config.providerAssignments?.().assignments || [])
         .filter((assignment) => assignment?.matchId && assignment?.providerId)
@@ -479,7 +481,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
             continue;
           }
           const lease = providerPool.acquire(playback, `prewarm:${assignment.matchId}`);
-          providerPool.touch(lease, `prewarm:${assignment.matchId}`);
+          const viewerId = `prewarm:${assignment.matchId}`;
+          providerPool.touch(lease, viewerId);
+          prewarmKeepalive.set(playback.pool_key || playback.match_id, viewerId);
+          currentKeys.add(playback.pool_key || playback.match_id);
           const warmed = await warmPlaybackManifest(playback, lease);
           results.push({ ...result, ...warmed });
         } catch (error) {
@@ -489,6 +494,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       prewarmState.results = results.slice(-config.prewarmMaxResources || -8);
       prewarmState.warmed = results.filter((item) => item.ok).length;
       prewarmState.failed = results.length - prewarmState.warmed;
+      for (const key of [...prewarmKeepalive.keys()]) {
+        if (!currentKeys.has(key)) prewarmKeepalive.delete(key);
+      }
       return prewarmState;
     } finally {
       prewarmState.running = false;
@@ -504,6 +512,14 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     }, config.prewarmIntervalMs || 60_000);
     timer.unref();
     app.locals.providerPrewarmTimer = timer;
+    const heartbeatTimer = setInterval(() => {
+      for (const [key, viewerId] of prewarmKeepalive) {
+        const lease = [...providerPool.leases.values()].find((item) => item.key === key);
+        if (lease) providerPool.touch(lease, viewerId);
+      }
+    }, 10_000);
+    heartbeatTimer.unref();
+    app.locals.providerPrewarmHeartbeatTimer = heartbeatTimer;
     const startupTimer = setTimeout(() => {
       prewarmAssignedResources('startup', { fresh: true }).catch((error) => {
         console.warn('[provider-prewarm] startup failed', { message: error?.message || String(error) });

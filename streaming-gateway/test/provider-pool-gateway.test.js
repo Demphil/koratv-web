@@ -152,6 +152,7 @@ test('provider prewarm leases assigned resources before the first viewer', async
     return response;
   } });
   clearInterval(app.locals.providerPrewarmTimer);
+  clearInterval(app.locals.providerPrewarmHeartbeatTimer);
   clearTimeout(app.locals.providerPrewarmStartupTimer);
   t.after(() => app.locals.providerPool.close());
 
