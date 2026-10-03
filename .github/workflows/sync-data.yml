@@ -68,6 +68,8 @@ jobs:
           rsync -a shared/ _oracle-sync/shared/
           mkdir -p _oracle-sync/metadata
           cp secure-streaming/scripts/sync-matches-from-source.js _oracle-sync/metadata/
+          cp secure-streaming/scripts/prune-match-data.js _oracle-sync/metadata/
+          cp secure-streaming/src/lib/loadEnv.js secure-streaming/src/lib/supabaseAdmin.js _oracle-sync/metadata/
           cp ecosystem.oracle.config.js _oracle-sync/ecosystem.oracle.config.js
       - name: Check Oracle SSH configuration
         env:
@@ -112,14 +114,26 @@ jobs:
             # Keep the running metadata worker on the same public match schema.
             LEGACY="/home/ubuntu/iptv-system/secure-streaming"
             if test -f "$LEGACY/scripts/sync-matches-from-source.js"; then
-              test -d /home/ubuntu/iptv-system/shared
-              tar -czf "/opt/koratv/backups/metadata-${{ github.run_id }}.tgz" \
-                -C /home/ubuntu/iptv-system secure-streaming/scripts/sync-matches-from-source.js shared
-              install -m 0644 "$STAGING/metadata/sync-matches-from-source.js" "$LEGACY/scripts/sync-matches-from-source.js"
-              for MODULE in knockout.mjs match-details.mjs; do
-                install -m 0644 "$STAGING/shared/$MODULE" "/home/ubuntu/iptv-system/shared/$MODULE"
+              BACKUP_PATHS=(secure-streaming/scripts/sync-matches-from-source.js)
+              for FILE in secure-streaming/scripts/prune-match-data.js secure-streaming/src/lib/loadEnv.js secure-streaming/src/lib/supabaseAdmin.js shared; do
+                if test -e "/home/ubuntu/iptv-system/$FILE"; then BACKUP_PATHS+=("$FILE"); fi
               done
+              tar -czf "/opt/koratv/backups/metadata-${{ github.run_id }}.tgz" \
+                -C /home/ubuntu/iptv-system "${BACKUP_PATHS[@]}"
+              install -d -m 0755 "$LEGACY/src/lib" /home/ubuntu/iptv-system/shared
+              for FILE in sync-matches-from-source.js prune-match-data.js; do
+                install -m 0644 "$STAGING/metadata/$FILE" "$LEGACY/scripts/$FILE"
+              done
+              for FILE in loadEnv.js supabaseAdmin.js; do
+                install -m 0644 "$STAGING/metadata/$FILE" "$LEGACY/src/lib/$FILE"
+              done
+              cp "$STAGING/shared/"*.mjs /home/ubuntu/iptv-system/shared/
               node --check "$LEGACY/scripts/sync-matches-from-source.js"
+              if ! (cd "$LEGACY" && node --input-type=module -e 'await import("./scripts/sync-matches-from-source.js"); console.log("metadata schema import ready")'); then
+                tar -xzf "/opt/koratv/backups/metadata-${{ github.run_id }}.tgz" -C /home/ubuntu/iptv-system
+                echo "Metadata import failed; previous code restored"
+                exit 1
+              fi
               node -e '
                 const {execFileSync}=require("node:child_process");
                 const apps=JSON.parse(execFileSync("pm2",["jlist"],{encoding:"utf8"}));

@@ -932,6 +932,16 @@ export async function enrichApiFootballMatchDetails(rows) {
       }
     } catch (error) { console.warn(`API-Football knockout refresh failed: ${error.message}`); }
   }
+  const currentFixtures = new Map(rows.filter(row => row.source === 'api-football').map(row => [String(row.payload?.sourceFixtureId),row]));
+  for (const row of rows) {
+    if (!row.payload?.knockout?.rounds) continue;
+    row.payload.knockout = { ...row.payload.knockout, rounds: row.payload.knockout.rounds.map(round => ({
+      ...round, matches: round.matches.map(fixture => {
+        const current = currentFixtures.get(String(fixture.fixtureId));
+        return current ? { ...fixture, score: current.payload.score || fixture.score, status: current.payload.status || fixture.status } : fixture;
+      }),
+    })) };
+  }
   return rows;
 }
 
