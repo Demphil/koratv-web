@@ -19,16 +19,24 @@ function runLocked(lock, script) {
 export function createProviderSyncScheduler({ run = runLocked, now = Date.now, env = process.env, log = console.error } = {}) {
   const catalogInterval = Math.max(15 * 60_000, Number(env.PROVIDER_POOL_SYNC_INTERVAL_MS || 4 * 60 * 60_000));
   let running = false;
+  let catalogRunning = false;
   let nextCatalogAt = 0;
+  const refreshCatalog = async () => {
+    catalogRunning = true;
+    try {
+      const code = await run(catalogLock, 'scripts/sync-provider-pool.js');
+      nextCatalogAt = now() + (code === 0 ? catalogInterval : 5 * 60_000);
+      if (code && code !== 75) log(`Catalog sync exited ${code}; existing catalog retained`);
+    } catch(error) {
+      nextCatalogAt = now() + 5 * 60_000;
+      log(`Catalog sync failed: ${error.message}; existing catalog retained`);
+    } finally {catalogRunning = false;}
+  };
   return async function tick() {
     if (running) return false;
     running = true;
     try {
-      if (now() >= nextCatalogAt) {
-        const code = await run(catalogLock, 'scripts/sync-provider-pool.js');
-        nextCatalogAt = now() + (code === 0 ? catalogInterval : 5 * 60_000);
-        if (code && code !== 75) log(`Catalog sync exited ${code}; existing catalog retained`);
-      }
+      if (!catalogRunning && now() >= nextCatalogAt) void refreshCatalog();
       const routeCode = await run(routeLock, 'scripts/maintenance-sync.js');
       if (routeCode) {
         if (routeCode !== 75) log(`Route state sync exited ${routeCode}; existing route state retained`);
@@ -41,7 +49,11 @@ export function createProviderSyncScheduler({ run = runLocked, now = Date.now, e
   };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+export function isSchedulerEntrypoint(modulePath, argvPath = process.argv[1], pm2Path = process.env.pm_exec_path) {
+  return modulePath === argvPath || modulePath === pm2Path;
+}
+
+if (isSchedulerEntrypoint(fileURLToPath(import.meta.url))) {
   const sync = createProviderSyncScheduler();
   const intervalMs = Math.max(15_000, Number(process.env.MATCH_RESOURCE_SYNC_INTERVAL_MS || 60_000));
   const tick = () => sync().catch(error => console.error(`Resource sync failed: ${error.message}`));

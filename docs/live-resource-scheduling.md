@@ -16,6 +16,9 @@ a correct channel merely because a worker was free.
   the same explicit Gulf Cup supplement used by the public feed is preserved.
 - Route reconciliation and resource assignment run every minute. Provider
   channel-link discovery still runs every four hours, independently of viewers.
+- Catalog discovery runs in the background, so even a slow provider response
+  cannot block minute-by-minute route and assignment reconciliation.
+- Scheduler startup recognizes PM2's ESM wrapper as well as direct Node runs.
 - A maximum of eight events may be assigned. Provider identities are not
   truncated by list position; disabled account gaps do not hide usable accounts.
 - Flexible events can move to another compatible provider to leave a scarce
