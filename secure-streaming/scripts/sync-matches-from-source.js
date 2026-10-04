@@ -277,7 +277,7 @@ async function collectApiFootballRows() {
         kickoff_time: kickoff,
         channel: null,
         source: "api-football",
-        active: true,
+        active: sourceMatchState({ status: status.raw }) !== 'unavailable',
         payload: {
           score: apiFootballScore(fixture),
           status: status.raw,
@@ -738,7 +738,7 @@ export function parseKoooraMatches(html) {
         kickoff_time: kickoff,
         channel: preferredChannel,
         source: 'kooora',
-        active: true,
+        active: sourceMatchState({ status }) !== 'unavailable',
         payload: {
           score,
           status,
@@ -855,6 +855,7 @@ export async function persistMatchSnapshots(supabase, rows, versions) {
 
 export function apiFootballDetailTargets(rows, now = Date.now(), limit = apiFootballDetailLimit) {
   return rows.filter((row) => {
+    if (row.active === false || sourceMatchState(row.payload) === 'unavailable') return false;
     if (row.source && row.source !== 'api-football') return false;
     const fixtureId = Number(row.payload?.sourceFixtureId);
     if (!Number.isSafeInteger(fixtureId) || fixtureId <= 0) return false;

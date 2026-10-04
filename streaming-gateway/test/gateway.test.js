@@ -4,6 +4,28 @@ import jwt from 'jsonwebtoken';
 import { createApp } from '../app.js';
 import { publicMatchId } from '../../shared/public-match-id.mjs';
 
+test('both frontend origins show valid Morocco and Argentina friendlies but hide legacy cancelled active rows', async t => {
+  const config = { secret: 'test-secret-longer-than-32-characters', hmacSecret: 'independent-hmac-longer-than-32-characters',
+    frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example',
+    frontendOrigins: new Set(['https://koratv.click', 'https://fraja.online']), upstreamOrigins: new Set(),
+    trustedProxies: [], enableAntiBot: false,
+    getMatchesForOrigin: async () => [
+      { match_id: 'morocco-mali', home_team: 'المغرب', away_team: 'مالي', payload: { status: 'FIXTURE' } },
+      { match_id: 'morocco-ghana', home_team: 'المغرب', away_team: 'غانا', payload: { status: 'CANCELLED' } },
+      { match_id: 'argentina', home_team: 'الأرجنتين', away_team: 'بوركينا فاسو', payload: { status: 'LIVE' } }
+    ].map(row => ({ ...row, id: row.match_id, active: true, league: 'المباريات الودية',
+      kickoff_time: new Date().toISOString() })) };
+  const server = createApp({ config, redis: {} }).listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  for (const Origin of config.frontendOrigins) {
+    const response = await fetch('http://127.0.0.1:' + server.address().port + '/api/matches', { headers: { Origin } });
+    assert.equal(response.status, 200);
+    const { matches } = await response.json();
+    assert.deepEqual(matches.map(row => row.matchId), ['morocco-mali', 'argentina']);
+  }
+});
+
 test('a known channel is not advertised as ready until its resource is prepared', async t => {
   const config = { secret: 'test-secret-longer-than-32-characters', hmacSecret: 'independent-hmac-longer-than-32-characters',
     frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example',

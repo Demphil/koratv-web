@@ -2,6 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isAllowedMatch, normalizeTeamName } from '../../shared/league-whitelist.mjs';
 
+test('Kooora Arabic international friendlies include Morocco and Argentina without admitting club or youth friendlies', () => {
+  for (const [homeTeam, awayTeam] of [['المغرب', 'مالي'], ['الأرجنتين', 'بوركينا فاسو']]) {
+    assert.equal(isAllowedMatch({ league: 'المباريات الودية', homeTeam, awayTeam }), true);
+  }
+  assert.equal(isAllowedMatch({ league: 'المباريات الودية', homeTeam: 'المغرب تحت 23', awayTeam: 'مالي تحت 23' }), false);
+  assert.equal(isAllowedMatch({ league: 'المباريات الودية للسيدات', homeTeam: 'المغرب', awayTeam: 'مالي' }), false);
+  assert.equal(isAllowedMatch({ league: 'المباريات الودية للأندية', homeTeam: 'Real Madrid', awayTeam: 'Barcelona' }), false);
+  assert.equal(isAllowedMatch({ league: 'وديات الأندية', homeTeam: 'Real Madrid', awayTeam: 'Barcelona' }), false);
+});
+
 test('normalizes San Diego Arabic spelling variants for match dedupe', () => {
   assert.equal(normalizeTeamName('سان دييجو'), normalizeTeamName('سان دييغو'));
 });

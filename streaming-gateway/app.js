@@ -13,7 +13,7 @@ import { HlsProgressMonitor } from './hls-progress.js';
 import { singleQualityManifest } from './single-quality.js';
 import { diagnosticPlayback, registerMultiview } from './multiview.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
-import { matchPlaybackState as providerPlaybackState } from '../shared/match-lifecycle.mjs';
+import { matchPlaybackState as providerPlaybackState, sourceMatchState } from '../shared/match-lifecycle.mjs';
 import { resolvePublicMatchId } from '../shared/public-match-id.mjs';
 
 const issuer = 'koratv-gateway';
@@ -290,6 +290,7 @@ function dedupeNormalizedMatches(matches) {
 }
 
 function allowedMatch(match) {
+  if (sourceMatchState(match) === 'unavailable') return false;
   return isAllowedMatch({
     league: match.league,
     leagueCountry: match.leagueCountry,

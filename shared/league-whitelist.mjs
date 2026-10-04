@@ -24,7 +24,7 @@ const ALLOWED_LEAGUE_PATTERNS = [
   /بطوله شرق اسيا|كاس شرق اسيا|eaff championship|east asian championship/i,
   /بطوله جنوب اسيا|كاس جنوب اسيا|saff championship|south asian championship/i,
   /بطوله وسط اسيا|كاس وسط اسيا|cafa nations cup|central asian/i,
-  /بطوله وديه|مباراه وديه|مباريات وديه|وديه دوليه|ودية دولية|international friendl(?:y|ies)|friendly international|^friendlies$/i,
+  /بطوله وديه|مباراه وديه|مباريات وديه|المباريات الوديه|وديه دوليه|ودية دولية|international friendl(?:y|ies)|friendly international|^friendlies$/i,
   /كاس العالم|تصفيات كاس العالم|fifa world cup|world cup qualification|world cup qualifier/i,
   /كوبا امريكا|copa america/i,
   /الكاس الذهبيه|كأس الكونكاكاف الذهبية|concacaf gold cup|concacaf nations league/i,
@@ -38,6 +38,7 @@ const ALLOWED_LEAGUE_PATTERNS = [
 const WOMEN_MARKERS = /سيدات|نسائي|نساء|women|woman|female|lad(?:y|ies)|feminin|femminil|femenin|femenil|femmes?|frauen|damen|\bw\b/i;
 const OUT_OF_SCOPE_LEAGUE_PATTERNS = [
   /canadian premier league|friendlies clubs|club friendlies|copa de la liga/i,
+  /وديات الانديه|(?:المباريات|مباريات) (?:ال)?وديه للانديه/i,
   /\bbotola\s*2\b|\bpremier league\s*2\b|\bbundesliga\s*2\b/i,
   /الدوري المغربي.*(?:الثاني|الدرجة الثانية|القسم الثاني)|البطولة.*(?:الثاني|الدرجة الثانية|القسم الثاني)/i,
 ];

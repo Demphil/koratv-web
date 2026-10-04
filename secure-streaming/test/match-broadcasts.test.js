@@ -15,6 +15,26 @@ const kooora = { match_id: 'kooora-1', source: 'kooora', home_team: 'ليتوا�
   kickoff_time, payload: { sourceMatchId: 'event-1', channels: ['beIN Sports Mena 2', 'CBC Sport'] } };
 const checkedAt = '2026-09-27T14:00:00Z';
 
+test('international friendly refresh retires cancelled Morocco fixture and retains valid Morocco and live Argentina', () => {
+  const matches = [
+    { id: 'morocco-mali', teamA: { name: 'المغرب' }, teamB: { name: 'مالي' }, status: 'FIXTURE' },
+    { id: 'morocco-ghana', teamA: { name: 'المغرب' }, teamB: { name: 'غانا' }, status: 'CANCELLED' },
+    { id: 'argentina', teamA: { name: 'الأرجنتين' }, teamB: { name: 'بوركينا فاسو' }, status: 'LIVE' },
+  ].map(match => ({ ...match, startDate: kickoff_time }));
+  const html = '<script id="__NEXT_DATA__">' + JSON.stringify({ props: { pageProps: { data: [
+    { competition: { name: 'المباريات الودية' }, matches }
+  ] } } }) + '</script>';
+  const rows = parseKoooraMatches(html);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows.filter(row => row.active).map(row => row.payload.sourceMatchId), ['morocco-mali', 'argentina']);
+  const cancelled = rows.find(row => row.payload.sourceMatchId === 'morocco-ghana');
+  const existing = { ...cancelled, active: true, payload: { status: 'FIXTURE' } };
+  const refreshed = mergeRefreshedMatch(existing, cancelled);
+  assert.equal(refreshed.active, false);
+  assert.equal(refreshed.payload.status, 'CANCELLED');
+  assert.equal(rows.find(row => row.payload.sourceMatchId === 'argentina').payload.isLive, true);
+});
+
 test('Gemini is disabled and unverified legacy assignments cannot open a stream', async () => {
   assert.equal((await enrichMatchChannels()).disabled, true);
   await assert.rejects(resolveBroadcastChannelsWithGemini(api), /disabled/);
