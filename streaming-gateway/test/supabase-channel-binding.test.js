@@ -452,6 +452,17 @@ test('pooled playback uses only the provider assigned to that match', async () =
     assert.equal(playback.channel_id, 'beIN SPORTS HD 8');
     assert.deepEqual(playback.provider_sources, { B: 'https://correct.example/football.m3u8' });
     assert.equal(playback.stream_url, 'https://correct.example/football.m3u8');
+    catalog.playbackProviderIds = () => ['B', 'D'];
+    catalog.sources = () => ({ A: 'https://reserved.example/football.m3u8',
+      B: 'https://correct.example/football.m3u8', D: 'https://standby.example/football.m3u8' });
+    const liveResolver = { resolve: async (_, options) => {
+      assert.deepEqual(options.providerIds, ['B'], 'urgent discovery renews the primary without scanning every account');
+      return { resolvedChannel: 'beIN SPORTS HD 8', provider_sources: { B: 'https://renewed.example/football.m3u8' } };
+    } };
+    const renewed = await createPlaybackResolver(env, 'kooora', catalog, liveResolver)(match.match_id, { fresh: true });
+    assert.equal(renewed.preferred_provider, 'B');
+    assert.deepEqual(renewed.provider_sources, { B: 'https://renewed.example/football.m3u8',
+      D: 'https://standby.example/football.m3u8' });
   } finally { globalThis.fetch = originalFetch; }
 });
 

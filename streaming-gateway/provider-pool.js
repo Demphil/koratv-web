@@ -58,7 +58,7 @@ export class ProviderPool {
       const current = [...this.leases.values()].find(lease => lease.key === demand.key)?.provider;
       const available = [...PROVIDER_IDS].sort((a, b) => {
         const score = id => this.leases.has(id) ? this.score(this.demands.get(this.leases.get(id).key)) : -1;
-        return score(a) - score(b);
+        return Number(b === demand.preferredProvider) - Number(a === demand.preferredProvider) || score(a) - score(b);
       });
       const providers = [...new Set([current, ...available].filter(Boolean))];
       const provider = providers.find(id => !desired.has(id) && demand.sources[id] && (this.blocked.get(id) || 0) <= now
@@ -84,6 +84,7 @@ export class ProviderPool {
       this.demands.set(key, demand);
     }
     Object.assign(demand, { sources: playback.provider_sources || {}, base: Math.max(demand.base || 0, playback.priority_score || 10),
+      preferredProvider: playback.preferred_provider || null,
       channel: playback.channel_id, lastSeen: now });
     demand.viewers.set(viewer, now);
     this.rebalance();

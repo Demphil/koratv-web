@@ -38,6 +38,17 @@ test('two accounts reserve stable distinct matches and reject a lower-score thir
   assert.equal(pool.demands.get('third').viewers.size, 1);
 });
 
+test('assigned account is preferred and a free same-channel standby replaces HTTP 509', t => {
+  const { pool } = setup(t);
+  const match = { ...playback('selected', 100), preferred_provider: 'B' };
+  const initial = pool.acquire(match, 'prewarm:selected');
+  assert.equal(initial.provider, 'B');
+  pool.fail(initial, 509);
+  const standby = pool.acquire(match, 'prewarm:selected');
+  assert.equal(standby.provider, 'A');
+  assert.equal(pool.acquire(match, 'visitor').id, standby.id);
+});
+
 test('three independent accounts hold three matches, reject a fourth, and preserve peers on failure', t => {
   const { pool } = setup(t);
   const match = id => playback(id, 100, Object.fromEntries(['A','B','C'].map(p => [p, `https://${p.toLowerCase()}.example/${id}.m3u8`])));
@@ -255,6 +266,23 @@ test('provider catalog exposes safe match assignment state without raw URLs', t 
   assert.equal(catalog.matchAssignment('api-alias').matchId, 'api-alias');
   assert.equal(catalog.matchAssignment('api-alias').broadcastRank, 1);
   assert.equal(catalog.matchAssignment('match-2').status, 'WAITING');
+});
+
+test('playback standbys exclude providers reserved by another match and disabled accounts', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'provider-standby-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const catalogPath = join(dir, 'catalog.json');
+  const assignmentPath = join(dir, 'assignments.json');
+  writeFileSync(catalogPath, JSON.stringify({ providers: { A: { enabled: true }, B: { enabled: true },
+    D: { enabled: true }, F: { enabled: false } }, channels: {} }));
+  writeFileSync(assignmentPath, JSON.stringify({ assignments: [
+    { matchId: 'selected', aliases: ['selected-alias'], providerId: 'B', resolvedChannel: 'Exact TV' },
+    { matchId: 'other', providerId: 'A', resolvedChannel: 'Other TV' }
+  ], ignored: [{ matchId: 'waiting' }] }));
+  const catalog = createProviderCatalog({ PROVIDER_CATALOG_PATH: catalogPath, MATCH_RESOURCE_ASSIGNMENT_PATH: assignmentPath });
+  assert.deepEqual(catalog.playbackProviderIds('selected'), ['B', 'D']);
+  assert.deepEqual(catalog.playbackProviderIds('selected-alias'), ['B', 'D']);
+  assert.deepEqual(catalog.playbackProviderIds('waiting'), []);
 });
 
 

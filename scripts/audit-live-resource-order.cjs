@@ -43,7 +43,7 @@ const adHosts = /omg10\.com|nap5k\.com|n6wxm\.com|al5sm\.com|quge5\.com|profitab
         const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth+1);
         assert.equal(overflow,false);
         console.log(JSON.stringify({origin,viewport:viewport.width,orderVerified:true,first:displayed.slice(0,4).map(m=>({id:m.matchId,status:m.status,resource:m.resourceStatus,ready:m.sourceReady})),endedWorkers:0}));
-        playbackMatches=matches.filter(m=>m.status==='LIVE' && m.sourceReady && m.resourceStatus==='ASSIGNED');
+        playbackMatches=matches.filter(m=>m.playbackState==='live' && m.sourceReady && m.resourceStatus==='ASSIGNED');
         await page.close();
       }
     }

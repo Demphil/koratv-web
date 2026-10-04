@@ -336,7 +336,7 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
       });
     }
     const assignedProviderIds = assignment?.status === 'ASSIGNED' && assignmentIsCurrent && assignment.providerId
-      ? [assignment.providerId]
+      ? (catalog.playbackProviderIds?.(matchKey) || [assignment.providerId])
       : [];
     const candidates = override
       ? [override]
@@ -368,10 +368,13 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
       }
     }
     if (catalog && liveResolver?.resolve && (fresh || !liveSources)) {
-      const discovered = await liveResolver.resolve(candidates, { providerIds: assignedProviderIds, fresh });
+      const discoveryProviderIds = assignment?.status === 'ASSIGNED' && assignmentIsCurrent
+        ? [assignment.providerId] : assignedProviderIds;
+      const discovered = await liveResolver.resolve(candidates, { providerIds: discoveryProviderIds, fresh });
       const filteredLiveSources = filterProviderSources(discovered?.provider_sources, assignedProviderIds);
       if (Object.keys(filteredLiveSources).length) {
-        liveSources = { ...discovered, provider_sources: filteredLiveSources };
+        const preparedSources = liveSources?.resolvedChannel === discovered.resolvedChannel ? liveSources.provider_sources : {};
+        liveSources = { ...discovered, provider_sources: { ...preparedSources, ...filteredLiveSources } };
         channel = { name: liveSources.resolvedChannel || candidates[0], original_url: '', quality_variants: [] };
       }
     }
@@ -417,6 +420,7 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
       qualities: catalog ? [] : qualityVariants.map(({ label, height }) => ({ label, height })),
       quality_sources: catalog ? [] : qualityVariants,
       ...(catalog ? { provider_sources: providerSources,
+        preferred_provider: assignment?.status === 'ASSIGNED' ? assignment.providerId : null,
         pool_key: `${String(match.kickoff_time).slice(0, 10)}:${payload.broadcast?.sourceMatchId || payload.sourceMatchId || match.match_id}:${channel.name}`,
         priority_score: basePriority(match, channel.name), single_quality: true } : {}),
     };

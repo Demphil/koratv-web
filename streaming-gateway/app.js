@@ -374,7 +374,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const upstreamDelay = (attempt) => Math.min(5000, 600 * (2 ** Math.max(0, attempt - 1)));
   const retryableStatus = (status) => status === 408 || status === 429 || status >= 500;
-  const failoverStatus = (status) => [401, 403, 408, 429, 500, 502, 503, 504].includes(Number(status));
+  const failoverStatus = (status) => [401, 403, 404, 408, 429, 500, 502, 503, 504, 509].includes(Number(status));
   const fetchUpstream = async (source, options, attempts = 3) => {
     let lastError;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -439,6 +439,15 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     results: []
   };
   const prewarmKeepalive = new Map();
+  const preparedMatches = new Map();
+  const normalizeRuntimeMatch = row => {
+    if (!prewarmState.enabled || row.resource_status !== 'ASSIGNED') return normalizeMatch(row, config);
+    const prepared = preparedMatches.get(row.match_id || row.id);
+    const ready = prepared?.ok && prepared.channel === cleanText(row.channel || row.payload?.channel)
+      && providerPool.valid(prepared.lease)
+      && Date.now() - prepared.checkedAt < 2 * (config.prewarmIntervalMs || 60_000);
+    return normalizeMatch({ ...row, source_ready: Boolean(ready) }, config);
+  };
   app.locals.providerPrewarm = prewarmState;
   if (config.primeMatchSnapshots) {
     const primeTimer = setTimeout(() => config.primeMatchSnapshots().catch(() => {}), 100);
@@ -453,7 +462,6 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const response = await fetchCachedUpstream(url, { headers, redirect: 'follow' }, '', lease);
       if (!response.ok) {
         await response.body?.cancel();
-        if ([401, 403].includes(response.status)) providerPool.fail(lease, response.status);
         return { ok: false, status: response.status };
       }
       const text = await response.text();
@@ -465,10 +473,21 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         continue;
       }
       lease.mediaUrl = allowedUrl(base, new Set([new URL(base).origin])).href;
+      if (!lines.length) return { ok: false, error: 'empty_manifest' };
       const sequence = Number(text.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/m)?.[1]);
       const hasSequence = Number.isSafeInteger(sequence) && sequence >= 0;
       const hash = hasSequence ? '' : createHash('sha256').update(text).digest('hex').slice(0, 16);
+      const lastIndex = lines.length - 1;
+      const lastTarget = new URL(lines[lastIndex], base);
+      const lastVersion = hasSequence ? `msn-${sequence + lastIndex}` : `mf-${hash}-${lastIndex}`;
+      const segment = await fetchCachedUpstream(lastTarget, { headers, redirect: 'follow' }, lastVersion, lease);
+      if (!segment.ok) {
+        await segment.body?.cancel();
+        return { ok: false, status: segment.status, error: 'segment_unavailable' };
+      }
+      if (!(await segment.arrayBuffer()).byteLength) return { ok: false, error: 'empty_segment' };
       for (let index = Math.max(0, lines.length - 4); index < lines.length; index += 1) {
+        if (index === lastIndex) continue;
         const target = new URL(lines[index], base);
         const version = hasSequence ? `msn-${sequence + index}` : `mf-${hash}-${index}`;
         hlsCache.schedulePrefetch(
@@ -494,6 +513,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         .filter((assignment) => assignment?.matchId && assignment?.providerId)
         .slice(0, config.prewarmMaxResources || 8);
       const scheduledViewers = new Set(assignments.map(item => `prewarm:${item.matchId}`));
+      for (const id of preparedMatches.keys()) {
+        if (!scheduledViewers.has(`prewarm:${id}`)) preparedMatches.delete(id);
+      }
       for (const [key, viewerId] of prewarmKeepalive) {
         if (!scheduledViewers.has(viewerId)) {
           providerPool.releaseViewer(key, viewerId);
@@ -507,19 +529,40 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           provider: assignment.providerId || null
         };
         try {
-          const playback = await config.getPlaybackForSource('', assignment.matchId, { fresh });
+          let playback = await config.getPlaybackForSource('', assignment.matchId, { fresh });
           if (!playback?.is_streaming_active || !Object.keys(playback.provider_sources || {}).length) {
+            preparedMatches.set(assignment.matchId, { ok: false, checkedAt: Date.now() });
             results.push({ ...result, ok: false, error: playback?.reason || 'stream_unavailable' });
             continue;
           }
-          const lease = providerPool.acquire(playback, `prewarm:${assignment.matchId}`);
           const viewerId = `prewarm:${assignment.matchId}`;
-          providerPool.touch(lease, viewerId);
-          prewarmKeepalive.set(lease.key, viewerId);
-          currentKeys.add(lease.key);
-          const warmed = await warmPlaybackManifest(playback, lease);
+          const tried = new Set();
+          let lease;
+          let warmed = { ok: false, error: 'source_unavailable' };
+          while (tried.size < Object.keys(playback.provider_sources || {}).length) {
+            lease = providerPool.acquire(playback, viewerId);
+            prewarmKeepalive.set(lease.key, viewerId);
+            if (tried.has(lease.provider)) break;
+            tried.add(lease.provider);
+            try { warmed = await warmPlaybackManifest(playback, lease); }
+            catch { warmed = { ok: false, error: 'upstream_unreachable' }; }
+            if (warmed.ok) break;
+            providerPool.fail(lease, warmed.status || 503);
+            // Capacity errors need a free account; expired links also need urgent renewal.
+            if (warmed.status !== 509 && tried.size === 1 && !fresh) {
+              const renewed = await config.getPlaybackForSource('', assignment.matchId, { fresh: true });
+              if (renewed?.is_streaming_active && renewed.channel_id === playback.channel_id) playback = renewed;
+            }
+          }
+          if (warmed.ok) {
+            providerPool.touch(lease, viewerId);
+            prewarmKeepalive.set(lease.key, viewerId);
+            currentKeys.add(lease.key);
+          }
+          preparedMatches.set(assignment.matchId, { ok: warmed.ok, channel: playback.channel_id, lease, checkedAt: Date.now() });
           results.push({ ...result, ...warmed });
         } catch (error) {
+          preparedMatches.set(assignment.matchId, { ok: false, checkedAt: Date.now() });
           results.push({ ...result, ok: false, error: error instanceof PoolError ? error.code : (error?.message || 'prewarm_failed') });
         }
       }
@@ -730,7 +773,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       const origin = originFromHeader(req.headers.origin) || originFromHeader(req.headers.referer);
       const matches = dedupeNormalizedMatches((await config.getMatchesForOrigin(origin))
-        .map((row) => normalizeMatch(row, config))
+        .map(normalizeRuntimeMatch)
         .filter((match) => match.homeTeam && match.awayTeam && match.scheduledAt)
         .filter((match) => normalizeMatchName(match.homeTeam) !== normalizeMatchName(match.awayTeam)));
       const day = req.query.day;
@@ -755,7 +798,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const matchId = await resolveRequestedMatchId(origin, requested);
       if (!matchId) return res.sendStatus(404);
       const match = (await config.getMatchesForOrigin(origin, matchId))
-        .map((row) => normalizeMatch(row, config))
+        .map(normalizeRuntimeMatch)
         .find((item) => (item.matchId === matchId || item.match_id === matchId) && allowedMatch(item));
       if (!match) return res.sendStatus(404);
       res.json({ match });

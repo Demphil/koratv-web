@@ -240,3 +240,57 @@ test('provider prewarm leases assigned resources before the first viewer', async
   assert.equal(next.warmed, 1);
   assert.deepEqual(app.locals.providerPool.snapshot().map(item => [item.provider, item.channel]), [['A','beIN SPORTS HD 2']]);
 });
+
+for (const failure of ['manifest-509', 'segment-503', 'all-failed']) {
+  test(`background preparation validates media and recovers ${failure} before a visitor`, async t => {
+    const calls = [];
+    const config = {
+      providerPoolEnabled: true, prewarmAssignedResources: true, enableAntiBot: false,
+      secret: 'test-pool-secret-longer-than-32-characters', hmacSecret: 'test-pool-hmac-independent-longer-than-32',
+      frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example',
+      frontendOrigins: new Set(['https://koratv.click']), upstreamOrigins: new Set(), trustedProxies: [],
+      sessionTtl: 300, sourceForOrigin: () => 'kooora', upstreamUserAgent: 'test',
+      providerAssignments: () => ({ assignments: [{ matchId: 'selected', providerId: 'D', resolvedChannel: 'Exact TV' }] }),
+      getMatchesForOrigin: async () => [{ match_id: 'selected', active: true, home_team: 'Morocco', away_team: 'Mali',
+        league: 'International Friendlies', kickoff_time: new Date(Date.now() - 60_000).toISOString(),
+        channel: 'Exact TV', source_ready: true, resource_status: 'ASSIGNED', payload: { status: 'LIVE' } }],
+      getPlaybackForSource: async () => ({ is_streaming_active: true, match_id: 'selected', pool_key: 'selected',
+        channel_id: 'Exact TV', preferred_provider: 'D',
+        provider_sources: { D: 'https://d.example/live.m3u8', A: 'https://a.example/live.m3u8' } })
+    };
+    const redis = { ping: async () => 'PONG', incr: async () => 1, expire: async () => 1,
+      set: async () => 'OK', get: async () => null };
+    const app = createApp({ config, redis, fetchImpl: async url => {
+      calls.push(url.href);
+      const segment = url.pathname.endsWith('.ts');
+      const failing = failure === 'all-failed' || (url.hostname === 'd.example'
+        && (failure === 'manifest-509' || segment));
+      const response = new Response(failing ? 'unavailable' : segment ? new Uint8Array([71, 0, 1])
+        : '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:7\n#EXTINF:6,\nseg7.ts\n',
+      { status: failing ? failure === 'segment-503' ? 503 : 509 : 200 });
+      Object.defineProperty(response, 'url', { value: url.href });
+      return response;
+    } });
+    clearInterval(app.locals.providerPrewarmTimer);
+    clearInterval(app.locals.providerPrewarmHeartbeatTimer);
+    clearTimeout(app.locals.providerPrewarmStartupTimer);
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise(resolve => server.once('listening', resolve));
+    t.after(() => { app.locals.providerPool.close(); server.closeAllConnections(); server.close(); });
+    const matches = async () => (await (await fetch(`http://127.0.0.1:${server.address().port}/api/matches?day=today`,
+      { headers: { Origin: config.frontend } })).json()).matches;
+    assert.equal((await matches())[0].sourceReady, false, 'catalog URLs alone are not prepared streams');
+    const state = await app.locals.prewarmAssignedResources('test');
+    if (failure === 'all-failed') {
+      assert.equal(state.warmed, 0);
+      assert.equal((await matches())[0].sourceReady, false);
+      assert.equal(app.locals.providerPool.demands.size, 0, 'failed synthetic viewers must not occupy workers');
+    } else {
+      assert.equal(state.warmed, 1);
+      assert.equal(state.results[0].provider, 'A');
+      assert.ok(calls.includes('https://a.example/seg7.ts'));
+      assert.equal((await matches())[0].sourceReady, true);
+      assert.equal(app.locals.providerPool.snapshot()[0].channel, 'Exact TV');
+    }
+  });
+}

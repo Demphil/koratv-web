@@ -124,6 +124,16 @@ export function createProviderCatalog(env = process.env) {
       refresh();
       return assignmentFor(matchId);
     },
+    playbackProviderIds(matchId) {
+      refresh();
+      const assignment = assignmentFor(matchId);
+      if (assignment?.status !== 'ASSIGNED') return [];
+      const reserved = new Set((assignments.assignments || [])
+        .filter(item => String(item.matchId) !== String(matchId) && !item.aliases?.includes(String(matchId)))
+        .map(item => item.providerId));
+      return [assignment.providerId, ...PROVIDER_IDS.filter(id => id !== assignment.providerId
+        && catalog.providers?.[id]?.enabled && !reserved.has(id))];
+    },
     assignments() {
       refresh();
       return {
