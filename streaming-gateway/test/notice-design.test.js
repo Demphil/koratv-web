@@ -21,3 +21,11 @@ test('style values cannot inject CSS, arbitrary animation names, unsafe numbers 
   assert.throws(() => validateNotices({ ...base, items: [{ title: 'x', duration: 0 }] }));
   assert.equal(validateNotices({ ...base, items: [{ title: '<script>plain text</script>' }] }).items[0].title, '<script>plain text</script>');
 });
+test('whole-card size controls survive storage and reject unsafe dimensions', () => {
+  const design = { cardScale: 150, minHeight: 180, padding: 24, width: 60 };
+  const item = validateNotices({ ...base, items: [{ text: 'Resizable ad', design }] }).items[0];
+  for (const [key, value] of Object.entries(design)) assert.equal(item.design[key], value);
+  assert.equal(normalizeNoticeDesign().cardScale, 100);
+  assert.equal(normalizeNoticeDesign().minHeight, 0);
+  for (const invalid of [{ cardScale: 49 }, { cardScale: 151 }, { minHeight: -1 }, { minHeight: 221 }, { padding: 25 }, { padding: '10px' }]) assert.throws(() => normalizeNoticeDesign(invalid, true), /invalid_notice_design/);
+});

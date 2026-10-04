@@ -1,7 +1,8 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>إدارة البث | KoraTV</title><link rel="stylesheet" href="/api/operator/ui/console.css"><link rel="stylesheet" href="/api/operator/ui/broadcast-notice.css"><link rel="stylesheet" href="/api/operator/ui/notice-editor.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>إدارة البث | KoraTV</title><link rel="stylesheet" href="/api/operator/ui/console.css"><link rel="stylesheet" href="/api/operator/ui/broadcast-notice.css"><link rel="stylesheet" href="/api/operator/ui/notice-editor.css"><link rel="stylesheet" href="/api/operator/ui/theme.css"></head>
 <body>
+  <canvas id="operator-depth" aria-hidden="true"></canvas>
   <header><strong>KORA TV <span>إدارة البث</span></strong><div><span id="connection">اتصال آمن</span><button id="refresh" title="تحديث" hidden><img src="/api/operator/ui/icons/refresh-cw" alt=""></button><button id="logout" title="تسجيل الخروج" hidden><img src="/api/operator/ui/icons/log-out" alt=""></button></div></header>
   <main>
     <form id="login" class="login"><h1>تسجيل الدخول</h1><label>اسم المستخدم<input id="username" autocomplete="username" value="admin" required></label><label>كلمة المرور<input id="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">دخول</button></form>
@@ -28,4 +29,5 @@
     <p id="message" role="status"></p>
   </main>
   <script type="module" src="/api/operator/ui/console.js"></script>
+  <script type="module" src="/api/operator/ui/depth.js"></script>
 </body></html>

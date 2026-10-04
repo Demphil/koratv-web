@@ -2,12 +2,13 @@ export const noticeDefaults = Object.freeze({
   titleSize: 24, textSize: 16, titleColor: '#ffdc74', textColor: '#ffffff',
   titleAnimation: 'none', textAnimation: 'none', titleAnimationSeconds: 2, textAnimationSeconds: 2, titleAlign: 'right', textAlign: 'right',
   titlePosition: 'above', placement: 'bottom', imageSide: 'right', imageSize: 96,
-  width: 74, backgroundColor: '#163c32', backgroundOpacity: 0, titleBold: true, textBold: false
+  width: 74, cardScale: 100, minHeight: 0, padding: 10,
+  backgroundColor: '#163c32', backgroundOpacity: 0, titleBold: true, textBold: false
 });
 const choices = { titleAnimation: ['none', 'fade', 'rise', 'pulse', 'glow'], textAnimation: ['none', 'fade', 'rise', 'pulse', 'glow'],
   titleAlign: ['right', 'center', 'left'], textAlign: ['right', 'center', 'left'], titlePosition: ['above', 'below'],
   placement: ['top', 'middle', 'bottom'], imageSide: ['right', 'left'] };
-const ranges = { titleSize: [14, 44], textSize: [12, 32], titleAnimationSeconds: [1, 8], textAnimationSeconds: [1, 8], imageSize: [48, 160], width: [35, 94], backgroundOpacity: [0, 100] };
+const ranges = { titleSize: [14, 44], textSize: [12, 32], titleAnimationSeconds: [1, 8], textAnimationSeconds: [1, 8], imageSize: [48, 160], width: [35, 94], cardScale: [50, 150], minHeight: [0, 220], padding: [0, 24], backgroundOpacity: [0, 100] };
 export function normalizeNoticeDesign(input = {}, strict = false) {
   const design = { ...noticeDefaults };
   if (!input || typeof input !== 'object' || Array.isArray(input)) { if (strict) throw new Error('invalid_notice_design'); return design; }
@@ -28,7 +29,6 @@ export function createNotice(container, { onClose = () => {}, onImage = () => {}
   const media = document.createElement('button'); media.type = 'button'; media.className = 'notice-media'; media.hidden = true;
   media.setAttribute('aria-label', 'عرض صورة الإعلان بحجم أكبر'); media.title = 'تكبير الصورة';
   const image = document.createElement('img'); image.alt = 'صورة الإعلان'; media.append(image); media.onclick = () => onImage(image.src);
-  image.onerror = () => { media.hidden = true; };
   const copy = document.createElement('div'); copy.className = 'notice-copy';
   const title = document.createElement('h3'); title.className = 'notice-title';
   const text = document.createElement('p'); text.className = 'notice-text'; copy.append(title, text);
@@ -36,7 +36,7 @@ export function createNotice(container, { onClose = () => {}, onImage = () => {}
   close.setAttribute('aria-label', 'إغلاق الإعلان'); close.onclick = onClose;
   card.append(media, copy, close); container.append(card);
   const view = { card, media, image, title, text, container, animations: [], design: { ...noticeDefaults }, motion: null };
-  const observer = new ResizeObserver(() => {
+  const reflow = () => {
     if (card.hidden) return;
     const previous = view.motion;
     if (previous) {
@@ -44,7 +44,10 @@ export function createNotice(container, { onClose = () => {}, onImage = () => {}
       const animation = startNotice(view, previous.seconds, previous.onFinish);
       if (animation) { animation.currentTime = time; if (paused) animation.pause(); }
     } else { fitNotice(view); card.style.transform = `translateX(${(container.clientWidth - card.offsetWidth) / 2}px)`; }
-  }); observer.observe(container);
+  };
+  image.onload = reflow;
+  image.onerror = () => { media.hidden = true; reflow(); };
+  const observer = new ResizeObserver(reflow); observer.observe(container);
   matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', event => { if (event.matches) { stopNotice(view); card.style.transform = `translateX(${(container.clientWidth - card.offsetWidth) / 2}px)`; } });
   return view;
 }
@@ -68,12 +71,23 @@ export function renderNotice(view, item, imageOrigin = '') {
 }
 function fitNotice(view) {
   const budget = Math.max(64, view.container.clientHeight - 68);
-  const scale = Math.min(1, Math.max(.8, view.container.clientWidth / 760));
-  let titleSize = Math.max(14, Math.round(view.design.titleSize * scale)), textSize = Math.max(12, Math.round(view.design.textSize * scale));
+  const scale = view.design.cardScale / 100 * Math.min(1, Math.max(.8, view.container.clientWidth / 760));
+  const padding = Math.min(view.design.padding * scale, budget / 8);
+  view.card.style.setProperty('--notice-width', `${Math.min(94, view.design.width * view.design.cardScale / 100)}%`);
+  view.card.style.setProperty('--notice-padding', `${padding}px`);
+  view.card.style.setProperty('--notice-gap', `${12 * scale}px`);
+  view.card.style.setProperty('--notice-min-height', `${Math.min(budget, view.design.minHeight * scale)}px`);
+  const ratio = view.image.naturalWidth / view.image.naturalHeight || 1;
+  const imageLimit = Math.min(view.design.imageSize * scale, budget - padding * 2 - 2, Math.max(24, view.card.clientWidth * .4));
+  const mediaWidth = ratio >= 1 ? imageLimit : imageLimit * ratio;
+  const mediaHeight = ratio >= 1 ? imageLimit / ratio : imageLimit;
+  view.card.style.setProperty('--notice-media-width', `${mediaWidth}px`);
+  view.card.style.setProperty('--notice-media-height', `${mediaHeight}px`);
+  let titleSize = Math.max(11, Math.round(view.design.titleSize * scale)), textSize = Math.max(10, Math.round(view.design.textSize * scale));
   view.card.style.setProperty('--notice-title-size', `${titleSize}px`); view.card.style.setProperty('--notice-text-size', `${textSize}px`);
   for (let attempt = 0; attempt < 28 && view.card.offsetHeight > budget; attempt++) {
-    if (titleSize <= 14 && textSize <= 12) break;
-    titleSize = Math.max(14, titleSize - 1); textSize = Math.max(12, textSize - 1);
+    if (titleSize <= 11 && textSize <= 10) break;
+    titleSize = Math.max(11, titleSize - 1); textSize = Math.max(10, textSize - 1);
     view.card.style.setProperty('--notice-title-size', `${titleSize}px`); view.card.style.setProperty('--notice-text-size', `${textSize}px`);
   }
   view.card.style.setProperty('--notice-height', `${view.card.offsetHeight}px`);

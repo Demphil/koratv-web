@@ -57,7 +57,8 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     res.set({ 'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'", 'X-Frame-Options': 'DENY' });
     res.type('html').send(await readFile(new URL('./operator/console.html', import.meta.url), 'utf8'));
   });
-  for (const asset of ['console.js', 'console.css', 'notice-editor.css']) app.get(`/api/operator/ui/${asset}`, async (req, res) => res.type(asset.endsWith('.js') ? 'js' : 'css').send(await readFile(new URL(`./operator/${asset}`, import.meta.url), 'utf8')));
+  for (const asset of ['console.js', 'console.css', 'notice-editor.css', 'depth.js', 'theme.css']) app.get(`/api/operator/ui/${asset}`, async (req, res) => res.type(asset.endsWith('.js') ? 'js' : 'css').send(await readFile(new URL(`./operator/${asset}`, import.meta.url), 'utf8')));
+  for (const asset of ['three.module.min.js', 'three.core.min.js']) app.get(`/api/operator/ui/${asset}`, async (req, res) => res.type('js').send(await readFile(join(dirname(require.resolve('three')), asset), 'utf8')));
   app.get('/api/operator/ui/broadcast-notice.css', async (req, res) => res.type('css').send(await readFile(new URL('./player/broadcast-notice.css', import.meta.url), 'utf8')));
   app.get('/api/operator/ui/broadcast-notice.js', async (req, res) => res.type('js').send(await readFile(new URL('./player/broadcast-notice.js', import.meta.url), 'utf8')));
   const icons = new Set(['refresh-cw', 'log-out', 'save', 'square', 'plus', 'send', 'arrow-up', 'arrow-down', 'x', 'radio', 'trash-2', 'play', 'eye']);

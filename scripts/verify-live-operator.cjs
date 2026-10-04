@@ -37,7 +37,7 @@ const puppeteer = require('puppeteer');
     if (asset === 'broadcast-control.js') {
       const modulePath = content.match(/["'](\.\/broadcast-notice\.js\?v=[^"']+)["']/)?.[1]; assert.ok(modulePath, 'Missing versioned shared ad renderer');
       const rendererResponse = await fetch(new URL(modulePath, 'https://fabor.sbs/739184.html')); assert.equal(rendererResponse.status, 200);
-      const renderer = await rendererResponse.text(); assert.doesNotMatch(renderer, /\/api\/operator\//); assert.match(renderer, /easing:"linear"/);
+      const renderer = await rendererResponse.text(); assert.doesNotMatch(renderer, /\/api\/operator\//); assert.match(renderer, /easing:"linear"/); assert.match(renderer, /cardScale/); assert.match(renderer, /notice-media-width/);
     }
   }
   for (const frontend of ['https://koratv.click', 'https://fraja.online']) {
@@ -53,6 +53,9 @@ const puppeteer = require('puppeteer');
     await page.click('[data-view="notices-view"]'); await page.waitForSelector('#notice-preview-stage');
     assert.equal(await page.$eval('.broadcast-notice', node => getComputedStyle(node).borderTopColor), 'rgba(0, 0, 0, 0)');
     assert.ok(await page.$('[data-field="titleAnimationSeconds"]')); assert.ok(await page.$('[data-field="backgroundOpacity"]'));
+    for (const key of ['cardScale', 'minHeight', 'padding']) assert.ok(await page.$(`[data-field="${key}"]`));
+    await page.waitForFunction(() => Number(document.getElementById('operator-depth').dataset.frames) >= 2, { timeout: 15000 });
+    assert.equal(await page.$eval('#operator-depth', canvas => { const gl = canvas.getContext('webgl2'); const bytes = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4); gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, bytes); return bytes.some((value, index) => index % 4 === 3 && value > 0); }), true);
     console.log(JSON.stringify({ liveLogin: true, protectedApi: true, csrfRejected: true, secretsRedacted: true, bothFrontendMarkers: true, playerMarker: true, embedEventStream: true, mobileOverflow: false, noticeStyleDeployed: true, consoleRouteAbsentFromPlayer: true, matches: state.matches.length }));
   } finally {
     await browser?.close();
