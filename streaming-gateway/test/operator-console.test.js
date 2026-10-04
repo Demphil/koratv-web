@@ -11,7 +11,7 @@ import { createProviderCatalog } from '../provider-catalog.js';
 import { loadConfig } from '../config.js';
 
 test('operator origin is independent from a legacy player API origin', () => {
-  const config = loadConfig({ JWT_SECRET: 'test-operator-jwt-secret-over-32-bytes', HMAC_SECRET: 'test-independent-hmac-secret-over-32-bytes', PUBLIC_API_ORIGIN: 'https://fabor.sbs' });
+  const config = loadConfig({ JWT_SECRET: 'test-operator-jwt-secret-over-32-bytes', HMAC_SECRET: 'test-independent-hmac-secret-over-32-bytes', PUBLIC_API_ORIGIN: 'https://fabor.sbs', NEXT_PUBLIC_SUPABASE_URL: 'https://storage.example', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-only-key' });
   assert.equal(config.api, 'https://fabor.sbs');
   assert.equal(config.operatorOrigin, 'https://stream-api.koratv.click');
 });
