@@ -14,6 +14,13 @@ test('operator origin is independent from a legacy player API origin', () => {
   const config = loadConfig({ JWT_SECRET: 'test-operator-jwt-secret-over-32-bytes', HMAC_SECRET: 'test-independent-hmac-secret-over-32-bytes', PUBLIC_API_ORIGIN: 'https://fabor.sbs', NEXT_PUBLIC_SUPABASE_URL: 'https://storage.example', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-only-key' });
   assert.equal(config.api, 'https://fabor.sbs');
   assert.equal(config.operatorOrigin, 'https://stream-api.koratv.click');
+  assert.equal(config.operatorConsolePath, '');
+});
+
+test('console address is configured privately and rejects URL query or route patterns', () => {
+  const env = { JWT_SECRET: 'test-operator-jwt-secret-over-32-bytes', HMAC_SECRET: 'test-independent-hmac-secret-over-32-bytes', PUBLIC_API_ORIGIN: 'https://api.example', NEXT_PUBLIC_SUPABASE_URL: 'https://storage.example', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-only-key' };
+  assert.equal(loadConfig({ ...env, BROADCAST_ADMIN_CONSOLE_PATH: '/fixture-private-console' }).operatorConsolePath, '/fixture-private-console');
+  for (const path of ['/private?token=key', '/private/:parameter', 'https://private.example']) assert.throws(() => loadConfig({ ...env, BROADCAST_ADMIN_CONSOLE_PATH: path }), /Invalid private console path/);
 });
 
 test('operator selections and notice schedules reject invalid limits and raw markup stays plain text', () => {
@@ -38,7 +45,7 @@ test('operator login, CSRF, protected jobs, image validation and realtime notice
   assert.equal(await verifyOperatorPassword('wrong', hash), false);
   const values = new Map();
   const redis = { get: async key => values.get(key), set: async (key, value) => values.set(key, value), del: async key => values.delete(key), incr: async key => { const next = Number(values.get(key) || 0) + 1; values.set(key, next); return next; }, expire: async () => {} };
-  const config = { api: '', operatorPasswordHash: hash, operatorControlPath: join(dir, 'control.json'), operatorMediaPath: join(dir, 'media'), providerChannels: () => ({ 'On Sport Plus': { sourceNames: { A: 'EG On Sport Plus HD' }, A: 'https://secret/user/password' } }) };
+  const config = { api: '', operatorConsolePath: '/fixture-private-console', operatorPasswordHash: hash, operatorControlPath: join(dir, 'control.json'), operatorMediaPath: join(dir, 'media'), providerChannels: () => ({ 'On Sport Plus': { sourceNames: { A: 'EG On Sport Plus HD' }, A: 'https://secret/user/password' } }) };
   const app = express(); app.use(express.json({ limit: '260kb' }));
   let channelCalls = 0, applyCalls = 0;
   registerOperatorConsole(app, { config, redis, clientIp: () => 'test-ip', getMatches: async () => [{ matchId: 'fixture', homeTeam: 'Home', awayTeam: 'Away' }],
@@ -48,6 +55,7 @@ test('operator login, CSRF, protected jobs, image validation and realtime notice
   t.after(() => { server.closeAllConnections(); server.close(); });
   const get = (path, headers = {}) => fetch(config.api + path, { headers });
   const post = (path, body, headers = {}) => fetch(config.api + path, { method: 'POST', headers: { Origin: config.api, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  assert.equal((await get(config.operatorConsolePath)).status, 200);
   assert.equal((await get('/api/operator/state')).status, 401);
   assert.equal((await post('/api/operator/login', { username: 'admin', password }, { Origin: 'https://evil.test' })).status, 403);
   const login = await post('/api/operator/login', { username: 'admin', password }); assert.equal(login.status, 200);
@@ -55,6 +63,7 @@ test('operator login, CSRF, protected jobs, image validation and realtime notice
   const credentials = { Cookie: setCookie.split(';')[0], 'X-Operator-CSRF': (await login.json()).csrf };
   const state = await (await get('/api/operator/state', credentials)).json();
   assert.equal(JSON.stringify(state).includes('https://secret'), false);
+  assert.equal(JSON.stringify(state).includes(config.operatorConsolePath), false);
   assert.equal((await post('/api/operator/selection', { enabled: true, matches: ['fixture'] }, { Cookie: credentials.Cookie })).status, 403);
   const jobResponse = await post('/api/operator/channel', { matchId: 'fixture', channel: 'New Channel' }, credentials); assert.equal(jobResponse.status, 202);
   await new Promise(resolve => setTimeout(resolve, 30));

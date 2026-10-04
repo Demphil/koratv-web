@@ -1,8 +1,8 @@
 # Broadcast Operator Console
 
-The private console is served by the shared Oracle gateway at:
-
-`https://stream-api.koratv.click/api/operator/console`
+The private console is served by the shared Oracle gateway. Its address is stored
+only in the owner's private credential file and the deployment secret
+`BROADCAST_ADMIN_CONSOLE_PATH`, not hardcoded in source or public assets.
 
 Both public frontends and the Njalla player use the same control state. There is
 no separate copy to edit on each site. Existing protection, embed paths, supplier
@@ -37,7 +37,16 @@ the browser. These controls follow the OWASP session and CSRF guidance:
 - Publish up to ten text/image notices, choose the number of queue cycles, display
   duration, gap, and all players versus selected fixtures. Stop removes the notice
   immediately from connected players, including embeds. Images are compressed in
-  the browser and validated server-side; SVG and HTML are not accepted.
+  the browser (up to 960px on each side, under 180 KiB) and validated server-side;
+  SVG and HTML are not accepted. Notices use the same transparent depth styling
+  in the dashboard preview and player, travel across the player, and leave video
+  controls clear. Images are not cropped and can be expanded by the viewer.
+  Reduced-motion preferences disable traversal.
+
+Public frontend and player builds reject the private console route if it is
+accidentally included in a visitor asset. The route is configured only in the
+private server environment; secrecy does not replace login, CSRF protection, or
+session controls. The console is not registered without the private path setting.
 
 Changes are persisted under `/etc/koratv/operator-control.json` (0600). Uploaded
 images are under `/etc/koratv/operator-media`. Deployments do not replace those

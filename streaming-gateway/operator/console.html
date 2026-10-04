@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>إدارة البث | KoraTV</title><link rel="stylesheet" href="/api/operator/ui/console.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>إدارة البث | KoraTV</title><link rel="stylesheet" href="/api/operator/ui/console.css"><link rel="stylesheet" href="/api/operator/ui/broadcast-notice.css"></head>
 <body>
   <header><strong>KORA TV <span>إدارة البث</span></strong><div><span id="connection">اتصال آمن</span><button id="refresh" title="تحديث" hidden><img src="/api/operator/ui/icons/refresh-cw" alt=""></button><button id="logout" title="تسجيل الخروج" hidden><img src="/api/operator/ui/icons/log-out" alt=""></button></div></header>
   <main>
@@ -22,7 +22,7 @@
         <div class="notice-settings"><label>عدد دورات العرض<input id="notice-repeats" type="number" min="1" max="50" value="1"></label><label>مدة كل إشعار بالثواني<input id="notice-duration" type="number" min="5" max="20" value="10"></label><label>الفاصل بين الإشعارات بالثواني<input id="notice-interval" type="number" min="5" max="3600" value="300"></label><label>جهة العرض<select id="notice-target"><option value="all">كل المشغلات والـ embed</option><option value="selected">المباريات المحددة في اللوحة</option></select></label></div>
         <div id="notice-list"></div>
         <div class="notice-actions"><button id="add-notice"><img src="/api/operator/ui/icons/plus" alt="">إضافة إشعار</button><button id="publish-notices" class="primary"><img src="/api/operator/ui/icons/send" alt="">نشر الآن</button></div>
-        <h2>معاينة</h2><div class="notice-preview"><img id="preview-image" hidden alt=""><p id="preview-text"></p><span>×</span></div>
+        <div class="section-heading"><h2>معاينة</h2><button id="preview-motion" title="تشغيل المعاينة"><img src="/api/operator/ui/icons/play" alt="">تشغيل المعاينة</button></div><div id="notice-preview-stage" class="notice-preview-stage"><div class="broadcast-notice"><button id="preview-media" class="notice-media" type="button" hidden aria-label="عرض صورة الإشعار بحجم أكبر"><img id="preview-image" alt="صورة الإشعار"></button><p id="preview-text"></p><button class="notice-close" type="button" aria-label="إغلاق المعاينة">×</button></div><div id="preview-viewer" class="notice-image-viewer" hidden><img id="preview-full-image" alt="صورة الإشعار"><button id="preview-dismiss" class="notice-close" type="button" aria-label="إغلاق الصورة">×</button></div></div>
       </section>
     </div>
     <p id="message" role="status"></p>

@@ -26,6 +26,15 @@ const puppeteer = require('puppeteer');
   const reader = events.body.getReader(); assert.match(new TextDecoder().decode((await reader.read()).value), /event: control/); controller.abort();
   const player = await (await fetch('https://fabor.sbs/739184.html')).text();
   assert.match(player, /broadcast-control\.js\?v=/);
+  assert.match(player, /broadcast-notice\.css\?v=/);
+  assert.doesNotMatch(player, /\/api\/operator\//);
+  for (const asset of ['broadcast-control.js', 'broadcast-notice.css', 'player.js', 'config.js']) {
+    const path = player.match(new RegExp('(?:src|href)="(\\./' + asset.replace('.', '\\.') + '\\?v=[^"]+)"'))?.[1];
+    assert.ok(path, `Missing public player asset ${asset}`);
+    const response = await fetch(new URL(path, 'https://fabor.sbs/739184.html')); assert.equal(response.status, 200);
+    const content = await response.text(); assert.doesNotMatch(content, /\/api\/operator\//);
+    if (asset.endsWith('.css')) assert.match(content, /broadcast-notice-pass/);
+  }
   for (const frontend of ['https://koratv.click', 'https://fraja.online']) {
     const html = await (await fetch(frontend)).text(); assert.match(html, /20261004-operator-live/);
   }
@@ -36,7 +45,9 @@ const puppeteer = require('puppeteer');
     await page.setViewport({ width: 390, height: 844 }); await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.type('#password', password); await page.click('#login button'); await page.waitForSelector('#workspace:not([hidden])', { timeout: 20000 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    console.log(JSON.stringify({ liveLogin: true, protectedApi: true, csrfRejected: true, secretsRedacted: true, bothFrontendMarkers: true, playerMarker: true, embedEventStream: true, mobileOverflow: false, matches: state.matches.length }));
+    await page.click('[data-view="notices-view"]'); await page.waitForSelector('#notice-preview-stage');
+    assert.equal(await page.$eval('.broadcast-notice', node => getComputedStyle(node).backdropFilter), 'blur(12px) saturate(1.2)');
+    console.log(JSON.stringify({ liveLogin: true, protectedApi: true, csrfRejected: true, secretsRedacted: true, bothFrontendMarkers: true, playerMarker: true, embedEventStream: true, mobileOverflow: false, noticeStyleDeployed: true, consoleRouteAbsentFromPlayer: true, matches: state.matches.length }));
   } finally {
     await browser?.close();
     await fetch(`${origin}/api/operator/logout`, { method: 'POST', headers: { Origin: origin, Cookie: cookie, 'X-Operator-CSRF': csrf, 'Content-Type': 'application/json' }, body: '{}' });

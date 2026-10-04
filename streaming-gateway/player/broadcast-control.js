@@ -4,10 +4,20 @@
   if (!container) return;
   const toast = document.createElement('aside');
   toast.className = 'broadcast-notice'; toast.hidden = true; toast.setAttribute('role', 'status'); toast.setAttribute('aria-live', 'polite');
-  const image = document.createElement('img'); image.alt = ''; image.hidden = true;
+  const media = document.createElement('button'); media.type = 'button'; media.className = 'notice-media'; media.hidden = true; media.setAttribute('aria-label', 'عرض صورة الإشعار بحجم أكبر');
+  const image = document.createElement('img'); image.alt = 'صورة الإشعار'; media.append(image);
   const text = document.createElement('p');
   const close = document.createElement('button'); close.type = 'button'; close.setAttribute('aria-label', 'إغلاق الإشعار'); close.textContent = '×';
-  toast.append(image, text, close); container.append(toast);
+  close.className = 'notice-close';
+  toast.append(media, text, close); container.append(toast);
+  const viewer = document.createElement('div'); viewer.className = 'notice-image-viewer'; viewer.hidden = true; viewer.setAttribute('role', 'dialog'); viewer.setAttribute('aria-label', 'صورة الإشعار');
+  const fullImage = document.createElement('img'); fullImage.alt = 'صورة الإشعار';
+  const dismiss = close.cloneNode(true); viewer.append(fullImage, dismiss); container.append(viewer);
+  function closeImage() { viewer.hidden = true; if (!toast.hidden) media.focus(); }
+  dismiss.onclick = closeImage;
+  media.onclick = () => { fullImage.src = image.src; viewer.hidden = false; dismiss.focus(); };
+  viewer.onkeydown = event => { if (event.key === 'Escape') closeImage(); };
+  image.onerror = () => { media.hidden = true; };
   let control, campaign = '', timer, cursor = 0, shown = 0, version, initialized = false, lastRevision = -1, disconnected = true;
   function matchKey() { const id = activeMatchId || embeddedMatchId; return /^\d{20}$/.test(id) ? id : id ? publicMatchId(id) : ''; }
   function progress() {
@@ -15,15 +25,18 @@
     return { cursor: 0, shown: 0, nextAt: 0 };
   }
   function save(nextAt) { try { sessionStorage.setItem(`broadcast-notice:${campaign}`, JSON.stringify({ cursor, shown, nextAt })); } catch {} }
-  function hide() { toast.hidden = true; }
+  function hide() { toast.hidden = true; viewer.hidden = true; }
   function next() {
     clearTimeout(timer); hide();
     const notices = control?.notices;
     if (!notices?.enabled || !notices.items.length || (notices.matchIds.length && !notices.matchIds.includes(matchKey())) || shown >= notices.items.length * notices.repeats) return;
     if (document.hidden) { timer = setTimeout(next, 1000); return; }
     const item = notices.items[cursor % notices.items.length];
-    text.textContent = item.text; image.hidden = !item.image;
+    text.textContent = item.text; media.hidden = !item.image;
     if (item.image) image.src = `${STREAM_API_ORIGIN}${item.image}`;
+    toast.style.setProperty('--notice-duration', `${notices.duration}s`);
+    // Restart the traversal when consecutive notices reuse the same element.
+    void toast.offsetWidth;
     toast.hidden = false; cursor++; shown++; save(Date.now() + (notices.duration + notices.interval) * 1000);
     timer = setTimeout(() => { hide(); timer = setTimeout(next, notices.interval * 1000); }, notices.duration * 1000);
   }

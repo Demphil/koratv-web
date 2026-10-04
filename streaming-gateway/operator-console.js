@@ -53,12 +53,13 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     } catch { res.status(503).json({ error: 'authentication_unavailable' }); }
   };
   const csrf = (req, res, next) => req.headers['x-operator-csrf'] === req.operatorSession.csrf ? next() : res.status(403).json({ error: 'csrf_rejected' });
-  app.get('/api/operator/console', async (req, res) => {
+  if (config.operatorConsolePath) app.get(config.operatorConsolePath, async (req, res) => {
     res.set({ 'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'", 'X-Frame-Options': 'DENY' });
     res.type('html').send(await readFile(new URL('./operator/console.html', import.meta.url), 'utf8'));
   });
   for (const asset of ['console.js', 'console.css']) app.get(`/api/operator/ui/${asset}`, async (req, res) => res.type(asset.endsWith('.js') ? 'js' : 'css').send(await readFile(new URL(`./operator/${asset}`, import.meta.url), 'utf8')));
-  const icons = new Set(['refresh-cw', 'log-out', 'save', 'square', 'plus', 'send', 'arrow-up', 'arrow-down', 'x', 'radio', 'trash-2']);
+  app.get('/api/operator/ui/broadcast-notice.css', async (req, res) => res.type('css').send(await readFile(new URL('./player/broadcast-notice.css', import.meta.url), 'utf8')));
+  const icons = new Set(['refresh-cw', 'log-out', 'save', 'square', 'plus', 'send', 'arrow-up', 'arrow-down', 'x', 'radio', 'trash-2', 'play']);
   app.get('/api/operator/ui/icons/:name', async (req, res) => {
     if (!icons.has(req.params.name)) return res.sendStatus(404);
     res.type('svg').send(await readFile(join(dirname(require.resolve('lucide-static/package.json')), 'icons', `${req.params.name}.svg`), 'utf8'));

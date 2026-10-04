@@ -37,5 +37,7 @@ test('publication allowlist excludes backend files, maps, credentials, and docs'
     await writeFile(join(root, 'index.html'), '<script>const key = "sb_secret_test_not_a_real_key";</script>');
     await assert.rejects(buildPublicSite({ root }), error => /Private credential/.test(error.message)
       && !error.message.includes('sb_secret_test'));
+    await writeFile(join(root, 'index.html'), '<script src="/api/operator/ui/private.js"></script>');
+    await assert.rejects(buildPublicSite({ root }), /Private console route/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

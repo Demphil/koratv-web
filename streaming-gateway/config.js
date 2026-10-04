@@ -83,6 +83,8 @@ export function loadConfig(env = process.env) {
   };
   const getKoooraPlayback = cachedResolver(createPlaybackResolver(env, koooraSources, catalog, liveResolver));
   const getApiFootballPlayback = cachedResolver(createPlaybackResolver(env, apiFootballSources, catalog, liveResolver));
+  const operatorConsolePath = String(env.BROADCAST_ADMIN_CONSOLE_PATH || '').trim();
+  if (operatorConsolePath && !/^\/[a-zA-Z0-9/_-]{12,180}$/.test(operatorConsolePath)) throw new Error('Invalid private console path');
 
   return {
     secret,
@@ -97,6 +99,7 @@ export function loadConfig(env = process.env) {
     discoverOperatorChannel: liveResolver ? (name, providerIds) => liveResolver.resolve([name], { fresh: true, providerIds }) : null,
     operatorPasswordHash: env.BROADCAST_ADMIN_PASSWORD_HASH || '',
     operatorOrigin: publicOrigin('BROADCAST_ADMIN_ORIGIN', env.BROADCAST_ADMIN_ORIGIN || 'https://stream-api.koratv.click'),
+    operatorConsolePath,
     resolveOperatorChannel: catalog ? name => catalog.resolve(name) || name : name => name,
     operatorControlPath: env.OPERATOR_CONTROL_PATH || `${env.PROVIDER_POOL_DIR || '/etc/koratv'}/operator-control.json`,
     operatorMediaPath: env.OPERATOR_MEDIA_PATH || `${env.PROVIDER_POOL_DIR || '/etc/koratv'}/operator-media`,

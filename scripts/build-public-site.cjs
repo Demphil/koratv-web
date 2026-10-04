@@ -8,6 +8,7 @@ const rootFiles = new Set(['CNAME', 'robots.txt', 'sitemap.xml', 'sw.js']);
 const verificationFile = /^(?:[a-f0-9]{32}|hta-code-\d+|ppck-ver-[a-f0-9]+)\.txt$/i;
 
 function assertNoSecret(text, path) {
+  if (/\/api\/operator\//.test(text)) throw new Error('Private console route in public asset: ' + path);
   if (/sb_secret_|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(text)) {
     throw new Error('Private credential in public asset: ' + path);
   }

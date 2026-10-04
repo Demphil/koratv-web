@@ -76,11 +76,15 @@ jobs:
       - name: Prepare private console password hash
         env:
           PASSWORD_HASH: ${{ secrets.BROADCAST_ADMIN_PASSWORD_HASH }}
+          CONSOLE_PATH: ${{ secrets.BROADCAST_ADMIN_CONSOLE_PATH }}
         run: |
           test -n "$PASSWORD_HASH"
+          test -n "$CONSOLE_PATH"
           printf '%s' "$PASSWORD_HASH" > _oracle-sync/operator-password-hash
+          printf '%s' "$CONSOLE_PATH" > _oracle-sync/operator-console-path
           # The SCP container has a different uid; this is a hash, never the password.
           chmod 0644 _oracle-sync/operator-password-hash
+          chmod 0644 _oracle-sync/operator-console-path
       - name: Check Oracle SSH configuration
         env:
           ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
@@ -158,13 +162,16 @@ jobs:
             install -m 0644 "$STAGING/ecosystem.oracle.config.js" "$RELEASE/ecosystem.oracle.config.js"
 
             cd /opt/koratv/current/streaming-gateway
-            node --input-type=module - "$STAGING/operator-password-hash" <<'NODE'
+            node --input-type=module - "$STAGING/operator-password-hash" "$STAGING/operator-console-path" <<'NODE'
             import {readFileSync, writeFileSync} from 'node:fs';
             const hash=readFileSync(process.argv[2],'utf8').trim();
+            const consolePath=readFileSync(process.argv[3],'utf8').trim();
             if(!/^scrypt:[a-f0-9]{32}:[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid operator password hash');
+            if(!/^\/[a-zA-Z0-9/_-]{12,180}$/.test(consolePath)) throw new Error('Invalid private console path');
             const path='/etc/koratv/gateway.env';
-            const lines=readFileSync(path,'utf8').split(/\r?\n/).filter(line=>!line.startsWith('BROADCAST_ADMIN_PASSWORD_HASH='));
+            const lines=readFileSync(path,'utf8').split(/\r?\n/).filter(line=>!line.startsWith('BROADCAST_ADMIN_PASSWORD_HASH=')&&!line.startsWith('BROADCAST_ADMIN_CONSOLE_PATH='));
             lines.push('BROADCAST_ADMIN_PASSWORD_HASH='+hash);
+            lines.push('BROADCAST_ADMIN_CONSOLE_PATH='+consolePath);
             writeFileSync(path,lines.join('\n'),{mode:0o600});
             NODE
             rm -f .env

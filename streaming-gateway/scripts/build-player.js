@@ -43,9 +43,12 @@ for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'page-dep
   await writeFile(`dist/${asset}`, result.code + '\n');
 }
 const version = createHash('sha256');
-for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'player.css', 'match-ui.css', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
+for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.css', 'player.css', 'match-ui.css', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
   version.update(await readFile(`dist/${asset}`));
 }
 const revision = version.digest('hex').slice(0, 12);
+for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.css', 'player.css', 'match-ui.css', 'player.html']) {
+  if (/\/api\/operator\//.test(await readFile(`dist/${asset}`, 'utf8'))) throw new Error('Private console route in player artifact');
+}
 const html = (await readFile('player/player.html', 'utf8')).replace(/((?:src|href)="\.\/[^"?]+\.(?:js|css))"/g, `$1?v=${revision}"`);
 for (const page of ['player.html', '739184.html', 'watch.html']) await writeFile(`dist/${page}`, html);

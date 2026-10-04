@@ -71,13 +71,19 @@
     }
     renderJobs();
   }
-  function preview(item) { $('preview-text').textContent = item.text; $('preview-image').hidden = !item.image; if (item.image) $('preview-image').src = item.image; }
+  function preview(item) { $('preview-text').textContent = item.text; $('preview-media').hidden = !item.image; $('preview-viewer').hidden = true; if (item.image) $('preview-image').src = item.image; }
+  $('preview-motion').onclick = () => { const stage = $('notice-preview-stage'); stage.classList.remove('is-playing'); stage.querySelector('.broadcast-notice').style.setProperty('--notice-duration', `${Number($('notice-duration').value) || 10}s`); void stage.offsetWidth; stage.classList.add('is-playing'); };
+  $('preview-media').onclick = () => { $('preview-full-image').src = $('preview-image').src; $('preview-viewer').hidden = false; };
+  $('preview-dismiss').onclick = () => { $('preview-viewer').hidden = true; };
+  $('notice-preview-stage').querySelector('.broadcast-notice .notice-close').onclick = () => { $('notice-preview-stage').classList.remove('is-playing'); };
   async function compressImage(file) {
     if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 5 * 1024 * 1024) throw new Error('اختر صورة PNG أو JPEG أو WebP أصغر من 5 ميغابايت.');
-    const bitmap = await createImageBitmap(file); const ratio = Math.min(1, 480 / bitmap.width, 320 / bitmap.height);
+    const bitmap = await createImageBitmap(file); const ratio = Math.min(1, 960 / bitmap.width, 960 / bitmap.height);
     const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(bitmap.width * ratio)); canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
     canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close();
-    return canvas.toDataURL('image/jpeg', .8);
+    let encoded;
+    for (const quality of [.9, .8, .65, .5]) { encoded = canvas.toDataURL('image/jpeg', quality); if (encoded.length < 235000) return encoded; }
+    throw new Error('الصورة تحتوي تفاصيل كثيرة. اختر صورة أصغر.');
   }
   function renderNotices() {
     $('notice-list').replaceChildren(...noticeItems.map((item, index) => {
