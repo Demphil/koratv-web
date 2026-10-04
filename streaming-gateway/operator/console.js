@@ -22,8 +22,8 @@
       const match = snapshot.matches.find(row => row.matchId === id);
       const row = document.createElement('div'); row.className = 'selected-item';
       const name = document.createElement('span'); name.textContent = `${index + 1}. ${match?.homeTeam || ''} - ${match?.awayTeam || ''}`; row.append(name);
-      for (const [step, icon, label] of [[-1, 'arrow-up', 'تقديم'], [1, 'arrow-down', 'تأخير']]) row.append(button(icon, label, () => { const target = index + step; if (target < 0 || target >= selected.length) return; [selected[index], selected[target]] = [selected[target], selected[index]]; editing = true; renderMatches(); }));
-      row.append(button('x', 'إزالة', () => { selected = selected.filter(value => value !== id); editing = true; renderMatches(); })); return row;
+      for (const [step, icon, label] of [[-1, 'arrow-up', 'تقديم'], [1, 'arrow-down', 'تأخير']]) row.append(button(icon, label, () => { const target = index + step; if (target < 0 || target >= selected.length) return; [selected[index], selected[target]] = [selected[target], selected[index]]; $('manual-enabled').checked = true; editing = true; renderMatches(); }));
+      row.append(button('x', 'إزالة', () => { selected = selected.filter(value => value !== id); $('manual-enabled').checked = true; editing = true; renderMatches(); })); return row;
     }));
   }
   function renderMatches() {
@@ -34,7 +34,7 @@
     $('match-list').replaceChildren(...matches.map(match => {
       const row = document.createElement('div'); row.className = 'match-row'; row.dataset.match = match.matchId;
       const check = document.createElement('input'); check.type = 'checkbox'; check.checked = selected.includes(match.matchId); check.setAttribute('aria-label', `${match.homeTeam} - ${match.awayTeam}`);
-      check.onchange = () => { if (check.checked && selected.length === 8) { check.checked = false; return message('الحد الأقصى ثماني مباريات.', true); } selected = check.checked ? [...selected, match.matchId] : selected.filter(id => id !== match.matchId); editing = true; renderSelected(); };
+      check.onchange = () => { if (check.checked && selected.length === 8) { check.checked = false; return message('الحد الأقصى ثماني مباريات.', true); } selected = check.checked ? [...selected, match.matchId] : selected.filter(id => id !== match.matchId); $('manual-enabled').checked = true; editing = true; renderSelected(); };
       const name = document.createElement('div'); name.className = 'match-name'; name.textContent = `${match.homeTeam} - ${match.awayTeam}`;
       const meta = document.createElement('small'); meta.textContent = `${match.league} · ${match.time || ''} · ${match.score}`; name.append(meta);
       const state = document.createElement('span'); state.className = `badge ${match.isLive ? 'live' : ''} ${match.sourceReady ? 'ready' : ''}`;

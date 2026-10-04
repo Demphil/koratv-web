@@ -20,7 +20,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
   const clients = new Set();
   const connectionCounts = new Map();
   const jobs = new Map();
-  let mutation = Promise.resolve(), operation = false;
+  let mutation = Promise.resolve(), operation = false, authenticating = false;
   const read = () => readOperatorState(path);
   const update = change => {
     const work = mutation.catch(() => {}).then(async () => {
@@ -48,6 +48,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
       const session = token && await redis.get(`operator:session:${sessionDigest(token)}`);
       if (!session) return res.status(401).json({ error: 'login_required' });
       req.operatorSession = JSON.parse(session);
+      if (req.operatorSession.passwordVersion !== sessionDigest(config.operatorPasswordHash || '')) return res.status(401).json({ error: 'login_required' });
       next();
     } catch { res.status(503).json({ error: 'authentication_unavailable' }); }
   };
@@ -64,6 +65,8 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
   });
   app.post('/api/operator/login', sameOrigin, async (req, res) => {
     if (!config.operatorPasswordHash) return res.status(503).json({ error: 'console_not_configured' });
+    if (authenticating) return res.status(429).json({ error: 'too_many_attempts' });
+    authenticating = true;
     try {
       const key = `operator:login:${sessionDigest(clientIp(req))}`;
       const attempts = await redis.incr(key);
@@ -72,9 +75,10 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
       const valid = await verifyOperatorPassword(req.body?.password, config.operatorPasswordHash);
       if (req.body?.username !== 'admin' || !valid) return res.status(401).json({ error: 'invalid_login' });
       const token = randomBytes(32).toString('hex'), csrfToken = randomBytes(24).toString('hex');
-      await redis.set(`operator:session:${sessionDigest(token)}`, JSON.stringify({ csrf: csrfToken }), { EX: 7200 });
+      await redis.set(`operator:session:${sessionDigest(token)}`, JSON.stringify({ csrf: csrfToken, passwordVersion: sessionDigest(config.operatorPasswordHash) }), { EX: 7200 });
       res.set('Set-Cookie', cookie(token, 7200)).json({ csrf: csrfToken });
     } catch { res.status(503).json({ error: 'authentication_unavailable' }); }
+    finally { authenticating = false; }
   });
   app.post('/api/operator/logout', sameOrigin, authorize, csrf, async (req, res) => {
     await redis.del(`operator:session:${sessionDigest(readOperatorCookie(req))}`);
