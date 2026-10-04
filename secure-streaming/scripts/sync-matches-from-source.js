@@ -1031,7 +1031,6 @@ export async function enrichApiFootballMatchDetails(rows) {
 export function koooraDetailChannelTargets(rows, limit = koooraDetailChannelLimit) {
   return rows.filter((row) =>
     row.source === 'kooora'
-    && !(Array.isArray(row.payload?.channels) && row.payload.channels.length)
     && row.payload?.matchLink
     && !['ended', 'unavailable'].includes(sourceMatchState(row.payload))
   ).sort((a, b) => Number(sourceMatchState(b.payload) === 'live') - Number(sourceMatchState(a.payload) === 'live')

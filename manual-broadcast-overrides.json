@@ -1,0 +1,14 @@
+{
+  "matches": {
+    "kooora_2026-10-04_المغرب_vs_مالي": {
+      "channel": "Arryadia 3 HD",
+      "expiresAt": "2026-10-04T23:00:00Z",
+      "source": "operator-confirmed"
+    },
+    "kooora_2026-10-04_مصر_vs_جنوب_افريقيا": {
+      "channel": "On Sport Plus",
+      "expiresAt": "2026-10-04T23:00:00Z",
+      "source": "operator-confirmed"
+    }
+  }
+}

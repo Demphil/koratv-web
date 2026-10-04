@@ -21,6 +21,8 @@ const { data: matches, error: matchesError } = await client
   .limit(Number(process.env.PROVIDER_SYNC_MATCH_LIMIT || 700));
 if (matchesError) throw new Error(`Match route targets unavailable (${matchesError.code || 'network'})`);
 const defaultTargetChannels = [
+  'Arryadia 3 HD',
+  'On Sport Plus',
   'MBC Action',
   'Abu Dhabi Sports 1',
   'Abu Dhabi Sports 2',

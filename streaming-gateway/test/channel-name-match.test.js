@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { findChannelNameMatch } from '../../shared/channel-name-match.mjs';
+import { matchChannels, isCatalogChannelSourceVerified } from '../../shared/provider-channel-match.mjs';
+
+test('exact Arryadia number and On Sport Plus edition cannot downgrade to the ordinary channel', () => {
+  const entries = ['MA - ARRYADIA 1 HD', 'MA - ARRYADIA 3 HD', 'EGY| ON SPORT HD',
+    'EGY| ON SPORT PLUS HEVC', 'EGY| ON SPORT PLUS HD'].map((name, index) => ({name, rawName:name, group:'AR', url:`https://example.test/${index}`}));
+  const matched = matchChannels(['Arryadia 3 HD', 'On Sport Plus'], entries);
+  assert.equal(matched.find(row=>row.name==='Arryadia 3 HD').source_name, 'MA - ARRYADIA 3 HD');
+  assert.equal(matched.find(row=>row.name==='On Sport Plus').source_name, 'EGY| ON SPORT PLUS HD');
+  assert.equal(isCatalogChannelSourceVerified('On Sport Plus', {sourceNames:{A:'EGY| ON SPORT HD'}}, 'A'), false);
+  assert.equal(isCatalogChannelSourceVerified('Arryadia 3 HD', {sourceNames:{A:'MA - ARRYADIA 1 HD'}}, 'A'), false);
+});
 
 test('matches IPTV prefixes and spelling variants without losing the channel number', () => {
   assert.equal(

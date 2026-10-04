@@ -140,7 +140,8 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
       const matchKey = row.match_id || row.id;
       const routeState = catalog?.matchRoute?.(matchKey);
       const assignment = catalog?.matchAssignment?.(matchKey);
-      const rowCandidates = channelCandidatesForRow(row);
+      const override = catalog?.override(matchKey);
+      const rowCandidates = override ? [override] : channelCandidatesForRow(row);
       const assignmentIsCurrent = resolvedChannelIsCurrentOrFallback(assignment?.resolvedChannel, rowCandidates, catalog);
       const routeStateIsCurrent = resolvedChannelIsCurrentOrFallback(routeState?.resolvedChannel, rowCandidates, catalog);
       const assignedProviderIds = assignment?.status === 'ASSIGNED' && assignmentIsCurrent && assignment.providerId ? [assignment.providerId] : [];
@@ -318,7 +319,7 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
     const assignment = catalog?.matchAssignment?.(matchKey);
     const broadcastCandidates = broadcastChannelCandidates(match);
     const fallbackChannel = normalizeBroadcastChannel(match.channel || payload.channel);
-    const currentCandidates = broadcastCandidates.length
+    const currentCandidates = override ? [override] : broadcastCandidates.length
       ? broadcastCandidates
       : fallbackChannel
         ? [fallbackChannel]

@@ -46,6 +46,7 @@ export function normalizeName(name) {
     .replace(/\bsd\b/g, '')
     .replace(/\b0([1-9])\b/g, '$1')
     .replace(/\bsports\b/g, 'sport')
+    .replace(/\bontime\b/g, 'on time')
     .replace(/\bal\s+kass\b/g, 'alkass')
     .replace(/\bbein\b/g, 'bein')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
@@ -123,6 +124,7 @@ function channelRule(name) {
     return { required: ['bein', 'sport'], preferred: ['global', 'hd'] };
   }
   if (normalized.includes('arryadia') || normalized.includes('الرياضيه') || normalized.includes('المغربيه')) {
+    if (number) return { required: ['arryadia', number], preferred: ['hd'] };
     const requestedVariant = /\btnt\b/i.test(name)
       ? 'tnt'
       : /\bs\s*\/\s*d\b|\bsd\b/i.test(name)
@@ -194,6 +196,14 @@ function scoreEntry(entry, rule, requestedName = '') {
     const sourceRegion = beinRegion(raw);
     if (sourceRegion !== requestedRegion) return -1;
   }
+  if (rule.required.includes('arryadia')) {
+    const number = rule.required.find(token => /^\d+$/.test(token));
+    if (number && !new Set(normalizeName(entry.name).split(/\s+/)).has(number)) return -1;
+  }
+  if (rule.required.includes('on') && rule.required.includes('sport')) {
+    if (words.has('plus') !== rule.required.includes('plus')) return -1;
+    if (/\bhevc\b/i.test(raw)) return -1;
+  }
   if (rule.channelVariant === 'tnt' && !/\btnt\b/i.test(raw)) return -1;
   if (rule.channelVariant === 'sd' && !/(?:\bs\s*\/\s*d\b|\bsd\b)/i.test(raw)) return -1;
   let score = rule.required.length * 10;
@@ -245,12 +255,18 @@ function pushUniqueEntry(target, entry) {
 
 export function isProviderChannelCompatible(name, entry) {
   const rule = channelRule(name);
-  if (rule?.required.includes('bein')) return scoreEntry(entry, rule, name) >= 0;
+  if (rule && (rule.required.includes('bein') || rule.required.includes('arryadia')
+    || (rule.required.includes('on') && rule.required.includes('sport')))) return scoreEntry(entry, rule, name) >= 0;
   return true;
 }
 
 export function isCatalogChannelSourceVerified(name, row, providerId) {
   const sourceName = row?.sourceNames?.[providerId] || '';
+  const rule = channelRule(name);
+  if (rule && (rule.required.includes('arryadia') || (rule.required.includes('on') && rule.required.includes('sport')))) {
+    return Boolean(sourceName) && isProviderChannelCompatible(name, { name: sourceName, rawName: sourceName,
+      group: row.sourceGroups?.[providerId] || '' });
+  }
   if (!/\bbein\b/i.test(`${name} ${sourceName}`)) return true;
   // Old mappings lost the provider category, so their region cannot be trusted.
   if (row?.sourcePolicyVersions?.[providerId] !== CHANNEL_MATCH_POLICY_VERSION) return false;
@@ -287,7 +303,8 @@ export function matchChannels(streamNames, m3uEntries, options = {}) {
       }
 
       const rule = channelRule(name);
-      if (rule?.required.includes('bein')) {
+      if (rule && (rule.required.includes('bein') || rule.required.includes('arryadia')
+        || (rule.required.includes('on') && rule.required.includes('sport')))) {
         for (let index = candidates.length - 1; index >= 0; index -= 1) {
           if (scoreEntry(candidates[index], rule, name) < 0) candidates.splice(index, 1);
         }

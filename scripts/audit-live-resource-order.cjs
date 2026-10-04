@@ -68,7 +68,7 @@ const adHosts = /omg10\.com|nap5k\.com|n6wxm\.com|al5sm\.com|quge5\.com|profitab
         });
       });
       if (await page.$eval('video', v=>v.paused)) {
-        const play = await page.$('button[data-plyr="play"]');
+        const play = await page.$('.plyr__controls button[data-plyr="play"]');
         if (play) await play.click();
       }
       try {

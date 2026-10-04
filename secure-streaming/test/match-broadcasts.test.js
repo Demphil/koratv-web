@@ -301,6 +301,12 @@ test('detail channel lookup budget goes to live and upcoming fixtures, not finis
   assert.deepEqual(koooraDetailChannelTargets(rows, 2).map(row => row.match_id), ['live', 'next']);
 });
 
+test('a generic schedule broadcaster does not prevent checking the exact channel on the match page', () => {
+  const rows = [{ match_id: 'egypt', source: 'kooora', kickoff_time,
+    payload: { status:'LIVE', channels:['On Sport'], matchLink:'https://www.kooora.com/egypt' } }];
+  assert.deepEqual(koooraDetailChannelTargets(rows).map(row=>row.match_id), ['egypt']);
+});
+
 test('fresh Kooora lifecycle clears a previously stored finished flag', () => {
   for (const status of ['FIXTURE', 'LIVE', 'RESULT']) {
     const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({

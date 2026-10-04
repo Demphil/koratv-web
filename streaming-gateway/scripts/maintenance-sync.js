@@ -144,6 +144,7 @@ export async function runMaintenanceSync(env = process.env) {
   const routeStatePath = env.DIRECT_MATCH_ROUTE_STATE_PATH || `${dir}/direct-match-route-state.json`;
   const missingRoutesPath = env.MISSING_ROUTES_PATH || `${dir}/missing-routes.json`;
   const providerCatalog = await readJson(providerCatalogPath, { providers: {}, channels: {} });
+  const overrides = await readJson(env.MANUAL_BROADCAST_OVERRIDE_PATH || `${dir}/manual-broadcast-override.json`, { matches: {} });
   const routes = buildAvailableRoutes(providerCatalog);
   const matches = await readTodayMatches(env, dateKey, timezone);
   const activeChannels = {};
@@ -152,7 +153,10 @@ export async function runMaintenanceSync(env = process.env) {
   const missing = [];
   for (const row of matches) {
     const matchId = row.match_id || row.id;
-    const targets = [...new Set(targetChannelsForMatch(row))];
+    const correction = overrides.matches?.[matchId];
+    const override = correction?.enabled !== false && typeof correction?.channel === 'string'
+      && Date.parse(correction.expiresAt) > Date.now() ? correction.channel.trim() : '';
+    const targets = override ? [override] : [...new Set(targetChannelsForMatch(row))];
     const resolved = [];
     for (const target of targets) {
       const route = resolveRouteName(target, routes);
