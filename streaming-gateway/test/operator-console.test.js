@@ -8,6 +8,13 @@ import { registerOperatorConsole } from '../operator-console.js';
 import { hashOperatorPassword, verifyOperatorPassword } from '../operator-auth.js';
 import { validateSelection, validateNotices, publicControlState, emptyOperatorState, activeOperatorOverride } from '../operator-state.js';
 import { createProviderCatalog } from '../provider-catalog.js';
+import { loadConfig } from '../config.js';
+
+test('operator origin is independent from a legacy player API origin', () => {
+  const config = loadConfig({ JWT_SECRET: 'test-operator-jwt-secret-over-32-bytes', HMAC_SECRET: 'test-independent-hmac-secret-over-32-bytes', PUBLIC_API_ORIGIN: 'https://fabor.sbs' });
+  assert.equal(config.api, 'https://fabor.sbs');
+  assert.equal(config.operatorOrigin, 'https://stream-api.koratv.click');
+});
 
 test('operator selections and notice schedules reject invalid limits and raw markup stays plain text', () => {
   const available = new Set(['a', 'b']);

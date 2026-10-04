@@ -41,7 +41,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
       else response.write(payload);
     }
   };
-  const sameOrigin = (req, res, next) => req.headers.origin === config.api ? next() : res.status(403).json({ error: 'origin_rejected' });
+  const sameOrigin = (req, res, next) => req.headers.origin === (config.operatorOrigin || config.api) ? next() : res.status(403).json({ error: 'origin_rejected' });
   const authorize = async (req, res, next) => {
     try {
       const token = readOperatorCookie(req);

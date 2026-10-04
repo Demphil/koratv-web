@@ -602,7 +602,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         && (providerPool.blocked.get(id) || 0) <= Date.now());
       if (!available.length) throw new Error('no_free_provider');
       phase('discovering');
-      const result = await config.discoverOperatorChannel(channel, available);
+      const result = await config.discoverOperatorChannel(config.resolveOperatorChannel?.(channel) || channel, available);
       if (!result?.resolvedChannel || !Object.keys(result.provider_sources || {}).length) throw new Error('channel_not_found');
       phase('testing_media');
       const viewer = `operator:${randomUUID()}`;
