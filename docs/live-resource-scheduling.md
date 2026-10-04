@@ -52,3 +52,8 @@ https://github.com/Unitech/pm2/blob/master/lib/ProcessContainerFork.js.
 - Runtime inspection identified Kyrgyzstan-Lebanon as channel_unavailable,
   not a resource-capacity rejection. A correct broadcaster must be supplied by
   the authoritative source or an explicit verified manual override.
+- Final runtime deployment: ef2e1ac, Unified Data Refresh 37213346578; all four
+  deployment jobs succeeded. Fraja frontend: 390f0e3, publication 37212842212.
+- Read-only runtime audit 37213571438 observed assignment generatedAt advance
+  from 2026-10-04T15:35:27.777Z to 2026-10-04T15:36:27.887Z during a 70-second
+  observation. This confirms minute reconciliation actually runs under PM2.
