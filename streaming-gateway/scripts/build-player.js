@@ -33,22 +33,23 @@ for (const icon of ['mail', 'trophy', 'scale', 'landmark', 'tv']) {
   await cp(join(dirname(require.resolve('lucide-static/package.json')), 'icons', `${icon}.svg`), `dist/icons/${icon}.svg`);
 }
 await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\nconst STREAM_API_ORIGINS = new Set(${JSON.stringify(apiOrigins)});\n`);
-for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'multiview.js',
+for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.js', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'multiview.js',
   'hls.min.js', 'plyr.js', 'three.module.min.js', 'three.core.min.js']) {
   const result = await minify(await readFile(`dist/${asset}`, 'utf8'), {
     compress: false, mangle: { toplevel: false }, sourceMap: false, format: { comments: false },
-    module: asset.startsWith('three.') || asset === 'page-depth.js'
+    module: asset.startsWith('three.') || ['page-depth.js', 'broadcast-control.js', 'broadcast-notice.js'].includes(asset)
   });
   if (!result.code || result.map) throw new Error('Invalid player JavaScript build');
   await writeFile(`dist/${asset}`, result.code + '\n');
 }
 const version = createHash('sha256');
-for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.css', 'player.css', 'match-ui.css', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
+for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.js', 'broadcast-notice.css', 'player.css', 'match-ui.css', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
   version.update(await readFile(`dist/${asset}`));
 }
 const revision = version.digest('hex').slice(0, 12);
-for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.css', 'player.css', 'match-ui.css', 'player.html']) {
+for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.js', 'broadcast-notice.css', 'player.css', 'match-ui.css', 'player.html']) {
   if (/\/api\/operator\//.test(await readFile(`dist/${asset}`, 'utf8'))) throw new Error('Private console route in player artifact');
 }
 const html = (await readFile('player/player.html', 'utf8')).replace(/((?:src|href)="\.\/[^"?]+\.(?:js|css))"/g, `$1?v=${revision}"`);
+await writeFile('dist/broadcast-control.js', (await readFile('dist/broadcast-control.js', 'utf8')).replace('./broadcast-notice.js', `./broadcast-notice.js?v=${revision}`));
 for (const page of ['player.html', '739184.html', 'watch.html']) await writeFile(`dist/${page}`, html);

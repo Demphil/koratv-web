@@ -1,6 +1,9 @@
+import { createNotice, renderNotice, startNotice, stopNotice, normalizeNoticeDesign } from './broadcast-notice.js';
 (() => {
   const $ = id => document.getElementById(id);
-  let csrf = '', snapshot, selected = [], noticeItems = [], editing = false, polling;
+  let csrf = '', snapshot, selected = [], noticeItems = [], editing = false, polling, activeNotice = 0;
+  const previewStage = $('notice-preview-stage');
+  const previewView = createNotice(previewStage, { onClose: () => { stopNotice(previewView); previewView.card.hidden = true; }, onImage: src => { $('preview-full-image').src = src; $('preview-viewer').hidden = false; } });
   const errors = { login_required: 'سجل الدخول أولاً.', invalid_login: 'بيانات الدخول غير صحيحة.', too_many_attempts: 'محاولات كثيرة. حاول بعد 15 دقيقة.', no_free_provider: 'كل الموارد مشغولة الآن. لم تتغير القناة القديمة؛ حرر مورداً قبل اختبار قناة أخرى.', channel_not_found: 'لم يعثر المورد على الاسم المحدد. لم تتغير القناة.', channel_probe_failed: 'رابط القناة لا يمرر الفيديو الآن. لم تتغير القناة.', operation_in_progress: 'هناك عملية قيد التنفيذ.', operation_failed: 'تعذر إكمال العملية. راجع حالة الموارد قبل إعادة المحاولة.', invalid_image: 'الصورة غير صالحة أو كبيرة جداً.' };
   const phaseNames = { preparing: 'تحضير', discovering: 'بحث لدى المورد', testing_media: 'اختبار الفيديو', saving: 'حفظ القناة', assigning: 'توزيع وتجهيز الموارد', ready: 'اكتملت العملية' };
   function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
@@ -59,8 +62,8 @@
       $('manual-enabled').checked = selection?.enabled === true;
       $('channel-names').replaceChildren(...snapshot.channels.map(channel => { const option = document.createElement('option'); option.value = channel.name; return option; }));
       $('servers').replaceChildren(...snapshot.status.accounts.map(account => { const node = document.createElement('span'); node.className = `server ${/STOPPED|UNAVAILABLE|COOLDOWN|STALLED/.test(account.status) ? 'bad' : ''}`; node.textContent = `${account.provider} · ${account.status}${account.current_channel ? ` · ${account.current_channel}` : ''}`; return node; }));
-      noticeItems = (snapshot.state.notices.items || []).map(item => ({ text: item.text, image: item.image }));
-      if (!noticeItems.length) noticeItems = [{ text: '', image: '' }];
+      noticeItems = (snapshot.state.notices.items || []).map(item => ({ title: item.title || '', text: item.text, image: item.image, duration: item.duration ?? null, design: normalizeNoticeDesign(item.design) }));
+      if (!noticeItems.length) noticeItems = [newNotice()];
       for (const key of ['repeats', 'duration', 'interval']) $(`notice-${key}`).value = snapshot.state.notices[key];
       $('notice-target').value = snapshot.state.notices.matchIds.length ? 'selected' : 'all';
       renderMatches(); renderNotices(); editing = false;
@@ -71,11 +74,10 @@
     }
     renderJobs();
   }
-  function preview(item) { $('preview-text').textContent = item.text; $('preview-media').hidden = !item.image; $('preview-viewer').hidden = true; if (item.image) $('preview-image').src = item.image; }
-  $('preview-motion').onclick = () => { const stage = $('notice-preview-stage'); stage.classList.remove('is-playing'); stage.querySelector('.broadcast-notice').style.setProperty('--notice-duration', `${Number($('notice-duration').value) || 10}s`); void stage.offsetWidth; stage.classList.add('is-playing'); };
-  $('preview-media').onclick = () => { $('preview-full-image').src = $('preview-image').src; $('preview-viewer').hidden = false; };
+  function newNotice() { return { title: '', text: '', image: '', duration: null, design: normalizeNoticeDesign() }; }
+  function preview(item) { $('preview-viewer').hidden = true; renderNotice(previewView, item); previewView.card.style.transform = `translateX(${(previewStage.clientWidth - previewView.card.offsetWidth) / 2}px)`; }
+  $('preview-motion').onclick = () => { const item = noticeItems[activeNotice]; if (!item) return; preview(item); startNotice(previewView, item.duration || Number($('notice-duration').value), () => { previewView.card.hidden = true; }); };
   $('preview-dismiss').onclick = () => { $('preview-viewer').hidden = true; };
-  $('notice-preview-stage').querySelector('.broadcast-notice .notice-close').onclick = () => { $('notice-preview-stage').classList.remove('is-playing'); };
   async function compressImage(file) {
     if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 5 * 1024 * 1024) throw new Error('اختر صورة PNG أو JPEG أو WebP أصغر من 5 ميغابايت.');
     const bitmap = await createImageBitmap(file); const ratio = Math.min(1, 960 / bitmap.width, 960 / bitmap.height);
@@ -86,17 +88,49 @@
     throw new Error('الصورة تحتوي تفاصيل كثيرة. اختر صورة أصغر.');
   }
   function renderNotices() {
+    activeNotice = Math.min(activeNotice, Math.max(0, noticeItems.length - 1));
     $('notice-list').replaceChildren(...noticeItems.map((item, index) => {
-      const row = document.createElement('div'); row.className = 'notice-editor';
-      const text = document.createElement('textarea'); text.maxLength = 240; text.value = item.text; text.placeholder = 'نص الإشعار'; text.oninput = () => { item.text = text.value; editing = true; preview(item); };
-      const picker = document.createElement('label'); picker.className = 'image-picker'; picker.append(document.createTextNode('صورة صغيرة'));
+      item.design = normalizeNoticeDesign(item.design);
+      const row = document.createElement('div'); row.className = 'notice-editor'; row.dataset.notice = index;
+      const update = () => { activeNotice = index; editing = true; preview(item); };
+      const heading = document.createElement('div'); heading.className = 'notice-editor-heading';
+      const name = document.createElement('strong'); name.textContent = `الإعلان ${index + 1}`; heading.append(name);
+      heading.append(button('eye', 'معاينة الإعلان', () => { activeNotice = index; preview(item); previewStage.scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
+      for (const [step, icon, label] of [[-1, 'arrow-up', 'تقديم الإعلان'], [1, 'arrow-down', 'تأخير الإعلان']]) { const move = button(icon, label, () => { const target = index + step; [noticeItems[index], noticeItems[target]] = [noticeItems[target], noticeItems[index]]; activeNotice = target; editing = true; renderNotices(); }); move.disabled = index + step < 0 || index + step >= noticeItems.length; heading.append(move); }
+      heading.append(button('trash-2', 'حذف الإعلان', () => { noticeItems.splice(index, 1); editing = true; renderNotices(); })); row.append(heading);
+      const content = document.createElement('div'); content.className = 'notice-content-editor';
+      const copy = document.createElement('div'); copy.className = 'notice-copy-editor';
+      const title = document.createElement('input'); title.maxLength = 100; title.value = item.title || ''; title.placeholder = 'العنوان'; title.dataset.field = 'title'; title.oninput = () => { item.title = title.value; update(); };
+      const text = document.createElement('textarea'); text.maxLength = 240; text.value = item.text; text.placeholder = 'التعليق'; text.dataset.field = 'text'; text.oninput = () => { item.text = text.value; update(); };
+      copy.append(field('العنوان', title), field('التعليق', text)); content.append(copy);
+      const picker = document.createElement('label'); picker.className = 'image-picker'; picker.append(document.createTextNode('صورة الإعلان'));
       const file = document.createElement('input'); file.type = 'file'; file.accept = 'image/png,image/jpeg,image/webp';
-      file.onchange = async () => { if (!file.files[0]) return; try { const result = await api('image', { image: await compressImage(file.files[0]) }); item.image = result.image; editing = true; renderNotices(); preview(item); } catch (error) { message(error.message, true); } };
-      picker.append(file); if (item.image) { const image = document.createElement('img'); image.className = 'editor-image'; image.src = item.image; image.alt = ''; picker.append(image); picker.append(button('x', 'إزالة الصورة', () => { item.image = ''; renderNotices(); })); }
-      row.append(text, picker, button('trash-2', 'حذف الإشعار', () => { noticeItems.splice(index, 1); editing = true; renderNotices(); })); return row;
+      file.onchange = async () => { if (!file.files[0]) return; try { const result = await api('image', { image: await compressImage(file.files[0]) }); item.image = result.image; activeNotice = index; editing = true; renderNotices(); } catch (error) { message(error.message, true); } };
+      picker.append(file); if (item.image) { const image = document.createElement('img'); image.className = 'editor-image'; image.src = item.image; image.alt = ''; picker.append(image); picker.append(button('x', 'إزالة الصورة', () => { item.image = ''; activeNotice = index; editing = true; renderNotices(); })); }
+      content.append(picker); row.append(content);
+      const animations = [['none', 'بدون'], ['fade', 'تلاشي'], ['rise', 'ارتفاع'], ['pulse', 'نبض'], ['glow', 'توهج']];
+      const alignments = [['right', 'يمين'], ['center', 'وسط'], ['left', 'يسار']];
+      function control(key, label, type, options) {
+        const node = document.createElement(type === 'select' ? 'select' : 'input'); node.dataset.field = key;
+        if (type === 'select') for (const [value, name] of options) { const option = document.createElement('option'); option.value = value; option.textContent = name; node.append(option); }
+        else { node.type = type; if (options) [node.min, node.max] = options; }
+        if (type === 'checkbox') node.checked = item.design[key]; else node.value = item.design[key];
+        const wrapper = field(label, node); const output = type === 'range' ? document.createElement('output') : null;
+        if (output) { output.textContent = node.value; wrapper.append(output); }
+        node.oninput = () => { item.design[key] = type === 'checkbox' ? node.checked : ['range', 'number'].includes(type) ? Number(node.value) : node.value; if (output) output.textContent = node.value; update(); };
+        return wrapper;
+      }
+      for (const [prefix, label, min, max] of [['title', 'تنسيق العنوان', 14, 44], ['text', 'تنسيق التعليق', 12, 32]]) {
+        const group = document.createElement('fieldset'); group.className = 'notice-format-fields'; const legend = document.createElement('legend'); legend.textContent = label; group.append(legend);
+        group.append(control(`${prefix}Size`, 'حجم الخط', 'range', [min, max]), control(`${prefix}Color`, 'اللون', 'color'), control(`${prefix}Animation`, 'حركة النص', 'select', animations), control(`${prefix}AnimationSeconds`, 'دورة حركة النص (ثوان)', 'range', [1, 8]), control(`${prefix}Align`, 'المحاذاة', 'select', alignments), control(`${prefix}Bold`, 'خط عريض', 'checkbox')); row.append(group);
+      }
+      const group = document.createElement('fieldset'); group.className = 'notice-format-fields notice-layout-fields'; const legend = document.createElement('legend'); legend.textContent = 'الموضع والخلفية والعبور'; group.append(legend);
+      const duration = document.createElement('input'); duration.type = 'number'; duration.min = 5; duration.max = 120; duration.value = item.duration ?? ''; duration.placeholder = $('notice-duration').value; duration.dataset.field = 'duration'; duration.oninput = () => { item.duration = duration.value === '' ? null : Number(duration.value); update(); };
+      group.append(field('مدة عبور الإعلان (ثوان)', duration), control('placement', 'موضع الإعلان', 'select', [['top', 'أعلى'], ['middle', 'وسط'], ['bottom', 'أسفل']]), control('titlePosition', 'مكان العنوان', 'select', [['above', 'فوق التعليق'], ['below', 'تحت التعليق']]), control('imageSide', 'مكان الصورة', 'select', [['right', 'يمين'], ['left', 'يسار']]), control('imageSize', 'حجم الصورة', 'range', [48, 160]), control('width', 'عرض الإعلان %', 'range', [35, 94]), control('backgroundOpacity', 'عتامة الخلفية %', 'range', [0, 100]), control('backgroundColor', 'لون الخلفية', 'color')); row.append(group); return row;
     }));
-    preview(noticeItems[0] || { text: '', image: '' }); $('add-notice').disabled = noticeItems.length >= 10;
+    preview(noticeItems[activeNotice] || newNotice()); $('add-notice').disabled = noticeItems.length >= 10;
   }
+  function field(label, node) { const wrapper = document.createElement('label'); wrapper.className = 'notice-field'; const caption = document.createElement('span'); caption.textContent = label; wrapper.append(caption, node); return wrapper; }
   $('login').onsubmit = async event => { event.preventDefault(); try { await api('login', { username: $('username').value, password: $('password').value }); $('password').value = ''; await open(); } catch (error) { message(error.message, true); } };
   async function open() { await refresh(); $('login').hidden = true; $('workspace').hidden = false; $('refresh').hidden = false; $('logout').hidden = false; message(''); clearInterval(polling); polling = setInterval(() => refresh(false).catch(error => message(error.message, true)), 3000); }
   $('logout').onclick = async () => { await api('logout', {}); loggedOut(); };
@@ -104,9 +138,9 @@
   $('search').oninput = renderMatches; $('status-filter').onchange = renderMatches;
   $('manual-enabled').onchange = () => { editing = true; };
   $('save-selection').onclick = async () => { try { await api('selection', { enabled: $('manual-enabled').checked, matches: selected }); editing = false; message('بدأ تجهيز الاختيار في الخلفية المشتركة.'); await refresh(false); } catch (error) { message(error.message, true); } };
-  $('add-notice').onclick = () => { if (noticeItems.length < 10) noticeItems.push({ text: '', image: '' }); renderNotices(); };
+  $('add-notice').onclick = () => { if (noticeItems.length < 10) { noticeItems.push(newNotice()); activeNotice = noticeItems.length - 1; editing = true; } renderNotices(); };
   $('publish-notices').onclick = async () => { try { await api('notices', { enabled: true, items: noticeItems, repeats: Number($('notice-repeats').value), duration: Number($('notice-duration').value), interval: Number($('notice-interval').value), matchIds: $('notice-target').value === 'selected' ? selected : [] }); message('تم نشر الإشعارات إلى المشغلات المفتوحة والـ embed.'); editing = false; } catch (error) { message(error.message, true); } };
   $('stop-notices').onclick = async () => { try { await api('notices/stop', {}); message('تم إيقاف الإشعارات فوراً.'); } catch (error) { message(error.message, true); } };
-  document.querySelectorAll('nav button').forEach(node => { node.onclick = () => { document.querySelectorAll('nav button').forEach(button => button.classList.toggle('active', button === node)); for (const id of ['matches-view', 'notices-view']) $(id).hidden = id !== node.dataset.view; }; });
+  document.querySelectorAll('nav button').forEach(node => { node.onclick = () => { document.querySelectorAll('nav button').forEach(button => button.classList.toggle('active', button === node)); for (const id of ['matches-view', 'notices-view']) $(id).hidden = id !== node.dataset.view; if (node.dataset.view === 'notices-view') preview(noticeItems[activeNotice] || newNotice()); else stopNotice(previewView); }; });
   open().catch(() => loggedOut());
 })();

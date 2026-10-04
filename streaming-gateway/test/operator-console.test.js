@@ -30,7 +30,7 @@ test('operator selections and notice schedules reject invalid limits and raw mar
   const valid = { enabled: true, items: [{ text: '<script>no execution</script>', image: '' }], repeats: 2, duration: 5, interval: 5, matchIds: [] };
   assert.equal(validateNotices(valid).items[0].text, valid.items[0].text);
   assert.throws(() => validateNotices({ ...valid, repeats: 0 }));
-  assert.throws(() => validateNotices({ ...valid, duration: 60 }));
+  assert.throws(() => validateNotices({ ...valid, duration: 121 }));
   assert.throws(() => validateNotices({ ...valid, items: [{ text: 'x', image: 'javascript:alert(1)' }] }));
   const state = { ...emptyOperatorState(), selection: { matches: ['private-match'] }, overrides: { 'private-match': { channel: 'private' } }, channels: { 'private-match': 'version' } };
   assert.equal(JSON.stringify(publicControlState(state)).includes('private-match'), false);

@@ -1,0 +1,23 @@
+.notice-editor { display: block; padding: 22px 0; }
+.notice-editor-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.notice-editor-heading strong { margin-inline-end: auto; font-size: 15px; }
+.notice-editor-heading button, .image-picker button { width: 32px; min-height: 32px; padding: 6px; }
+.notice-content-editor { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 22px; align-items: start; }
+.notice-copy-editor { display: grid; gap: 14px; min-width: 0; }
+.notice-field { display: grid; gap: 7px; align-content: start; min-width: 0; font-size: 12px; position: relative; }
+.notice-field input:not([type=checkbox]), .notice-field select { width: 100%; min-width: 0; }
+.notice-field input[type=color] { height: 38px; padding: 3px; }
+.notice-field input[type=range] { height: 27px; accent-color: #167050; padding: 0; }
+.notice-field input[type=checkbox] { margin: 8px 0; }
+.notice-field output { font-size: 12px; color: #16694d; font-weight: bold; }
+.notice-format-fields { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; border: 0; border-top: 1px solid #dce3e0; padding: 16px 0; margin: 18px 0 0; }
+.notice-format-fields legend { font-size: 13px; font-weight: bold; padding-inline-end: 12px; color: #304a40; }
+.notice-layout-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.notice-editor .image-picker { display: flex; flex-wrap: wrap; align-items: center; font-size: 12px; }
+.notice-editor .image-picker>input { width: 100%; }
+.notice-editor .editor-image { width: 84px; height: 74px; }
+@media (max-width: 720px) {
+  .notice-content-editor { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .notice-format-fields, .notice-layout-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .notice-editor-heading { gap: 6px; }
+}

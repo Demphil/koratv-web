@@ -2,6 +2,7 @@ import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { publicMatchId } from '../shared/public-match-id.mjs';
+import { normalizeNoticeDesign } from './player/broadcast-notice.js';
 
 export const operatorPath = (env = process.env) => env.OPERATOR_CONTROL_PATH || `${env.PROVIDER_POOL_DIR || '/etc/koratv'}/operator-control.json`;
 export const emptyOperatorState = () => ({ revision: 0, selection: null, overrides: {}, channels: {}, notices: { enabled: false, campaign: '', items: [], repeats: 1, duration: 10, interval: 300, matchIds: [] } });
@@ -28,13 +29,14 @@ export function validateNotices(input) {
   const integer = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
   if (typeof input?.enabled !== 'boolean' || !Array.isArray(input.items) || input.items.length > 10
     || (input.enabled && !input.items.length) || !integer(input.repeats, 1, 50)
-    || !integer(input.duration, 5, 20) || !integer(input.interval, 5, 3600)
+    || !integer(input.duration, 5, 120) || !integer(input.interval, 0, 3600)
     || !Array.isArray(input.matchIds) || input.matchIds.length > 8
     || input.matchIds.some(id => typeof id !== 'string' || id.length > 160)) throw new Error('invalid_notices');
   const items = input.items.map(item => {
-    const text = String(item.text || '').trim();
-    if (!text || text.length > 240 || (item.image && !/^\/[a-z0-9/-]+$/i.test(item.image))) throw new Error('invalid_notice');
-    return { id: randomUUID(), text, image: item.image || '' };
+    const text = String(item.text || '').trim(), title = String(item.title || '').trim();
+    if ((!text && !title && !item.image) || text.length > 240 || title.length > 100 || (item.image && !/^\/[a-z0-9/-]+$/i.test(item.image))
+      || (item.duration !== undefined && item.duration !== null && !integer(item.duration, 5, 120))) throw new Error('invalid_notice');
+    return { id: randomUUID(), title, text, image: item.image || '', duration: item.duration ?? null, design: normalizeNoticeDesign(item.design, true) };
   });
   return { enabled: input.enabled, campaign: randomUUID(), items, repeats: input.repeats, duration: input.duration, interval: input.interval, matchIds: input.matchIds };
 }

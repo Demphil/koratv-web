@@ -43,6 +43,16 @@ the browser. These controls follow the OWASP session and CSRF guidance:
   controls clear. Images are not cropped and can be expanded by the viewer.
   Reduced-motion preferences disable traversal.
 
+Each ad now has a title and caption with independent colors, font sizes, weights,
+alignment, animation type, and animation cycle duration. The title can appear
+above or below the caption. Image side/size, ad width, vertical placement, and
+background color/opacity are per-ad settings; the default surface is completely
+transparent. Per-ad traversal duration is 5-120 seconds, falling back to the
+campaign duration. The queue gap can be zero. The shared renderer uses a two-point
+linear Web Animations API traversal from beyond the right edge to beyond the left
+edge, with no center hold; its geometry is recalculated on player resize.
+See https://developer.mozilla.org/en-US/docs/Web/API/Element/animate .
+
 Public frontend and player builds reject the private console route if it is
 accidentally included in a visitor asset. The route is configured only in the
 private server environment; secrecy does not replace login, CSRF protection, or

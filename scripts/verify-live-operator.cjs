@@ -33,7 +33,12 @@ const puppeteer = require('puppeteer');
     assert.ok(path, `Missing public player asset ${asset}`);
     const response = await fetch(new URL(path, 'https://fabor.sbs/739184.html')); assert.equal(response.status, 200);
     const content = await response.text(); assert.doesNotMatch(content, /\/api\/operator\//);
-    if (asset.endsWith('.css')) assert.match(content, /broadcast-notice-pass/);
+    if (asset.endsWith('.css')) assert.match(content, /data-surface=glass/);
+    if (asset === 'broadcast-control.js') {
+      const modulePath = content.match(/["'](\.\/broadcast-notice\.js\?v=[^"']+)["']/)?.[1]; assert.ok(modulePath, 'Missing versioned shared ad renderer');
+      const rendererResponse = await fetch(new URL(modulePath, 'https://fabor.sbs/739184.html')); assert.equal(rendererResponse.status, 200);
+      const renderer = await rendererResponse.text(); assert.doesNotMatch(renderer, /\/api\/operator\//); assert.match(renderer, /easing:"linear"/);
+    }
   }
   for (const frontend of ['https://koratv.click', 'https://fraja.online']) {
     const html = await (await fetch(frontend)).text(); assert.match(html, /20261004-operator-live/);
@@ -46,7 +51,8 @@ const puppeteer = require('puppeteer');
     await page.type('#password', password); await page.click('#login button'); await page.waitForSelector('#workspace:not([hidden])', { timeout: 20000 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.click('[data-view="notices-view"]'); await page.waitForSelector('#notice-preview-stage');
-    assert.equal(await page.$eval('.broadcast-notice', node => getComputedStyle(node).backdropFilter), 'blur(12px) saturate(1.2)');
+    assert.equal(await page.$eval('.broadcast-notice', node => getComputedStyle(node).borderTopColor), 'rgba(0, 0, 0, 0)');
+    assert.ok(await page.$('[data-field="titleAnimationSeconds"]')); assert.ok(await page.$('[data-field="backgroundOpacity"]'));
     console.log(JSON.stringify({ liveLogin: true, protectedApi: true, csrfRejected: true, secretsRedacted: true, bothFrontendMarkers: true, playerMarker: true, embedEventStream: true, mobileOverflow: false, noticeStyleDeployed: true, consoleRouteAbsentFromPlayer: true, matches: state.matches.length }));
   } finally {
     await browser?.close();

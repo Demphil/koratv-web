@@ -1,23 +1,16 @@
 /* global STREAM_API_ORIGIN, activeMatchId, embeddedMatchId, publicMatchId */
+import { createNotice, renderNotice, startNotice, stopNotice } from './broadcast-notice.js';
 (() => {
   const container = document.getElementById('player-container');
   if (!container) return;
-  const toast = document.createElement('aside');
-  toast.className = 'broadcast-notice'; toast.hidden = true; toast.setAttribute('role', 'status'); toast.setAttribute('aria-live', 'polite');
-  const media = document.createElement('button'); media.type = 'button'; media.className = 'notice-media'; media.hidden = true; media.setAttribute('aria-label', 'عرض صورة الإشعار بحجم أكبر');
-  const image = document.createElement('img'); image.alt = 'صورة الإشعار'; media.append(image);
-  const text = document.createElement('p');
-  const close = document.createElement('button'); close.type = 'button'; close.setAttribute('aria-label', 'إغلاق الإشعار'); close.textContent = '×';
-  close.className = 'notice-close';
-  toast.append(media, text, close); container.append(toast);
+  const view = createNotice(container, { onClose: () => { hide(); clearTimeout(timer); timer = setTimeout(next, (control?.notices.interval ?? 300) * 1000); }, onImage: src => { fullImage.src = src; viewer.hidden = false; dismiss.focus(); } });
+  const { card: toast, media } = view;
   const viewer = document.createElement('div'); viewer.className = 'notice-image-viewer'; viewer.hidden = true; viewer.setAttribute('role', 'dialog'); viewer.setAttribute('aria-label', 'صورة الإشعار');
   const fullImage = document.createElement('img'); fullImage.alt = 'صورة الإشعار';
-  const dismiss = close.cloneNode(true); viewer.append(fullImage, dismiss); container.append(viewer);
+  const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.className = 'notice-close'; dismiss.textContent = '×'; dismiss.setAttribute('aria-label', 'إغلاق الصورة'); viewer.append(fullImage, dismiss); container.append(viewer);
   function closeImage() { viewer.hidden = true; if (!toast.hidden) media.focus(); }
   dismiss.onclick = closeImage;
-  media.onclick = () => { fullImage.src = image.src; viewer.hidden = false; dismiss.focus(); };
   viewer.onkeydown = event => { if (event.key === 'Escape') closeImage(); };
-  image.onerror = () => { media.hidden = true; };
   let control, campaign = '', timer, cursor = 0, shown = 0, version, initialized = false, lastRevision = -1, disconnected = true;
   function matchKey() { const id = activeMatchId || embeddedMatchId; return /^\d{20}$/.test(id) ? id : id ? publicMatchId(id) : ''; }
   function progress() {
@@ -25,22 +18,18 @@
     return { cursor: 0, shown: 0, nextAt: 0 };
   }
   function save(nextAt) { try { sessionStorage.setItem(`broadcast-notice:${campaign}`, JSON.stringify({ cursor, shown, nextAt })); } catch {} }
-  function hide() { toast.hidden = true; viewer.hidden = true; }
+  function hide() { stopNotice(view); toast.hidden = true; viewer.hidden = true; }
   function next() {
     clearTimeout(timer); hide();
     const notices = control?.notices;
     if (!notices?.enabled || !notices.items.length || (notices.matchIds.length && !notices.matchIds.includes(matchKey())) || shown >= notices.items.length * notices.repeats) return;
     if (document.hidden) { timer = setTimeout(next, 1000); return; }
     const item = notices.items[cursor % notices.items.length];
-    text.textContent = item.text; media.hidden = !item.image;
-    if (item.image) image.src = `${STREAM_API_ORIGIN}${item.image}`;
-    toast.style.setProperty('--notice-duration', `${notices.duration}s`);
-    // Restart the traversal when consecutive notices reuse the same element.
-    void toast.offsetWidth;
-    toast.hidden = false; cursor++; shown++; save(Date.now() + (notices.duration + notices.interval) * 1000);
-    timer = setTimeout(() => { hide(); timer = setTimeout(next, notices.interval * 1000); }, notices.duration * 1000);
+    const duration = item.duration || notices.duration;
+    renderNotice(view, item, STREAM_API_ORIGIN); startNotice(view, duration);
+    cursor++; shown++; save(Date.now() + (duration + notices.interval) * 1000);
+    timer = setTimeout(() => { hide(); timer = setTimeout(next, notices.interval * 1000); }, duration * 1000);
   }
-  close.onclick = () => { hide(); clearTimeout(timer); timer = setTimeout(next, (control?.notices.interval || 300) * 1000); };
   function apply(data) {
     if (!data || data.revision === lastRevision) return;
     lastRevision = data.revision; control = data;
