@@ -2,6 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ProviderPool, PoolError } from '../provider-pool.js';
 import { basePriority } from '../priority.js';
+
+test('releasing a prewarm viewer frees an idle worker without evicting real viewers', () => {
+  const pool = new ProviderPool();
+  try {
+    const playback = {match_id:'ending', channel_id:'Ending TV', provider_sources:{A:'https://example.test/live.m3u8'}};
+    const lease = pool.acquire(playback, 'prewarm:ending');
+    pool.acquire(playback, 'real-viewer');
+    assert.equal(pool.releaseViewer(lease.key, 'prewarm:ending'), true);
+    assert.equal(pool.valid(lease), true);
+    assert.equal(pool.snapshot()[0].viewers, 1);
+    pool.releaseViewer(lease.key, 'real-viewer');
+    assert.equal(pool.snapshot().length, 0);
+  } finally { pool.close(); }
+});
 import { singleQualityManifest } from '../single-quality.js';
 import { selectProviderChannel, createProviderCatalog } from '../provider-catalog.js';
 import { HlsProgressMonitor } from '../hls-progress.js';

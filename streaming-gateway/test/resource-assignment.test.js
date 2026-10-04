@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAssignmentPlan, buildProjectAssignmentPlan, parseManualMatchSelection, scoreEvent, scoreProjectMatch } from '../scripts/resource-assignment.js';
+import { buildAssignmentPlan, buildProjectAssignmentPlan, parseManualMatchSelection, publicAssignmentMatches, scoreEvent, scoreProjectMatch } from '../scripts/resource-assignment.js';
 
 test('event scoring prioritizes national teams, VIP teams and competition tiers', () => {
   const options = { vipTeams: ['Real Madrid'], tierPoints: { 1: 300, 2: 150, 3: 50 } };
@@ -23,7 +23,7 @@ test('assignment plan keeps only the highest scoring events within resource capa
     events,
     resources,
     maxResources: 2,
-    now: new Date('2026-10-02T10:00:00Z'),
+    now: new Date('2026-10-02T20:00:00Z'),
     options: { vipTeams: ['Real Madrid'], tierPoints: { 1: 300, 2: 150, 3: 50 } },
   });
   assert.deepEqual(plan.assignments.map((item) => item.event.id), ['national', 'vip']);
@@ -70,7 +70,7 @@ test('project assignment uses resolved route state and never assigns more than a
     routeStates,
     providerCatalog,
     maxResources: 2,
-    now: new Date('2026-10-02T10:00:00Z'),
+    now: new Date('2026-10-02T20:00:00Z'),
     options: { vipTeams: ['Real Madrid'], tierPoints: { 1: 300, 2: 150, 3: 50 } },
   });
   assert.equal(scoreProjectMatch(matches[2], 'Channel National', { vipTeams: ['Real Madrid'] }) > scoreProjectMatch(matches[1], 'Channel VIP', { vipTeams: ['Real Madrid'] }), true);
@@ -105,13 +105,13 @@ test('manual match selection can pin the top resources across both sites', () =>
     providerCatalog,
     maxResources: 2,
     manualMatchIds: manualIds,
-    now: new Date('2026-10-02T10:00:00Z'),
+    now: new Date('2026-10-02T20:00:00Z'),
   });
   assert.deepEqual(plan.assignments.map((item) => [item.matchId, item.providerId, item.manual]), [
     ['kooora-manual', 'B', true],
     ['api-manual', 'C', true],
   ]);
-  assert.deepEqual(plan.ignored.map((item) => item.matchId), []);
+  assert.deepEqual(plan.ignored.map((item) => item.matchId), ['auto-national']);
   assert.equal(JSON.stringify(plan).includes('https://'), false);
 });
 
@@ -158,4 +158,60 @@ test('bilingual feeds share one worker while manual selection and channel identi
   const distinct = buildProjectAssignmentPlan(input);
   assert.equal(distinct.ignored.length, 1);
   assert.ok(distinct.assignments.every(row => row.aliases.length === 0));
+});
+
+test('three live matches get resources while finished and distant fixtures consume none', () => {
+  const now = new Date('2026-10-04T15:00:00Z');
+  const matches = [
+    ...Array.from({length: 8}, (_,i) => ({match_id: `finished-${i}`, payload: {status: 'RESULT', national_team: true}, kickoff_time: '2026-10-04T10:00:00Z'})),
+    ...Array.from({length: 8}, (_,i) => ({match_id: `future-${i}`, payload: {status: 'FIXTURE', national_team: true}, kickoff_time: '2026-10-04T20:00:00Z'})),
+    ...Array.from({length: 3}, (_,i) => ({match_id: `live-${i}`, payload: {status: 'LIVE'}, kickoff_time: '2026-10-04T14:00:00Z'})),
+    {match_id: 'cancelled', payload: {status: 'CANCELLED'}, kickoff_time: '2026-10-04T14:00:00Z'},
+  ];
+  const providers = ['A','B','D','F','G','H','I','J'];
+  const routeStates = Object.fromEntries(matches.map(m => [m.match_id, {status:'RESOLVED', resolvedChannel:m.match_id, providerIds:providers}]));
+  const providerCatalog = {providers:Object.fromEntries(providers.map(id => [id, {enabled:true}]))};
+  const plan = buildProjectAssignmentPlan({matches, routeStates, providerCatalog, now});
+  assert.deepEqual(plan.assignments.map(a => a.matchId), ['live-0','live-1','live-2']);
+  assert.equal(plan.resourceCount, 8);
+  assert.equal(plan.ignored.filter(a => a.reason === 'ended').length, 8);
+  assert.equal(plan.ignored.filter(a => a.reason === 'not_due').length, 8);
+  assert.equal(plan.ignored.find(a => a.matchId === 'cancelled').reason, 'unavailable');
+  matches.push({match_id:'soon', payload:{status:'FIXTURE'}, kickoff_time:'2026-10-04T15:15:00Z'});
+  routeStates.soon = {status:'RESOLVED', resolvedChannel:'Soon TV', providerIds:providers};
+  assert.equal(buildProjectAssignmentPlan({matches, routeStates, providerCatalog, now}).assignments.length, 4);
+});
+
+test('flexible provider allocation does not strand a match with only one supported provider', () => {
+  const matches = [
+    {match_id:'flexible', payload:{status:'LIVE', national_team:true}},
+    {match_id:'restricted', payload:{status:'LIVE'}},
+    {match_id:'third', payload:{status:'LIVE'}},
+  ];
+  const routeStates = {
+    flexible:{status:'RESOLVED', resolvedChannel:'One', providerIds:['A','B']},
+    restricted:{status:'RESOLVED', resolvedChannel:'Two', providerIds:['A']},
+    third:{status:'RESOLVED', resolvedChannel:'Three', providerIds:['I']},
+  };
+  const providerCatalog = {providers:{A:{},B:{},I:{}}};
+  const plan = buildProjectAssignmentPlan({matches,routeStates,providerCatalog,maxResources:3});
+  assert.deepEqual(plan.assignments.map(a => [a.matchId,a.providerId]), [['flexible','B'],['restricted','A'],['third','I']]);
+  assert.equal(plan.ignored.length, 0);
+  const repeated = buildProjectAssignmentPlan({matches,routeStates,providerCatalog,maxResources:3,previousAssignments:plan.assignments});
+  assert.deepEqual(repeated.assignments.map(a => a.providerId), ['B','A','I']);
+});
+
+test('national and VIP priority works with the Arabic names provided by Kooora', () => {
+  assert.ok(scoreProjectMatch({home_team:'المغرب', away_team:'مالي'}, '') >= 1000);
+  assert.equal(scoreEvent({home_team:'ريال مدريد', tier:0}, {vipTeams:['Real Madrid']}), 500);
+});
+
+test('hidden API fixtures do not reserve workers intended for the shared Kooora public feed', () => {
+  const matches = [
+    {match_id:'visible', source:'kooora', league:'المباريات الودية', home_team:'المغرب', away_team:'مالي'},
+    {match_id:'api-only', source:'api-football', league:'Premier League', home_team:'Liverpool', away_team:'Arsenal'},
+    {match_id:'gulf', source:'api-football', league:'كأس الخليج', home_team:'قطر', away_team:'السعودية'},
+    {match_id:'excluded', source:'kooora', league:'Friendlies Women', home_team:'Morocco Women', away_team:'Mali Women'},
+  ];
+  assert.deepEqual(publicAssignmentMatches(matches).map(m=>m.match_id), ['visible','gulf']);
 });

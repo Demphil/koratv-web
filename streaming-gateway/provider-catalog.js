@@ -59,7 +59,9 @@ export function createProviderCatalog(env = process.env) {
     if (ignored) {
       return {
         matchId: id,
-        status: 'WAITING',
+        status: ignored.reason === 'not_due' ? 'SCHEDULED'
+          : ignored.reason === 'ended' ? 'ENDED'
+          : ignored.reason === 'unavailable' ? 'UNAVAILABLE' : 'WAITING',
         providerId: null,
         requestedChannel: ignored.requestedChannel || null,
         resolvedChannel: ignored.resolvedChannel || null,

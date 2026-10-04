@@ -3,7 +3,9 @@ import { mkdir, readFile, writeFile, rename, chmod } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { basePriority } from '../priority.js';
-import { sameFixture } from '../../shared/match-broadcasts.mjs';
+import { sameFixture, teamIdentity } from '../../shared/match-broadcasts.mjs';
+import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
+import { isAllowedMatch, isGulfCupLeague } from '../../shared/league-whitelist.mjs';
 
 const DEFAULT_MAX_RESOURCES = 8;
 const DEFAULT_NATIONAL_TEAM_POINTS = 1000;
@@ -28,15 +30,6 @@ const SITE_MANUAL_KEYS = [
   'frajatv',
   'fraja'
 ];
-
-function normalizeName(value) {
-  return String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
-}
 
 function parseList(value) {
   if (Array.isArray(value)) return value;
@@ -101,11 +94,9 @@ export function scoreEvent(event = {}, {
   let score = 0;
   if (event.national_team === true || event.is_national_team === true) score += nationalTeamPoints;
 
-  const teams = [event.home_team, event.away_team, event.homeTeam, event.awayTeam]
-    .map(normalizeName)
-    .filter(Boolean);
-  const vip = new Set(vipTeams.map(normalizeName).filter(Boolean));
-  if (teams.some((team) => vip.has(team))) score += vipTeamPoints;
+  const vip = new Set(vipTeams.map(teamIdentity));
+  if ([event.home_team, event.away_team, event.homeTeam, event.awayTeam].filter(Boolean)
+    .some(team => vip.has(teamIdentity(team)))) score += vipTeamPoints;
 
   const tier = Number(event.competition_tier ?? event.tier ?? 3);
   score += Number(tierPoints[tier] || 0);
@@ -159,7 +150,9 @@ export function buildAssignmentPlan({
 function matchNationalFlag(match = {}) {
   const payload = match.payload || {};
   return Boolean(match.national_team || match.is_national_team || payload.national_team || payload.is_national_team
-    || payload.homeTeam?.national || payload.awayTeam?.national || payload.teams?.home?.national || payload.teams?.away?.national);
+    || payload.homeTeam?.national || payload.awayTeam?.national || payload.teams?.home?.national || payload.teams?.away?.national
+    || [match.home_team || match.homeTeam, match.away_team || match.awayTeam]
+      .filter(Boolean).some(name => teamIdentity(name).startsWith('country:')));
 }
 
 export function scoreProjectMatch(match = {}, channel = '', options = {}) {
@@ -179,10 +172,13 @@ export function buildProjectAssignmentPlan({
   providerCatalog = {},
   maxResources = DEFAULT_MAX_RESOURCES,
   manualMatchIds = [],
+  previousAssignments = [],
   now = new Date(),
   options = {},
 } = {}) {
   const generatedAt = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+  const nowMs = new Date(now).getTime();
+  const opensBeforeMinutes = Math.max(0, Number(options.opensBeforeMinutes ?? 20));
   const manualRank = new Map(manualMatchIds
     .map((id) => String(id || '').trim())
     .filter(Boolean)
@@ -190,17 +186,20 @@ export function buildProjectAssignmentPlan({
     .map((id, index) => [id, index]));
   const enabledProviders = Object.entries(providerCatalog.providers || {})
     .filter(([, provider]) => provider?.enabled !== false)
-    .map(([id]) => id)
-    .slice(0, maxResources);
+    .map(([id]) => id);
+
+  const deferred = [];
 
   const rows = matches
     .map((match) => {
       const matchId = match.match_id || match.id;
       const state = routeStates[matchId];
       if (!matchId || !state || state.status !== 'RESOLVED' || !state.resolvedChannel) return null;
-      const providerIds = (state.providerIds || []).filter((id) => enabledProviders.includes(id));
+      const previous = previousAssignments.find(item => item.matchId === matchId || item.aliases?.includes(matchId));
+      const providerIds = (state.providerIds || []).filter((id) => enabledProviders.includes(id))
+        .sort((a, b) => Number(b === previous?.providerId) - Number(a === previous?.providerId));
       if (!providerIds.length) return null;
-      return {
+      const row = {
         matchId,
         match,
         state,
@@ -208,6 +207,13 @@ export function buildProjectAssignmentPlan({
         manualRank: manualRank.has(matchId) ? manualRank.get(matchId) : null,
         priorityScore: scoreProjectMatch(match, state.resolvedChannel, options),
       };
+      const phase = sourceMatchState(match.payload || match);
+      const kickoff = Date.parse(match.kickoff_time || match.start_time || '');
+      const reason = match.active === false || phase === 'unavailable' ? 'unavailable'
+        : phase === 'ended' ? 'ended'
+        : phase !== 'live' && (!Number.isFinite(kickoff) || kickoff > nowMs + opensBeforeMinutes * 60_000) ? 'not_due' : null;
+      if (reason) { deferred.push({ ...row, reason }); return null; }
+      return { ...row, phase };
     })
     .filter(Boolean)
     .sort((a, b) => {
@@ -215,6 +221,7 @@ export function buildProjectAssignmentPlan({
       const bManual = b.manualRank !== null;
       if (aManual !== bManual) return aManual ? -1 : 1;
       if (aManual && bManual && a.manualRank !== b.manualRank) return a.manualRank - b.manualRank;
+      if ((a.phase === 'live') !== (b.phase === 'live')) return a.phase === 'live' ? -1 : 1;
       if (b.priorityScore !== a.priorityScore) return b.priorityScore - a.priorityScore;
       const aTime = Date.parse(a.match.kickoff_time || a.match.start_time || '') || Number.MAX_SAFE_INTEGER;
       const bTime = Date.parse(b.match.kickoff_time || b.match.start_time || '') || Number.MAX_SAFE_INTEGER;
@@ -239,16 +246,35 @@ export function buildProjectAssignmentPlan({
     uniqueRows[duplicateIndex] = { ...kept, priorityScore: Math.max(previous.priorityScore, row.priorityScore),
       aliases: [...previous.aliases, alias] };
   }
-  const usedProviders = new Set();
+  const providerOwners = new Map();
+  const providerFor = new Map();
+  // Rehome a flexible event instead of stranding one that has only one provider.
+  const reserveProvider = (row, visited = new Set()) => {
+    const candidates = [...row.providerIds].sort((a,b) => Number(providerOwners.has(a)) - Number(providerOwners.has(b)));
+    for (const id of candidates) {
+      if (visited.has(id)) continue;
+      visited.add(id);
+      const owner = providerOwners.get(id);
+      if (!owner || reserveProvider(owner, visited)) {
+        providerOwners.set(id, row);
+        providerFor.set(row, id);
+        return true;
+      }
+    }
+    return false;
+  };
   const assignments = [];
   const ignored = [];
+  const selected = [];
   for (const row of uniqueRows) {
-    const providerId = row.providerIds.find((id) => !usedProviders.has(id));
-    if (!providerId || assignments.length >= maxResources) {
-      ignored.push({ ...row, reason: providerId ? 'capacity' : 'no_available_provider' });
+    if (selected.length >= maxResources || !reserveProvider(row)) {
+      ignored.push({ ...row, reason: selected.length >= maxResources ? 'capacity' : 'no_available_provider' });
       continue;
     }
-    usedProviders.add(providerId);
+    selected.push(row);
+  }
+  for (const row of selected) {
+    const providerId = providerFor.get(row);
     assignments.push({
       matchId: row.matchId,
       aliases: row.aliases,
@@ -265,6 +291,7 @@ export function buildProjectAssignmentPlan({
       assignedAt: generatedAt,
     });
   }
+  ignored.push(...deferred);
   const represented = new Set([...assignments, ...ignored].flatMap(item => [item.matchId, ...(item.aliases || [])]));
   for (const matchId of manualRank.keys()) {
     if (!represented.has(matchId)) {
@@ -424,6 +451,14 @@ export async function assignEventResources({
   };
 }
 
+export function publicAssignmentMatches(matches) {
+  const allowed = matches.filter(row => isAllowedMatch({league:row.league,
+    leagueCountry:row.payload?.leagueCountry, homeTeam:row.home_team, awayTeam:row.away_team}));
+  const kooora = allowed.filter(row => String(row.source || '').startsWith('kooora'));
+  return [...kooora, ...allowed.filter(row => row.source === 'api-football'
+    && isGulfCupLeague(row.league) && !kooora.some(other => sameFixture(other,row)))];
+}
+
 async function readProjectMatches(supabase, env, dateKey, timezone) {
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
   const lookbackHours = Number(env.RESOURCE_ASSIGNMENT_LOOKBACK_HOURS || env.ROUTE_SYNC_LOOKBACK_HOURS || 18);
@@ -439,7 +474,7 @@ async function readProjectMatches(supabase, env, dateKey, timezone) {
     .order('kickoff_time', { ascending: true, nullsFirst: false })
     .limit(Number(env.RESOURCE_ASSIGNMENT_MATCH_LIMIT || 700));
   if (error) throw new Error(`Match storage unavailable (${error.code || 'network'})`);
-  return (data || []).filter((row) => dateKeyFor(row.kickoff_time, timezone) === dateKey);
+  return publicAssignmentMatches((data || []).filter((row) => dateKeyFor(row.kickoff_time, timezone) === dateKey));
 }
 
 async function writeProjectAssignmentsToSupabase(supabase, env, dateKey, plan) {
@@ -487,11 +522,12 @@ export async function assignProjectMatchResources(env = process.env) {
   const outputPath = env.MATCH_RESOURCE_ASSIGNMENT_PATH || `${dir}/match-resource-assignments.json`;
   const manualSelectionPath = env.MANUAL_MATCH_SELECTION_PATH || `${dir}/manual-match-selection.json`;
   const supabase = createSupabaseClient(env);
-  const [matches, providerCatalog, routeState, manualSelection] = await Promise.all([
+  const [matches, providerCatalog, routeState, manualSelection, previous] = await Promise.all([
     readProjectMatches(supabase, env, dateKey, timezone),
     readJson(providerCatalogPath, { providers: {}, channels: {} }),
     readJson(routeStatePath, { matches: {} }),
     readJson(manualSelectionPath, { enabled: false }),
+    readJson(outputPath, { assignments: [] }),
   ]);
   const manualMatchIds = parseManualMatchSelection(manualSelection, { dateKey });
   const plan = buildProjectAssignmentPlan({
@@ -500,7 +536,9 @@ export async function assignProjectMatchResources(env = process.env) {
     providerCatalog,
     maxResources: Number(env.MAX_EVENT_RESOURCES || DEFAULT_MAX_RESOURCES),
     manualMatchIds,
+    previousAssignments: previous.assignments || [],
     options: {
+      opensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || 20),
       vipTeams: parseList(env.VIP_TEAMS || 'Real Madrid,Barcelona,Manchester City,Liverpool,Arsenal,Bayern Munich,Paris Saint-Germain,Raja Casablanca,Wydad AC,FAR Rabat,Renaissance Berkane'),
       tierPoints: DEFAULT_TIER_POINTS,
     },

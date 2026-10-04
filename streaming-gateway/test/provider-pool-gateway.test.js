@@ -178,6 +178,7 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
 
 test('provider prewarm leases assigned resources before the first viewer', async t => {
   const calls = [];
+  let assignedMatchId = 'assigned-live';
   const config = {
     providerPoolEnabled: true,
     prewarmAssignedResources: true,
@@ -196,14 +197,14 @@ test('provider prewarm leases assigned resources before the first viewer', async
     sourceForOrigin: () => 'kooora',
     upstreamUserAgent: 'test',
     providerAssignments: () => ({
-      assignments: [{ matchId: 'assigned-live', providerId: 'A', resolvedChannel: 'beIN SPORTS HD 1' }],
+      assignments: [{ matchId: assignedMatchId, providerId: 'A', resolvedChannel: assignedMatchId === 'assigned-live' ? 'beIN SPORTS HD 1' : 'beIN SPORTS HD 2' }],
       ignored: []
     }),
     getPlaybackForSource: async (_, id) => ({
       is_streaming_active: true,
       match_id: id,
       pool_key: id,
-      channel_id: 'beIN SPORTS HD 1',
+      channel_id: id === 'assigned-live' ? 'beIN SPORTS HD 1' : 'beIN SPORTS HD 2',
       priority_score: 100,
       stream_url: `https://a.example/${id}/main.m3u8`,
       provider_sources: { A: `https://a.example/${id}/main.m3u8` }
@@ -234,4 +235,8 @@ test('provider prewarm leases assigned resources before the first viewer', async
   assert.equal(state.failed, 0);
   assert.ok(calls.includes('https://a.example/assigned-live/main.m3u8'));
   assert.deepEqual(app.locals.providerPool.snapshot().map((item) => [item.provider, item.channel]), [['A', 'beIN SPORTS HD 1']]);
+  assignedMatchId = 'new-live';
+  const next = await app.locals.prewarmAssignedResources('rotation');
+  assert.equal(next.warmed, 1);
+  assert.deepEqual(app.locals.providerPool.snapshot().map(item => [item.provider, item.channel]), [['A','beIN SPORTS HD 2']]);
 });

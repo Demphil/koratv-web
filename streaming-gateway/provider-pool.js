@@ -25,6 +25,11 @@ export class ProviderPool {
     demand.lastSeen = this.now(); demand.viewers.set(viewer, this.now());
     return true;
   }
+  releaseViewer(key, viewer) {
+    const removed = this.demands.get(key)?.viewers.delete(viewer) || false;
+    if (removed) this.rebalance();
+    return removed;
+  }
   revoke(provider) {
     const lease = this.leases.get(provider);
     lease?.controller.abort(); this.leases.delete(provider);

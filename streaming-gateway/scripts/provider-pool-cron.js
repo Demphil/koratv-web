@@ -1,9 +1,8 @@
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 const catalogLock = process.env.PROVIDER_CATALOG_LOCK_PATH || '/etc/koratv/provider-catalog.lock';
 const routeLock = process.env.DIRECT_MATCH_ROUTE_STATE_LOCK_PATH || '/etc/koratv/direct-match-route-state.lock';
 const assignmentLock = process.env.MATCH_RESOURCE_ASSIGNMENT_LOCK_PATH || '/etc/koratv/match-resource-assignment.lock';
-const intervalMs = Math.max(15 * 60_000, Number(process.env.PROVIDER_POOL_SYNC_INTERVAL_MS || 4 * 60 * 60_000));
-let running = false;
 
 function runLocked(lock, script) {
   return new Promise((resolve) => {
@@ -13,23 +12,39 @@ function runLocked(lock, script) {
       console.error(`${script} could not start`);
       resolve(1);
     });
-    child.on('exit', (code) => resolve(code || 0));
+    child.on('exit', (code) => resolve(code ?? 1));
   });
 }
 
-async function sync() {
-  if (running) return;
-  running = true;
-  try {
-    const catalogCode = await runLocked(catalogLock, 'scripts/sync-provider-pool.js');
-    if (catalogCode && catalogCode !== 75) console.error(`Catalog sync exited ${catalogCode}; existing catalog retained`);
-    const routeCode = await runLocked(routeLock, 'scripts/maintenance-sync.js');
-    if (routeCode && routeCode !== 75) console.error(`Route state sync exited ${routeCode}; existing route state retained`);
-    const assignmentCode = await runLocked(assignmentLock, 'scripts/resource-assignment.js');
-    if (assignmentCode && assignmentCode !== 75) console.error(`Resource assignment sync exited ${assignmentCode}; existing assignment state retained`);
-  } finally {
-    running = false;
-  }
+export function createProviderSyncScheduler({ run = runLocked, now = Date.now, env = process.env, log = console.error } = {}) {
+  const catalogInterval = Math.max(15 * 60_000, Number(env.PROVIDER_POOL_SYNC_INTERVAL_MS || 4 * 60 * 60_000));
+  let running = false;
+  let nextCatalogAt = 0;
+  return async function tick() {
+    if (running) return false;
+    running = true;
+    try {
+      if (now() >= nextCatalogAt) {
+        const code = await run(catalogLock, 'scripts/sync-provider-pool.js');
+        nextCatalogAt = now() + (code === 0 ? catalogInterval : 5 * 60_000);
+        if (code && code !== 75) log(`Catalog sync exited ${code}; existing catalog retained`);
+      }
+      const routeCode = await run(routeLock, 'scripts/maintenance-sync.js');
+      if (routeCode) {
+        if (routeCode !== 75) log(`Route state sync exited ${routeCode}; existing route state retained`);
+        return false;
+      }
+      const assignmentCode = await run(assignmentLock, 'scripts/resource-assignment.js');
+      if (assignmentCode && assignmentCode !== 75) log(`Resource assignment sync exited ${assignmentCode}; existing assignment state retained`);
+      return assignmentCode === 0;
+    } finally { running = false; }
+  };
 }
-setInterval(sync, intervalMs);
-sync();
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const sync = createProviderSyncScheduler();
+  const intervalMs = Math.max(15_000, Number(process.env.MATCH_RESOURCE_SYNC_INTERVAL_MS || 60_000));
+  const tick = () => sync().catch(error => console.error(`Resource sync failed: ${error.message}`));
+  setInterval(tick, intervalMs);
+  tick();
+}

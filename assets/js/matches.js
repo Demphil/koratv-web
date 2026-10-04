@@ -377,12 +377,18 @@ function renderSection(container, matches, message) {
   }
 }
 
-function compareBroadcastPriority(a, b) {
-  const group = match => match.playbackState === 'ended' ? 3
-    : match.resourceStatus === 'ASSIGNED' ? 0
-    : match.sourceReady === true ? 1 : 2;
+function compareBroadcastPriority(a, b, now = new Date()) {
+  const start = match => matchStartDate(match)?.getTime() || 0;
+  const phase = match => frontendMatchState(match, (start(match) - now.getTime()) / 60000);
+  const group = match => phase(match) === 'ended' ? 4
+    : (match.resourceStatus === 'WAITING' && match.sourceReady !== true)
+      || (phase(match) === 'live' && match.resourceStatus !== 'ASSIGNED' && match.sourceReady !== true) ? 3
+    : phase(match) === 'live' ? 0
+    : start(match) <= now.getTime() + 60 * 60000 ? 1 : 2;
   const difference = group(a) - group(b);
   if (difference) return difference;
+  const timeDifference = group(a) === 0 ? start(b) - start(a) : start(a) - start(b);
+  if (timeDifference) return timeDifference;
   if (group(a) === 0) {
     const rank = match => Number(match.broadcastRank) > 0 ? Number(match.broadcastRank) : Number.MAX_SAFE_INTEGER;
     return rank(a) - rank(b);
@@ -406,22 +412,7 @@ function renderMatchCollections(rawTodayMatches, rawTomorrowMatches) {
   });
 
   function sortMatches(a, b) {
-      const broadcastOrder = compareBroadcastPriority(a, b);
-      if (broadcastOrder) return broadcastOrder;
-      const diffA = (matchStartDate(a) - now) / 60000;
-      const diffB = (matchStartDate(b) - now) / 60000;
-      const getTier = (match, diff) => {
-          const state = frontendMatchState(match, diff);
-          if (state === 'live') return 1;
-          if (state === 'ended') return 4;
-          if (diff > 0 && diff <= 60) return 2;
-          return 3;
-      };
-
-      const tierA = getTier(a, diffA);
-      const tierB = getTier(b, diffB);
-      if (tierA !== tierB) return tierA - tierB;
-      return tierA === 1 ? matchStartDate(b) - matchStartDate(a) : matchStartDate(a) - matchStartDate(b);
+      return compareBroadcastPriority(a, b, now);
   }
 
   trueTodayMatches.sort(sortMatches);

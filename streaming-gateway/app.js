@@ -493,6 +493,13 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const assignments = (config.providerAssignments?.().assignments || [])
         .filter((assignment) => assignment?.matchId && assignment?.providerId)
         .slice(0, config.prewarmMaxResources || 8);
+      const scheduledViewers = new Set(assignments.map(item => `prewarm:${item.matchId}`));
+      for (const [key, viewerId] of prewarmKeepalive) {
+        if (!scheduledViewers.has(viewerId)) {
+          providerPool.releaseViewer(key, viewerId);
+          prewarmKeepalive.delete(key);
+        }
+      }
       for (const assignment of assignments) {
         const result = {
           matchId: assignment.matchId,
@@ -520,7 +527,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       prewarmState.warmed = results.filter((item) => item.ok).length;
       prewarmState.failed = results.length - prewarmState.warmed;
       for (const key of [...prewarmKeepalive.keys()]) {
-        if (!currentKeys.has(key)) prewarmKeepalive.delete(key);
+        if (!currentKeys.has(key)) {
+          providerPool.releaseViewer(key, prewarmKeepalive.get(key));
+          prewarmKeepalive.delete(key);
+        }
       }
       return prewarmState;
     } finally {
