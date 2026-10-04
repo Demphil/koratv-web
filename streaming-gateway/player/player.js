@@ -557,7 +557,7 @@ async function prepareLiveUpdates(matchId) {
   return true;
 }
 
-async function start() {
+async function start({ forceNewSession = false } = {}) {
   if (!enforceEmbedIntegrity()) return;
   notifyParent('connecting');
   showLoading('جاري تجهيز البث...', 'يتم إنشاء جلسة مشاهدة آمنة');
@@ -605,7 +605,10 @@ async function start() {
     if (!resolvedMatchId || (resolvedMatchId !== matchId && publicMatchId(resolvedMatchId) !== matchId)) throw new Error('Match identity mismatch');
     return { token: data.token, singleQuality: data.singleQuality === true, qualities: data.qualities || [], channelName: data.channelName || ticket.channelName || '', matchId: resolvedMatchId, expiresAt: Date.now() + data.expiresIn * 1000 };
   };
-  if (embeddedMatchId) {
+  if (forceNewSession && activeMatchId) {
+    session = await createSessionForMatch(activeMatchId);
+    try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
+  } else if (embeddedMatchId) {
     activeMatchId = currentMatchInfo?.matchId || embeddedMatchId;
     rememberMatchId(activeMatchId);
     const stored = readStoredSession();
@@ -1098,6 +1101,22 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeEmbedModal();
 });
 embedButton?.addEventListener('click', openEmbedModal);
+let operatorRefreshRunning = false;
+window.refreshOperatorPlayback = async () => {
+  if (operatorRefreshRunning || !activeMatchId) return;
+  operatorRefreshRunning = true;
+  const wasPlaying = !video.paused;
+  clearTimeout(expiryTimer); clearInterval(matchTimer); clearInterval(poolHeartbeatTimer);
+  clearTimeout(retryTimer); clearTimeout(loadTimer);
+  hls?.destroy(); hls = null;
+  try {
+    try { sessionStorage.removeItem(sessionKey); } catch {}
+    resumePlayback = wasPlaying;
+    await start({ forceNewSession: true });
+  } catch { showLoading('جاري تحديث القناة', 'تتم إعادة المحاولة تلقائياً'); setTimeout(() => window.refreshOperatorPlayback(), 5000); }
+  finally { operatorRefreshRunning = false; }
+};
+
 refreshStreamButton?.addEventListener('click', () => {
   if (sessionExpiresAt > Date.now() && hlsSessionToken) {
     networkRetries = 0;

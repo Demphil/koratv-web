@@ -6,6 +6,7 @@ import { basePriority } from '../priority.js';
 import { sameFixture, teamIdentity } from '../../shared/match-broadcasts.mjs';
 import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
 import { isAllowedMatch, isGulfCupLeague } from '../../shared/league-whitelist.mjs';
+import { operatorPath, readOperatorState } from '../operator-state.js';
 
 const DEFAULT_MAX_RESOURCES = 8;
 const DEFAULT_NATIONAL_TEAM_POINTS = 1000;
@@ -529,7 +530,8 @@ export async function assignProjectMatchResources(env = process.env) {
     readJson(manualSelectionPath, { enabled: false }),
     readJson(outputPath, { assignments: [] }),
   ]);
-  const manualMatchIds = parseManualMatchSelection(manualSelection, { dateKey });
+  const operator = await readOperatorState(operatorPath(env));
+  const manualMatchIds = parseManualMatchSelection(operator.selection?.date === dateKey ? operator.selection : manualSelection, { dateKey });
   const plan = buildProjectAssignmentPlan({
     matches,
     routeStates: routeState.matches || {},

@@ -10,7 +10,7 @@ export function createSnapshotReader(load, { ttlMs = 15000, staleMs = 120000, no
     }).finally(() => { pending = null; });
     return pending;
   };
-  return () => {
+  const read = () => {
     const age = now() - updatedAt;
     if (value !== undefined && age < ttlMs) return Promise.resolve(value);
     if (value !== undefined && age < ttlMs + staleMs) {
@@ -19,4 +19,6 @@ export function createSnapshotReader(load, { ttlMs = 15000, staleMs = 120000, no
     }
     return refresh();
   };
+  read.refresh = refresh;
+  return read;
 }

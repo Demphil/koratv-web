@@ -73,6 +73,13 @@ jobs:
           cp secure-streaming/scripts/prune-match-data.js _oracle-sync/metadata/
           cp secure-streaming/src/lib/loadEnv.js secure-streaming/src/lib/supabaseAdmin.js _oracle-sync/metadata/
           cp ecosystem.oracle.config.js _oracle-sync/ecosystem.oracle.config.js
+      - name: Prepare private console password hash
+        env:
+          PASSWORD_HASH: ${{ secrets.BROADCAST_ADMIN_PASSWORD_HASH }}
+        run: |
+          test -n "$PASSWORD_HASH"
+          printf '%s' "$PASSWORD_HASH" > _oracle-sync/operator-password-hash
+          chmod 0600 _oracle-sync/operator-password-hash
       - name: Check Oracle SSH configuration
         env:
           ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
@@ -150,6 +157,15 @@ jobs:
             install -m 0644 "$STAGING/ecosystem.oracle.config.js" "$RELEASE/ecosystem.oracle.config.js"
 
             cd /opt/koratv/current/streaming-gateway
+            node --input-type=module - "$STAGING/operator-password-hash" <<'NODE'
+            import {readFileSync, writeFileSync} from 'node:fs';
+            const hash=readFileSync(process.argv[2],'utf8').trim();
+            if(!/^scrypt:[a-f0-9]{32}:[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid operator password hash');
+            const path='/etc/koratv/gateway.env';
+            const lines=readFileSync(path,'utf8').split(/\r?\n/).filter(line=>!line.startsWith('BROADCAST_ADMIN_PASSWORD_HASH='));
+            lines.push('BROADCAST_ADMIN_PASSWORD_HASH='+hash);
+            writeFileSync(path,lines.join('\n'),{mode:0o600});
+            NODE
             rm -f .env
             ln -s /etc/koratv/gateway.env .env
             npm ci --omit=dev --no-audit --fund=false

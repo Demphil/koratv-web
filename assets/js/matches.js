@@ -445,6 +445,16 @@ window.refreshLiveMatches = () => loadAndRenderMatches({ force: true }).catch(er
 });
 
 function startLiveRefresh() {
+    const updates = new EventSource(`${STREAM_API_ORIGIN}/api/broadcast-events`);
+    let revision;
+    updates.addEventListener('control', event => {
+        try {
+            const next = JSON.parse(event.data).revision;
+            if (revision !== undefined && next !== revision) window.refreshLiveMatches();
+            revision = next;
+        } catch {}
+    });
+    window.addEventListener('pagehide', () => updates.close(), { once: true });
     setInterval(() => {
         if (document.hidden) return;
         loadAndRenderMatches({ force: true }).catch(error => {

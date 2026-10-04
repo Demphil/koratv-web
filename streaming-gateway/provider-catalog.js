@@ -2,6 +2,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { findChannelNameMatch, createChannelNameMatcher } from '../shared/channel-name-match.mjs';
 import { normalizeName, beinRegion, isProviderChannelCompatible, isCatalogChannelSourceVerified } from '../shared/provider-channel-match.mjs';
 import { PROVIDER_IDS } from './provider-pool.js';
+import { activeOperatorOverride, operatorPath } from './operator-state.js';
 
 export function selectProviderChannel(match) {
   const qualityRank = candidate => /\b(?:4k|uhd|fhd|1080p)\b/i.test(candidate.source_name) ? 1 : /\b(?:hd|720p)\b/i.test(candidate.source_name) ? 0 : 2;
@@ -24,6 +25,7 @@ export function createProviderCatalog(env = process.env) {
   const fileVersions = new Map();
   const resolvedNames = new Map();
   let sourceAliases = [], channelAliases = [];
+  let operator = {};
   let sourceMatcher = () => null, channelMatcher = () => null;
   const loadChanged = (path, previous) => {
     try {
@@ -93,6 +95,7 @@ export function createProviderCatalog(env = process.env) {
       channelMatcher = createChannelNameMatcher(channelAliases.map(row => row.alias));
     }
     overrides = loadChanged(env.MANUAL_BROADCAST_OVERRIDE_PATH || '/etc/koratv/manual-broadcast-override.json', overrides);
+    operator = loadChanged(operatorPath(env), operator);
     routeState = loadChanged(env.DIRECT_MATCH_ROUTE_STATE_PATH || '/etc/koratv/direct-match-route-state.json', routeState);
     activeCatalog = loadChanged(env.ACTIVE_CATALOG_PATH || '/etc/koratv/active-catalog.json', activeCatalog);
     assignments = loadChanged(env.MATCH_RESOURCE_ASSIGNMENT_PATH || '/etc/koratv/match-resource-assignments.json', assignments);
@@ -172,7 +175,10 @@ export function createProviderCatalog(env = process.env) {
       return null;
     },
     override(matchId) {
-      refresh(); const item = overrides.matches?.[matchId];
+      refresh();
+      const chosen = activeOperatorOverride(operator, matchId);
+      if (chosen) return chosen;
+      const item = overrides.matches?.[matchId];
       if (!item || item.enabled === false || !Number.isFinite(Date.parse(item.expiresAt)) || Date.parse(item.expiresAt) <= Date.now()) return null;
       return typeof item.channel === 'string' ? item.channel : null;
     },

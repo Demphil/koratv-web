@@ -1,0 +1,80 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import express from 'express';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { registerOperatorConsole } from '../operator-console.js';
+import { hashOperatorPassword, verifyOperatorPassword } from '../operator-auth.js';
+import { validateSelection, validateNotices, publicControlState, emptyOperatorState, activeOperatorOverride } from '../operator-state.js';
+import { createProviderCatalog } from '../provider-catalog.js';
+
+test('operator selections and notice schedules reject invalid limits and raw markup stays plain text', () => {
+  const available = new Set(['a', 'b']);
+  assert.deepEqual(validateSelection({ enabled: true, matches: ['b', 'a'] }, available).matches, ['b', 'a']);
+  for (const matches of [['a', 'a'], ['unknown'], Array.from({ length: 9 }, (_, i) => String(i))]) assert.throws(() => validateSelection({ enabled: true, matches }, available));
+  const valid = { enabled: true, items: [{ text: '<script>no execution</script>', image: '' }], repeats: 2, duration: 5, interval: 5, matchIds: [] };
+  assert.equal(validateNotices(valid).items[0].text, valid.items[0].text);
+  assert.throws(() => validateNotices({ ...valid, repeats: 0 }));
+  assert.throws(() => validateNotices({ ...valid, duration: 60 }));
+  assert.throws(() => validateNotices({ ...valid, items: [{ text: 'x', image: 'javascript:alert(1)' }] }));
+  const state = { ...emptyOperatorState(), selection: { matches: ['private-match'] }, overrides: { 'private-match': { channel: 'private' } }, channels: { 'private-match': 'version' } };
+  assert.equal(JSON.stringify(publicControlState(state)).includes('private-match'), false);
+  assert.equal(JSON.stringify(publicControlState(state)).includes('overrides'), false);
+});
+
+test('operator login, CSRF, protected jobs, image validation and realtime notice stop', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'operator-test-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const password = 'test-only-long-private-password';
+  const hash = await hashOperatorPassword(password);
+  assert.equal(await verifyOperatorPassword('wrong', hash), false);
+  const values = new Map();
+  const redis = { get: async key => values.get(key), set: async (key, value) => values.set(key, value), del: async key => values.delete(key), incr: async key => { const next = Number(values.get(key) || 0) + 1; values.set(key, next); return next; }, expire: async () => {} };
+  const config = { api: '', operatorPasswordHash: hash, operatorControlPath: join(dir, 'control.json'), operatorMediaPath: join(dir, 'media'), providerChannels: () => ({ 'On Sport Plus': { sourceNames: { A: 'EG On Sport Plus HD' }, A: 'https://secret/user/password' } }) };
+  const app = express(); app.use(express.json({ limit: '260kb' }));
+  let channelCalls = 0, applyCalls = 0;
+  registerOperatorConsole(app, { config, redis, clientIp: () => 'test-ip', getMatches: async () => [{ matchId: 'fixture', homeTeam: 'Home', awayTeam: 'Away' }],
+    prepareChannel: async () => { channelCalls++; throw new Error('channel_probe_failed'); }, applyResources: async () => { applyCalls++; }, status: () => ({}) });
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  config.api = `http://127.0.0.1:${server.address().port}`;
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const get = (path, headers = {}) => fetch(config.api + path, { headers });
+  const post = (path, body, headers = {}) => fetch(config.api + path, { method: 'POST', headers: { Origin: config.api, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  assert.equal((await get('/api/operator/state')).status, 401);
+  assert.equal((await post('/api/operator/login', { username: 'admin', password }, { Origin: 'https://evil.test' })).status, 403);
+  const login = await post('/api/operator/login', { username: 'admin', password }); assert.equal(login.status, 200);
+  const setCookie = login.headers.get('set-cookie'); assert.match(setCookie, /Secure; HttpOnly; SameSite=Strict/); assert.match(setCookie, /^__Host-/);
+  const credentials = { Cookie: setCookie.split(';')[0], 'X-Operator-CSRF': (await login.json()).csrf };
+  const state = await (await get('/api/operator/state', credentials)).json();
+  assert.equal(JSON.stringify(state).includes('https://secret'), false);
+  assert.equal((await post('/api/operator/selection', { enabled: true, matches: ['fixture'] }, { Cookie: credentials.Cookie })).status, 403);
+  const jobResponse = await post('/api/operator/channel', { matchId: 'fixture', channel: 'New Channel' }, credentials); assert.equal(jobResponse.status, 202);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(channelCalls, 1); assert.equal(applyCalls, 0);
+  await assert.rejects(readFile(config.operatorControlPath));
+  const selection = await post('/api/operator/selection', { enabled: true, matches: ['fixture'] }, credentials); assert.equal(selection.status, 202);
+  await new Promise(resolve => setTimeout(resolve, 40)); assert.equal(applyCalls, 1);
+  const controller = new AbortController();
+  const stream = await fetch(`${config.api}/api/broadcast-events`, { signal: controller.signal }); const reader = stream.body.getReader();
+  assert.match(new TextDecoder().decode((await reader.read()).value), /event: control/);
+  const notice = { enabled: true, items: [{ text: 'Live notice', image: '' }], repeats: 2, duration: 5, interval: 5, matchIds: [] };
+  assert.equal((await post('/api/operator/notices', notice, credentials)).status, 200);
+  assert.match(new TextDecoder().decode((await reader.read()).value), /Live notice/);
+  assert.equal((await post('/api/operator/notices/stop', {}, credentials)).status, 200);
+  assert.match(new TextDecoder().decode((await reader.read()).value), /"enabled":false/);
+  controller.abort();
+  assert.equal((await post('/api/operator/image', { image: 'data:image/png;base64,aW52YWxpZA==' }, credentials)).status, 400);
+  assert.equal((await post('/api/operator/logout', {}, credentials)).status, 200);
+  assert.equal((await get('/api/operator/state', credentials)).status, 401);
+});
+
+test('operator broadcaster correction wins over repository files and expires safely', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'operator-catalog-test-')); t.after(() => rm(dir, { recursive: true, force: true }));
+  const operator = { overrides: { fixture: { channel: 'On Sport Plus', enabled: true, expiresAt: new Date(Date.now() + 60000).toISOString() } } };
+  await writeFile(join(dir, 'operator.json'), JSON.stringify(operator));
+  await writeFile(join(dir, 'old.json'), JSON.stringify({ matches: { fixture: { channel: 'Old Channel', expiresAt: new Date(Date.now() + 60000).toISOString() } } }));
+  const catalog = createProviderCatalog({ OPERATOR_CONTROL_PATH: join(dir, 'operator.json'), MANUAL_BROADCAST_OVERRIDE_PATH: join(dir, 'old.json') });
+  assert.equal(catalog.override('fixture'), 'On Sport Plus');
+  assert.equal(activeOperatorOverride(operator, 'fixture', Date.now() + 120000), null);
+});

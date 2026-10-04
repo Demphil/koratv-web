@@ -4,6 +4,7 @@ import { PROVIDER_IDS } from '../provider-pool.js';
 import { credentialsFromCatalog, discoverProvider } from '../provider-direct.js';
 import { applyProviderDiscovery } from '../provider-catalog-update.js';
 import { broadcastChannelCandidates } from '../../shared/match-broadcasts.mjs';
+import { operatorPath, readOperatorState, activeOperatorOverride } from '../operator-state.js';
 
 const dir = process.env.PROVIDER_POOL_DIR || '/etc/koratv';
 const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
@@ -37,7 +38,9 @@ const extraTargetChannels = String(process.env.PROVIDER_SYNC_EXTRA_CHANNELS || '
   .split(',')
   .map((name) => name.trim())
   .filter(Boolean);
+const operator = await readOperatorState(operatorPath());
 const canonicalNames = [...new Set([
+  ...Object.keys(operator.overrides).map(id => activeOperatorOverride(operator, id)).filter(Boolean),
   ...defaultTargetChannels,
   ...extraTargetChannels,
   ...(channels || []).map((channel) => channel?.name).filter(Boolean),

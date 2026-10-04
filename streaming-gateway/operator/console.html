@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>إدارة البث | KoraTV</title><link rel="stylesheet" href="/api/operator/ui/console.css"></head>
+<body>
+  <header><strong>KORA TV <span>إدارة البث</span></strong><div><span id="connection">اتصال آمن</span><button id="refresh" title="تحديث" hidden><img src="/api/operator/ui/icons/refresh-cw" alt=""></button><button id="logout" title="تسجيل الخروج" hidden><img src="/api/operator/ui/icons/log-out" alt=""></button></div></header>
+  <main>
+    <form id="login" class="login"><h1>تسجيل الدخول</h1><label>اسم المستخدم<input id="username" autocomplete="username" value="admin" required></label><label>كلمة المرور<input id="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">دخول</button></form>
+    <div id="workspace" hidden>
+      <nav><button class="active" data-view="matches-view">المباريات والموارد</button><button data-view="notices-view">الإشعارات</button></nav>
+      <section id="matches-view">
+        <div class="section-heading"><h1>مباريات اليوم</h1><span id="resource-count"></span></div>
+        <div id="servers" class="servers"></div>
+        <div class="selection-toolbar"><label><input id="manual-enabled" type="checkbox"> تفضيل يدوي</label><span id="selected-count">0 / 8</span><button id="save-selection" class="primary"><img src="/api/operator/ui/icons/save" alt="">حفظ الاختيار</button></div>
+        <div id="selected-list" class="selected-list"></div>
+        <div class="filter-row"><input id="search" type="search" placeholder="بحث عن مباراة أو بطولة" aria-label="بحث"><select id="status-filter" aria-label="حالة المباراة"><option value="all">كل المباريات</option><option value="live">المباشرة</option><option value="assigned">المختارة للبث</option></select></div>
+        <datalist id="channel-names"></datalist>
+        <div id="match-list"></div>
+        <div id="jobs" role="status"></div>
+      </section>
+      <section id="notices-view" hidden>
+        <div class="section-heading"><h1>إشعارات المشغل</h1><button id="stop-notices" class="danger"><img src="/api/operator/ui/icons/square" alt="">إيقاف فوراً</button></div>
+        <div class="notice-settings"><label>عدد دورات العرض<input id="notice-repeats" type="number" min="1" max="50" value="1"></label><label>مدة كل إشعار بالثواني<input id="notice-duration" type="number" min="5" max="20" value="10"></label><label>الفاصل بين الإشعارات بالثواني<input id="notice-interval" type="number" min="5" max="3600" value="300"></label><label>جهة العرض<select id="notice-target"><option value="all">كل المشغلات والـ embed</option><option value="selected">المباريات المحددة في اللوحة</option></select></label></div>
+        <div id="notice-list"></div>
+        <div class="notice-actions"><button id="add-notice"><img src="/api/operator/ui/icons/plus" alt="">إضافة إشعار</button><button id="publish-notices" class="primary"><img src="/api/operator/ui/icons/send" alt="">نشر الآن</button></div>
+        <h2>معاينة</h2><div class="notice-preview"><img id="preview-image" hidden alt=""><p id="preview-text"></p><span>×</span></div>
+      </section>
+    </div>
+    <p id="message" role="status"></p>
+  </main>
+  <script src="/api/operator/ui/console.js" defer></script>
+</body></html>

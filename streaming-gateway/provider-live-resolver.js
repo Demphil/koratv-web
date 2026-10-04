@@ -88,6 +88,7 @@ export function createProviderLiveResolver({
           provider: providerId,
           status: chosen?.original_url ? 'matched' : 'unmatched',
           matched: chosen?.source_name || null,
+          group: chosen?.group || '',
           upstreamAttempts: (result.attempts || []).map((attempt) => ({
             origin: attempt.origin,
             status: attempt.status || null,

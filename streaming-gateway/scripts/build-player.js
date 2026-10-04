@@ -33,7 +33,7 @@ for (const icon of ['mail', 'trophy', 'scale', 'landmark', 'tv']) {
   await cp(join(dirname(require.resolve('lucide-static/package.json')), 'icons', `${icon}.svg`), `dist/icons/${icon}.svg`);
 }
 await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\nconst STREAM_API_ORIGINS = new Set(${JSON.stringify(apiOrigins)});\n`);
-for (const asset of ['config.js', 'player.js', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'multiview.js',
+for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'multiview.js',
   'hls.min.js', 'plyr.js', 'three.module.min.js', 'three.core.min.js']) {
   const result = await minify(await readFile(`dist/${asset}`, 'utf8'), {
     compress: false, mangle: { toplevel: false }, sourceMap: false, format: { comments: false },
@@ -43,7 +43,7 @@ for (const asset of ['config.js', 'player.js', 'page-depth.js', 'embed-mode.js',
   await writeFile(`dist/${asset}`, result.code + '\n');
 }
 const version = createHash('sha256');
-for (const asset of ['config.js', 'player.js', 'player.css', 'match-ui.css', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
+for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'player.css', 'match-ui.css', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
   version.update(await readFile(`dist/${asset}`));
 }
 const revision = version.digest('hex').slice(0, 12);
