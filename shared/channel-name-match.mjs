@@ -1,4 +1,4 @@
-const PREFIX_NOISE = new Set(['ar', 'spi', 'ma', 'iptv', 'live', 'tv', 'channel', 'chan', 'stream', 'sports']);
+const PREFIX_NOISE = new Set(['ar', 'spi', 'ma', 'eg', 'egy', 'iptv', 'live', 'tv', 'channel', 'chan', 'stream', 'sports']);
 const QUALITY_LABELS = new Set(['hd', 'fhd', 'uhd', '4k', '8k', 'fullhd']);
 const VARIANT_LABELS = new Set(['tnt', 'sd', 'max', 'premium', 'terrestrial', 'eng', 'english', 'fr', 'french', 'tr', 'turkish', 'xtra', 'extra', 'connect']);
 const REQUIRED_BASE_LABELS = new Set(['plus']);
@@ -26,7 +26,7 @@ function tokensFor(value) {
     .replace(/\bbein\s+sports\s+mena\b/g, 'bein sports')
     .replace(/\bsnrt(?:\s+live)?\b/g, 'arryadia tnt')
     .replace(/(?:الرياضيه\s+المغربيه|المغربيه\s+الرياضيه)/gu, ' arryadia ')
-    .replace(/\barryadia\s+(?:hd\s*3|3\s*hd|3)\b/giu, 'arryadia tnt')
+    .replace(/اون\s+(?:تايم\s+)?سبورت(?:س)?\s+(?:بلاس|بلس)/gu, ' on sports plus ')
     .replace(/\b(?:arr?y?adia|arriadia)\b/giu, 'arryadia');
   return normalized.split(/\s+/).filter(Boolean);
 }

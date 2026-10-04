@@ -136,7 +136,7 @@ function channelRule(name) {
       channelVariant: requestedVariant
     };
   }
-  if (normalized.includes('on sport plus') || normalized.includes('اون سبورت بلس') || normalized.includes('on time sport 2') || normalized.includes('اون سبورت 2')) {
+  if (normalized.includes('on sport plus') || normalized.includes('اون سبورت بلس') || normalized.includes('اون سبورت بلاس') || normalized.includes('on time sport 2') || normalized.includes('اون سبورت 2')) {
     return { required: ['on', 'sport', 'plus'], preferred: ['hd'] };
   }
   if (normalized.includes('on sport') || normalized.includes('on time') || normalized.includes('اون سبورت')) {

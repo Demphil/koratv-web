@@ -11,6 +11,13 @@ test('exact Arryadia number and On Sport Plus edition cannot downgrade to the or
   assert.equal(matched.find(row=>row.name==='On Sport Plus').source_name, 'EGY| ON SPORT PLUS HD');
   assert.equal(isCatalogChannelSourceVerified('On Sport Plus', {sourceNames:{A:'EGY| ON SPORT HD'}}, 'A'), false);
   assert.equal(isCatalogChannelSourceVerified('Arryadia 3 HD', {sourceNames:{A:'MA - ARRYADIA 1 HD'}}, 'A'), false);
+  assert.equal(findChannelNameMatch('Arryadia 3 HD', ['Arryadia TNT']), null);
+  assert.equal(findChannelNameMatch('Arryadia TNT', ['Arryadia 3 HD']), null);
+  for (const name of ['أون سبورت بلاس', 'أون سبورت بلس']) {
+    assert.equal(matchChannels([name], entries)[0].source_name, 'EGY| ON SPORT PLUS HD');
+    assert.equal(findChannelNameMatch(name, ['EGY| ON SPORT HD', 'EGY| ON SPORT PLUS HD']), 'EGY| ON SPORT PLUS HD');
+    assert.equal(isCatalogChannelSourceVerified(name, {sourceNames:{A:'EGY| ON SPORT HD'}}, 'A'), false);
+  }
 });
 
 test('matches IPTV prefixes and spelling variants without losing the channel number', () => {
@@ -48,7 +55,7 @@ test('matches Arabic and Latin Arryadia aliases across IPTV prefixes', () => {
   );
   assert.equal(
     findChannelNameMatch('Arryadia HD 3', ['AR-SPI MA ARRYADIA S/D', 'AR-SPI MA ARRYADIA TNT']),
-    'AR-SPI MA ARRYADIA TNT'
+    null
   );
   assert.equal(
     findChannelNameMatch('SNRT', ['AR-SPI MA ARRYADIA TNT', 'AR-SPI MA ARRYADIA HD 3']),
