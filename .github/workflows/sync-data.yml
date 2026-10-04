@@ -79,7 +79,8 @@ jobs:
         run: |
           test -n "$PASSWORD_HASH"
           printf '%s' "$PASSWORD_HASH" > _oracle-sync/operator-password-hash
-          chmod 0600 _oracle-sync/operator-password-hash
+          # The SCP container has a different uid; this is a hash, never the password.
+          chmod 0644 _oracle-sync/operator-password-hash
       - name: Check Oracle SSH configuration
         env:
           ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
