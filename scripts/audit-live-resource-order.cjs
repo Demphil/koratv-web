@@ -98,6 +98,7 @@ const adHosts = /omg10\.com|nap5k\.com|n6wxm\.com|al5sm\.com|quge5\.com|profitab
         const play = await page.$('.plyr__controls button[data-plyr="play"]');
         if (play) await play.click();
       }
+      await page.bringToFront();
       await page.evaluate(()=>{ window.__qaPlayResult='pending'; video.play().then(()=>window.__qaPlayResult='playing')
         .catch(error=>window.__qaPlayResult=error.name); });
       try {

@@ -2,6 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMatchesReader, createPlaybackResolver } from '../supabase.js';
 
+test('Arabic database aliases use the same canonical broadcaster as the prepared player', async () => {
+  const previous=globalThis.fetch;
+  const match={id:'egypt',match_id:'egypt',source:'kooora',active:true,
+    kickoff_time:new Date(Date.now()-60000).toISOString(),channel:'أون سبورت بلس',
+    payload:{status:'LIVE',broadcast:{source:'kooora',channels:['أون سبورت بلس']}}};
+  const channel={id:1,name:'أون سبورت بلس',active:true,original_url:'https://old.example/plus.m3u8'};
+  globalThis.fetch=async input=>Response.json(new URL(input).pathname.endsWith('/matches') ? [match] : [channel]);
+  const catalog={override:()=> 'On Sport Plus',resolve:()=> 'On Sport Plus',
+    sources:()=>({F:'https://fresh.example/plus.m3u8'})};
+  try {
+    const env={NEXT_PUBLIC_SUPABASE_URL:'https://project.supabase.co',NEXT_PUBLIC_SUPABASE_ANON_KEY:'test-key'};
+    const [row]=await createMatchesReader(env,'kooora',catalog)();
+    const playback=await createPlaybackResolver(env,'kooora',catalog)(match.match_id);
+    assert.equal(row.channel,'On Sport Plus');
+    assert.equal(row.channel,playback.channel_id);
+    assert.equal(row.source_ready,true);
+  } finally {globalThis.fetch=previous;}
+});
+
 test('unassigned fixtures never inherit the global default channel', async () => {
   const originalFetch = globalThis.fetch;
   const fixture = {

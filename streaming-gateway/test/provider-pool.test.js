@@ -49,6 +49,25 @@ test('assigned account is preferred and a free same-channel standby replaces HTT
   assert.equal(pool.acquire(match, 'visitor').id, standby.id);
 });
 
+test('correcting a match broadcaster revokes its old media lease even with active viewers', t => {
+  const { pool } = setup(t);
+  const old = {...playback('egypt', 100, {A:'https://a.example/ordinary.m3u8'}), channel_id:'On Sport'};
+  const lease = pool.acquire(old, 'prewarm:egypt');
+  pool.acquire(old, 'visitor');
+  lease.mediaUrl='https://a.example/old-encoder.m3u8';
+  const peer=pool.acquire(playback('peer', 100, {B:'https://b.example/peer.m3u8'}), 'peer-visitor');
+  const corrected={...old, channel_id:'On Sport Plus', provider_sources:{A:'https://a.example/plus.m3u8'}};
+  const replacement=pool.acquire(corrected, 'prewarm:egypt');
+  assert.equal(pool.valid(lease), false);
+  assert.equal(lease.controller.signal.aborted, true);
+  assert.notEqual(replacement.id, lease.id);
+  assert.equal(replacement.channel, 'On Sport Plus');
+  assert.equal(replacement.url, corrected.provider_sources.A);
+  assert.equal(replacement.mediaUrl, undefined);
+  assert.equal(pool.acquire(corrected, 'visitor').id, replacement.id);
+  assert.equal(pool.valid(peer), true);
+});
+
 test('three independent accounts hold three matches, reject a fourth, and preserve peers on failure', t => {
   const { pool } = setup(t);
   const match = id => playback(id, 100, Object.fromEntries(['A','B','C'].map(p => [p, `https://${p.toLowerCase()}.example/${id}.m3u8`])));

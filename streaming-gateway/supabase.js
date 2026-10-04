@@ -158,6 +158,8 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
           ? [routeState.resolvedChannel]
           : rowCandidates;
       const channel = candidates.map((name) => {
+        const canonicalName = catalog?.resolve?.(name);
+        if (canonicalName && hasCatalogSources(canonicalName, assignedProviderIds)) return { name: canonicalName };
         const resolved = resolveChannel(name);
         if (resolved && hasCatalogSources(resolved.name, assignedProviderIds)) return resolved;
         const catalogName = catalog?.resolve?.(name) || name;

@@ -42,7 +42,7 @@ export class ProviderPool {
     }
     for (const [provider, lease] of this.leases) {
       const demand = this.demands.get(lease.key);
-      if (!demand || (this.blocked.get(provider) || 0) > now
+      if (!demand || (lease.channel !== demand.channel && demand.sources[provider] !== lease.url) || (this.blocked.get(provider) || 0) > now
         || (demand.sources[provider] !== lease.url && !demand.viewers.size)) this.revoke(provider);
     }
     const protectedLeases = new Map([...this.leases.values()].flatMap(lease => {
@@ -69,7 +69,7 @@ export class ProviderPool {
     }
     for (const [provider, lease] of this.leases) if (desired.get(provider)?.key !== lease.key) this.revoke(provider);
     for (const [provider, demand] of desired) if (!this.leases.has(provider)) {
-      this.leases.set(provider, { id: randomUUID(), provider, key: demand.key, url: demand.sources[provider],
+      this.leases.set(provider, { id: randomUUID(), provider, key: demand.key, channel: demand.channel, url: demand.sources[provider],
         controller: new AbortController(), tail: Promise.resolve() });
     }
   }
