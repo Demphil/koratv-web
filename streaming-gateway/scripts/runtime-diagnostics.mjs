@@ -12,6 +12,12 @@ const moduleAt = name => import(pathToFileURL(resolve(process.cwd(), name)).href
 const { createProviderCatalog } = await moduleAt('provider-catalog.js');
 const { createPlaybackResolver } = await moduleAt('supabase.js');
 const catalog = createProviderCatalog(process.env);
+if (process.env.DIAGNOSTICS_CHANNELS_ONLY === 'true') {
+  report('exactChannelInventory', Object.entries(catalog.channels())
+    .filter(([name]) => /arryadia|on\s*(?:time\s*)?sport/i.test(name))
+    .map(([name, row]) => ({ name, providers: Object.keys(catalog.sources(name)), sourceNames: row.sourceNames || {} })));
+  process.exit(0);
+}
 const apps = JSON.parse(execFileSync('pm2', ['jlist'], { encoding: 'utf8' }));
 report('processes', apps.map(app => ({ name: app.name, ...pick(app.pm2_env, ['status', 'pm_cwd', 'pm_exec_path', 'restart_time']) })));
 if (process.env.DIAGNOSTICS_RECONCILIATION_ONLY === 'true') {

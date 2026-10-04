@@ -6,6 +6,10 @@ on:
         description: Verify minute reconciliation without sampling provider media
         type: boolean
         default: false
+      channels_only:
+        description: Inspect exact broadcaster names without fetching media
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -31,4 +35,4 @@ jobs:
           script: |
             set -eu
             cd /opt/koratv/current/streaming-gateway
-            DIAGNOSTICS_RECONCILIATION_ONLY=${{ inputs.reconciliation_only }} node --env-file=/etc/koratv/gateway.env /tmp/koratv-diagnostics-${{ github.run_id }}/streaming-gateway/scripts/runtime-diagnostics.mjs
+            DIAGNOSTICS_CHANNELS_ONLY=${{ inputs.channels_only }} DIAGNOSTICS_RECONCILIATION_ONLY=${{ inputs.reconciliation_only }} node --env-file=/etc/koratv/gateway.env /tmp/koratv-diagnostics-${{ github.run_id }}/streaming-gateway/scripts/runtime-diagnostics.mjs
