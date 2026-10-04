@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHmac } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import assert from 'node:assert/strict';
 
 const pick = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
 const report = (name, data) => console.log(JSON.stringify({ name, data }));
@@ -12,6 +14,18 @@ const { createPlaybackResolver } = await moduleAt('supabase.js');
 const catalog = createProviderCatalog(process.env);
 const apps = JSON.parse(execFileSync('pm2', ['jlist'], { encoding: 'utf8' }));
 report('processes', apps.map(app => ({ name: app.name, ...pick(app.pm2_env, ['status', 'pm_cwd', 'pm_exec_path', 'restart_time']) })));
+if (process.env.DIAGNOSTICS_RECONCILIATION_ONLY === 'true') {
+  const before = catalog.assignments();
+  await delay(70_000);
+  catalog.refreshNow();
+  const after = catalog.assignments();
+  const beforeAt = Date.parse(before.generatedAt), afterAt = Date.parse(after.generatedAt);
+  report('minuteReconciliation', {before:before.generatedAt, after:after.generatedAt,
+    advanced:Number.isFinite(afterAt) && afterAt > beforeAt,
+    assignments:after.assignments.map(row=>pick(row,['matchId','providerId','resolvedChannel']))});
+  assert.ok(Number.isFinite(afterAt) && afterAt > beforeAt, 'Resource reconciliation did not advance during the 70-second observation');
+  process.exit(0);
+}
 report('providers', Object.entries(catalog.accounts()).map(([id, row]) => ({ id, ...pick(row, ['enabled', 'syncStatus', 'status', 'maxConnections', 'gatewaySlots', 'updatedAt']) })));
 const assignments = catalog.assignments();
 report('assignments', { generatedAt: assignments.generatedAt, date: assignments.date,

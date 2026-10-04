@@ -35,3 +35,20 @@ a correct channel merely because a worker was free.
 The scheduler uses serialized async work with overlap prevention and the
 existing filesystem locks. Node timers are scheduling triggers, not a guarantee
 of exact wall-clock execution: https://nodejs.org/api/timers.html.
+PM2's upstream ESM loader imports pm_exec_path through a wrapper:
+https://github.com/Unitech/pm2/blob/master/lib/ProcessContainerFork.js.
+
+## Verification
+
+- 165 gateway tests passed, including three live fixtures below capacity,
+  restricted-provider matching, manual selection, PM2 startup, and slow catalog
+  discovery without blocking reconciliation.
+- Five static-publication tests passed for each frontend.
+- The public collections on both sites were checked at 1366px and 390px for
+  the expected ordering and absence of horizontal overflow.
+- No ended fixture held an ASSIGNED resource in the production feed.
+- No assigned live fixture with a verified channel remained at the browser
+  check. Video decoding therefore was not claimed as verified for this release.
+- Runtime inspection identified Kyrgyzstan-Lebanon as channel_unavailable,
+  not a resource-capacity rejection. A correct broadcaster must be supplied by
+  the authoritative source or an explicit verified manual override.

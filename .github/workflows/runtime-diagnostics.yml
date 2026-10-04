@@ -1,6 +1,11 @@
 name: Read Only Runtime Diagnostics
 on:
   workflow_dispatch:
+    inputs:
+      reconciliation_only:
+        description: Verify minute reconciliation without sampling provider media
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -26,4 +31,4 @@ jobs:
           script: |
             set -eu
             cd /opt/koratv/current/streaming-gateway
-            node --env-file=/etc/koratv/gateway.env /tmp/koratv-diagnostics-${{ github.run_id }}/streaming-gateway/scripts/runtime-diagnostics.mjs
+            DIAGNOSTICS_RECONCILIATION_ONLY=${{ inputs.reconciliation_only }} node --env-file=/etc/koratv/gateway.env /tmp/koratv-diagnostics-${{ github.run_id }}/streaming-gateway/scripts/runtime-diagnostics.mjs
