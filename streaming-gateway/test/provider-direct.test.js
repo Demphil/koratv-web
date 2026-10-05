@@ -45,3 +45,36 @@ test('expired host is never reused and the next host is queried directly', async
   assert.equal(result.selected.length, 1);
   assert.deepEqual(seen.slice(0,2), ['one.example','two.example']);
 });
+
+test('media verification rejects a broken preferred variant and selects a compatible working variant', async () => {
+  const tested = [];
+  const fetchImpl = async url => {
+    if (!url.searchParams.has('action')) return Response.json({ user_info: { auth: 1, status: 'Active' } });
+    if (url.searchParams.get('action') === 'get_live_categories') return Response.json([]);
+    return Response.json([
+      { name: 'AR - BEIN SPORTS 1 HD', stream_id: 123 },
+      { name: 'AR - BEIN SPORTS 1 FHD', stream_id: 456 },
+      { name: 'FR - BEIN SPORTS 1 HD', stream_id: 999 }
+    ]);
+  };
+  const result = await discoverProvider(credentials, ['https://one.example'], ['beIN SPORTS HD 1'], {
+    fetchImpl, verifySource: async chosen => { tested.push(chosen.original_url); return chosen.original_url.endsWith('/456.m3u8'); }
+  });
+  assert.equal(result.selected.length, 1);
+  assert.match(result.selected[0].chosen.original_url, /456\.m3u8$/);
+  assert.equal(tested.length, 2);
+  assert.ok(tested.every(url => !url.includes('/999.')));
+});
+
+test('active metadata does not prevent trying a second origin when all media variants fail', async () => {
+  const fetchImpl = async url => {
+    if (!url.searchParams.has('action')) return Response.json({ user_info: { auth: 1, status: 'Active' } });
+    if (url.searchParams.get('action') === 'get_live_categories') return Response.json([]);
+    return Response.json(streams);
+  };
+  const result = await discoverProvider(credentials, credentials.origins, ['beIN SPORTS HD 1'], {
+    fetchImpl, verifySource: async chosen => new URL(chosen.original_url).hostname === 'two.example'
+  });
+  assert.equal(result.origin, 'https://two.example');
+  assert.equal(result.selected.length, 1);
+});

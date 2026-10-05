@@ -1,0 +1,46 @@
+name: Repair failed provider media
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: provider-media-repair
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test compatible variant selection
+        run: |
+          npm ci --prefix streaming-gateway --ignore-scripts --no-audit
+          node --test streaming-gateway/test/provider-direct.test.js
+      - name: Upload bounded repair
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          source: streaming-gateway/provider-direct.js,streaming-gateway/scripts/repair-provider-media.mjs
+          target: /tmp/koratv-media-repair-${{ github.run_id }}
+      - name: Verify alternative media without restarting the gateway
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          command_timeout: 6m
+          script: |
+            set -eu
+            cd /opt/koratv/current/streaming-gateway
+            SOURCE=/tmp/koratv-media-repair-${{ github.run_id }}/streaming-gateway
+            node --check "$SOURCE/provider-direct.js"
+            node --check "$SOURCE/scripts/repair-provider-media.mjs"
+            mkdir -p /etc/koratv/backups/media-repair-${{ github.run_id }}
+            cp provider-direct.js /etc/koratv/backups/media-repair-${{ github.run_id }}/provider-direct.js
+            install -m 0644 "$SOURCE/provider-direct.js" provider-direct.js
+            node --env-file=/etc/koratv/gateway.env "$SOURCE/scripts/repair-provider-media.mjs"

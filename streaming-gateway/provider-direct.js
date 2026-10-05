@@ -36,7 +36,7 @@ export async function providerM3u(credentials, origin, fetchImpl = fetch) {
   return parseM3uText(body).filter(entry => sport.test(`${entry.name} ${entry.group}`));
 }
 
-export async function discoverProvider(credentials, origins, canonicalNames, { fetchImpl = fetch, retry = 2 } = {}) {
+export async function discoverProvider(credentials, origins, canonicalNames, { fetchImpl = fetch, retry = 2, verifySource = null } = {}) {
   const attempts = [];
   const requestedSearches = [...new Set((canonicalNames || []).map((name) => normalizeName(name)).filter(Boolean))];
   const matchesRequestedTarget = (entry) => {
@@ -82,8 +82,19 @@ export async function discoverProvider(credentials, origins, canonicalNames, { f
         source = 'get.php';
       } catch (error) { attempts.at(-1).catalogError = error.message; }
     }
-    const selected = matchChannels(canonicalNames, entries, { candidatesPerChannel: 30 })
-      .map(match => ({ name: match.name, chosen: selectProviderChannel(match) })).filter(x => x.chosen);
+    const selected = [];
+    for (const match of matchChannels(canonicalNames, entries, { candidatesPerChannel: 30 })) {
+      const candidates = [...(match.candidates || [])];
+      while (candidates.length) {
+        const chosen = selectProviderChannel({ ...match, candidates });
+        if (!chosen) break;
+        if (!verifySource || await verifySource(chosen, match.name)) {
+          selected.push({ name: match.name, chosen });
+          break;
+        }
+        candidates.splice(candidates.indexOf(chosen), 1);
+      }
+    }
     attempts.at(-1).catalogSource = source;
     attempts.at(-1).sportsStreams = entries.length;
     attempts.at(-1).matchedChannels = selected.length;
