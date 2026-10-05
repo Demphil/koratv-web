@@ -41,3 +41,24 @@ test('publication allowlist excludes backend files, maps, credentials, and docs'
     await assert.rejects(buildPublicSite({ root }), /Private console route/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('publication rejects Adsterra tags in HTML and nested scripts but preserves Monetag', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'public-ads-policy-'));
+  try {
+    await mkdir(join(root, 'shared'));
+    await mkdir(join(root, 'assets/js'), { recursive: true });
+    await writeFile(join(root, 'shared/match-lifecycle.mjs'), 'export const live = true;');
+    const index = join(root, 'index.html');
+    for (const tag of ['<script src="https://pl31377260.profitableratecpmnetwork.com/tag.js"></script>', '<script src="https://www.highrevenueformat.com/invoke.js"></script>', '<script>atOptions = { key: "test" };</script>']) {
+      await writeFile(index, tag);
+      await assert.rejects(buildPublicSite({ root }), /Prohibited Adsterra advertising/);
+    }
+    await writeFile(index, '<script src="https://al5sm.com/tag.min.js" data-zone="123"></script>');
+    await writeFile(join(root, 'assets/js/ads.js'), 'const source = "https://www.highrevenueformat.com/invoke.js";');
+    await assert.rejects(buildPublicSite({ root }), /Prohibited Adsterra advertising/);
+    await writeFile(join(root, 'assets/js/ads.js'), 'const source = "https://omg10.com/4/123";');
+    const output = await buildPublicSite({ root });
+    assert.match(await readFile(join(output, 'index.html'), 'utf8'), /al5sm\.com/);
+    assert.match(await readFile(join(output, 'assets/js/ads.js'), 'utf8'), /omg10\.com/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

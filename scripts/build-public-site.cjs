@@ -6,6 +6,7 @@ const directories = new Set(['assets', 'abroad', 'at-work', 'low-internet', 'sma
 const extensions = new Set(['.html', '.css', '.js', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.svg', '.woff', '.woff2']);
 const rootFiles = new Set(['CNAME', 'robots.txt', 'sitemap.xml', 'sw.js']);
 const verificationFile = /^(?:[a-f0-9]{32}|hta-code-\d+|ppck-ver-[a-f0-9]+)\.txt$/i;
+const prohibitedAds = /\b(?:adsterra|highrevenueformat|profitableratecpmnetwork|highperformanceformat|profitabledisplaynetwork|topcreativeformat|effectivegatecpm|effectivecreativeformat|profitablecpmrate)\.com\b|\batOptions\s*=/i;
 
 function assertNoSecret(text, path) {
   if (/\/api\/operator\//.test(text)) throw new Error('Private console route in public asset: ' + path);
@@ -37,6 +38,7 @@ async function minifyScripts(directory) {
     else if (/\.(?:html|m?js|css|svg)$/.test(entry.name)) {
       const source = await readFile(path, 'utf8');
       assertNoSecret(source, path);
+      if (prohibitedAds.test(source)) throw new Error('Prohibited Adsterra advertising in public asset: ' + path);
       if (!/\.(?:m?js)$/.test(entry.name)) continue;
       const result = await minify(source, { compress: false, mangle: { toplevel: false },
         module: entry.name.endsWith('.mjs'), sourceMap: false, format: { comments: false } });
