@@ -127,6 +127,12 @@ test('operator discovery bypasses cached metadata and verifies fallback variants
   assert.deepEqual(probes.map(([id]) => id), ['A', 'A']);
   assert.deepEqual(Object.keys(verified.provider_sources), ['A']);
   assert.ok(verified.provider_sources.A.endsWith('/20.m3u8'));
+  const spareProbes = [];
+  const spareFirst = await resolver.resolve(['beIN SPORTS HD 7'], { providerIds: ['B', 'A'], verifySource: async id => {
+    spareProbes.push(id); return true;
+  } });
+  assert.deepEqual(spareProbes, ['B']);
+  assert.deepEqual(Object.keys(spareFirst.provider_sources), ['B']);
 });
 
 test('beIN EXTRA and XTRA are the same edition and neither can replace the main numbered channel', () => {
