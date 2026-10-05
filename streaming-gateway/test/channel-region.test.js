@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { matchChannels, normalizeName, CHANNEL_MATCH_POLICY_VERSION } from '../../shared/provider-channel-match.mjs';
+import { matchChannels, normalizeName, isProviderChannelCompatible, CHANNEL_MATCH_POLICY_VERSION } from '../../shared/provider-channel-match.mjs';
 import { preferredBroadcastChannels, reconcileBroadcasts } from '../../shared/match-broadcasts.mjs';
 import { selectProviderChannel, createProviderCatalog } from '../provider-catalog.js';
 import { applyProviderDiscovery } from '../provider-catalog-update.js';
@@ -127,4 +127,9 @@ test('operator discovery bypasses cached metadata and verifies fallback variants
   assert.deepEqual(probes.map(([id]) => id), ['A', 'A']);
   assert.deepEqual(Object.keys(verified.provider_sources), ['A']);
   assert.ok(verified.provider_sources.A.endsWith('/20.m3u8'));
+});
+
+test('beIN EXTRA and XTRA are the same edition and neither can replace the main numbered channel', () => {
+  assert.equal(isProviderChannelCompatible('beIN SPORTS HD 7', { name: 'AR | BEIN-SPORTS EXTRA 7 FHD', group: 'AR | SPORTS' }), false);
+  assert.equal(isProviderChannelCompatible('beIN SPORTS XTRA 7', { name: 'AR | BEIN-SPORTS EXTRA 7 FHD', group: 'AR | SPORTS' }), true);
 });

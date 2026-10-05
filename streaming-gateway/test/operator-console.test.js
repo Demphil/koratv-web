@@ -47,9 +47,10 @@ test('operator login, CSRF, protected jobs, image validation and realtime notice
   const redis = { get: async key => values.get(key), set: async (key, value) => values.set(key, value), del: async key => values.delete(key), incr: async key => { const next = Number(values.get(key) || 0) + 1; values.set(key, next); return next; }, expire: async () => {} };
   const config = { api: '', operatorConsolePath: '/fixture-private-console', operatorPasswordHash: hash, operatorControlPath: join(dir, 'control.json'), operatorMediaPath: join(dir, 'media'), providerChannels: () => ({ 'On Sport Plus': { sourceNames: { A: 'EG On Sport Plus HD' }, A: 'https://secret/user/password' } }) };
   const app = express(); app.use(express.json({ limit: '260kb' }));
-  let channelCalls = 0, applyCalls = 0;
+  let channelCalls = 0, applyCalls = 0, failAssignment = false;
   registerOperatorConsole(app, { config, redis, clientIp: () => 'test-ip', getMatches: async () => [{ matchId: 'fixture', homeTeam: 'Home', awayTeam: 'Away' }],
-    prepareChannel: async () => { channelCalls++; throw new Error('channel_probe_failed'); }, applyResources: async () => { applyCalls++; }, status: () => ({}) });
+    prepareChannel: async () => { channelCalls++; if (!failAssignment) throw new Error('channel_probe_failed'); return { name: 'New Channel' }; },
+    applyResources: async options => { applyCalls++; if (failAssignment && options?.matchId === 'fixture') throw new Error('channel_probe_failed'); }, status: () => ({}) });
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   config.api = `http://127.0.0.1:${server.address().port}`;
   t.after(() => { server.closeAllConnections(); server.close(); });
@@ -69,8 +70,18 @@ test('operator login, CSRF, protected jobs, image validation and realtime notice
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(channelCalls, 1); assert.equal(applyCalls, 0);
   await assert.rejects(readFile(config.operatorControlPath));
+  failAssignment = true;
+  const failedAssignment = await post('/api/operator/channel', { matchId: 'fixture', channel: 'New Channel' }, credentials);
+  const failedJobId = (await failedAssignment.json()).job.id;
+  await new Promise(resolve => setTimeout(resolve, 40));
+  const afterFailure = await (await get('/api/operator/state', credentials)).json();
+  assert.equal(afterFailure.jobs.find(job => job.id === failedJobId).state, 'failed');
+  assert.equal(afterFailure.state.overrides.fixture, undefined);
+  assert.equal(afterFailure.state.channels.fixture, undefined);
+  assert.equal(applyCalls, 2);
+  failAssignment = false;
   const selection = await post('/api/operator/selection', { enabled: true, matches: ['fixture'] }, credentials); assert.equal(selection.status, 202);
-  await new Promise(resolve => setTimeout(resolve, 40)); assert.equal(applyCalls, 1);
+  await new Promise(resolve => setTimeout(resolve, 40)); assert.equal(applyCalls, 3);
   const controller = new AbortController();
   const stream = await fetch(`${config.api}/api/broadcast-events`, { signal: controller.signal }); const reader = stream.body.getReader();
   assert.match(new TextDecoder().decode((await reader.read()).value), /event: control/);

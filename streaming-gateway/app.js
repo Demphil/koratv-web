@@ -545,6 +545,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           let warmed = { ok: false, error: 'source_unavailable' };
           while (tried.size < Object.keys(playback.provider_sources || {}).length) {
             lease = providerPool.acquire(playback, viewerId);
+            providerPool.updateSource(lease, playback.provider_sources[lease.provider]);
             prewarmKeepalive.set(lease.key, viewerId);
             if (tried.has(lease.provider)) break;
             tried.add(lease.provider);
@@ -601,7 +602,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       warm: warmPlaybackManifest, install: installPreparedOperatorChannel,
       refresh: () => config.refreshProviderCatalog()
     }),
-    applyResources: async () => {
+    applyResources: async ({ matchId } = {}) => {
       await refreshOperatorResources();
       config.refreshProviderCatalog?.();
       await config.refreshMatchSnapshots?.();
@@ -615,7 +616,13 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         }
       }
       while (prewarmState.running) await new Promise(resolve => setTimeout(resolve, 100));
-      await prewarmAssignedResources('operator-change', { fresh: true });
+      let result = await prewarmAssignedResources('operator-change', { fresh: true });
+      if (matchId && !result.results.some(row => row.matchId === matchId && row.ok)) {
+        await new Promise(resolve => setTimeout(resolve, 31000));
+        while (prewarmState.running) await new Promise(resolve => setTimeout(resolve, 100));
+        result = await prewarmAssignedResources('operator-retry');
+        if (!result.results.some(row => row.matchId === matchId && row.ok)) throw new Error('channel_probe_failed');
+      }
     }
   });
 

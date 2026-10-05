@@ -47,6 +47,7 @@ export function normalizeName(name) {
     .replace(/\bsd\b/g, '')
     .replace(/\b0([1-9])\b/g, '$1')
     .replace(/\bsports\b/g, 'sport')
+    .replace(/\bextra\b/g, 'xtra')
     .replace(/\bontime\b/g, 'on time')
     .replace(/\bal\s+kass\b/g, 'alkass')
     .replace(/\bbein\b/g, 'bein')

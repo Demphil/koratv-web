@@ -131,7 +131,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     const previous = (await read()).overrides[match.matchId];
     await update(state => ({ ...state, overrides: { ...state.overrides, [match.matchId]: { channel: prepared.name, expiresAt: new Date(Date.now() + 24 * 3600000).toISOString(), enabled: true } } }));
     job.phase = 'assigning';
-    try { await applyResources(); }
+    try { await applyResources({ matchId: match.matchId }); }
     catch (error) {
       await update(state => { const overrides = { ...state.overrides }; if (previous) overrides[match.matchId] = previous; else delete overrides[match.matchId]; return { ...state, overrides }; });
       await applyResources().catch(() => {});
