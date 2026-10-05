@@ -21,12 +21,15 @@ export function applyProviderDiscovery(catalog, id, credentials, origins, discov
     return { replaced: 0, retained: true, status };
   }
 
+  const verifiedNames = Object.fromEntries(Object.entries(catalog.channels).map(([name, row]) => [name,
+    previous.username === credentials.username ? row?.mediaVerifiedNames?.[id] : null]));
   for (const row of Object.values(catalog.channels)) {
     if (!row || typeof row !== 'object') continue;
     delete row[id];
     if (row.sourceNames) delete row.sourceNames[id];
     if (row.sourceGroups) delete row.sourceGroups[id];
     if (row.sourcePolicyVersions) delete row.sourcePolicyVersions[id];
+    if (row.mediaVerifiedNames) delete row.mediaVerifiedNames[id];
   }
   for (const { name, chosen } of selected) {
     catalog.channels[name] ||= {};
@@ -37,6 +40,7 @@ export function applyProviderDiscovery(catalog, id, credentials, origins, discov
     catalog.channels[name].sourceGroups[id] = chosen.group || '';
     catalog.channels[name].sourcePolicyVersions ||= {};
     catalog.channels[name].sourcePolicyVersions[id] = CHANNEL_MATCH_POLICY_VERSION;
+    if (verifiedNames[name] === chosen.source_name) (catalog.channels[name].mediaVerifiedNames ||= {})[id] = chosen.source_name;
   }
   catalog.providers[id] = {
     enabled: true,

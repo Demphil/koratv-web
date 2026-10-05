@@ -63,3 +63,26 @@ test('a failed replacement account does not inherit the previous account lease',
     { selected: [], attempts: [{ error: 'timeout' }] }, checkedAt);
   assert.equal(current.providers.A.enabled, false);
 });
+
+test('refreshing the same verified variant retains its preference with a new URL', () => {
+  const current = catalog();
+  current.channels['Test One'].mediaVerifiedNames = { A: 'Old One' };
+  applyProviderDiscovery(current, 'A', credentials, origins, {
+    origin: origins[0], info: { status: 'Active', max_connections: 1 },
+    selected: [{ name: 'Test One', chosen: { original_url: newUrl, source_name: 'Old One' } }],
+  }, checkedAt);
+  assert.equal(current.channels['Test One'].A, newUrl);
+  assert.equal(current.channels['Test One'].mediaVerifiedNames.A, 'Old One');
+});
+
+test('a different variant or account does not inherit media verification', () => {
+  for (const [account, sourceName] of [[credentials, 'New One'], [{ username: 'replacement' }, 'Old One']]) {
+    const current = catalog();
+    current.channels['Test One'].mediaVerifiedNames = { A: 'Old One' };
+    applyProviderDiscovery(current, 'A', account, origins, {
+      origin: origins[0], info: { status: 'Active', max_connections: 1 },
+      selected: [{ name: 'Test One', chosen: { original_url: newUrl, source_name: sourceName } }],
+    }, checkedAt);
+    assert.equal(current.channels['Test One'].mediaVerifiedNames.A, undefined);
+  }
+});

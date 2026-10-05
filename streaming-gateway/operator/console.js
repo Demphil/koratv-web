@@ -1,4 +1,5 @@
 import { createNotice, renderNotice, startNotice, stopNotice, normalizeNoticeDesign } from './broadcast-notice.js';
+import { currentConsoleSelection } from './selection.js';
 (() => {
   const $ = id => document.getElementById(id);
   let csrf = '', snapshot, selected = [], noticeItems = [], editing = false, polling, activeNotice = 0;
@@ -57,9 +58,9 @@ import { createNotice, renderNotice, startNotice, stopNotice, normalizeNoticeDes
   async function refresh(render = true) {
     snapshot = await api('state');
     if (render) {
-      const selection = snapshot.state.selection;
-      selected = selection?.matches || snapshot.matches.filter(row => row.viewingMode === 'stream').slice(0, 8).map(row => row.matchId);
-      $('manual-enabled').checked = selection?.enabled === true;
+      const selection = currentConsoleSelection(snapshot);
+      selected = selection.matches;
+      $('manual-enabled').checked = selection.enabled;
       $('channel-names').replaceChildren(...snapshot.channels.map(channel => { const option = document.createElement('option'); option.value = channel.name; return option; }));
       $('servers').replaceChildren(...snapshot.status.accounts.map(account => { const node = document.createElement('span'); node.className = `server ${/STOPPED|UNAVAILABLE|COOLDOWN|STALLED/.test(account.status) ? 'bad' : ''}`; node.textContent = `${account.provider} · ${account.status}${account.current_channel ? ` · ${account.current_channel}` : ''}`; return node; }));
       noticeItems = (snapshot.state.notices.items || []).map(item => ({ title: item.title || '', text: item.text, image: item.image, duration: item.duration ?? null, design: normalizeNoticeDesign(item.design) }));
@@ -68,6 +69,9 @@ import { createNotice, renderNotice, startNotice, stopNotice, normalizeNoticeDes
       $('notice-target').value = snapshot.state.notices.matchIds.length ? 'selected' : 'all';
       renderMatches(); renderNotices(); editing = false;
     }
+    const available = new Set(snapshot.matches.map(match => match.matchId));
+    const current = selected.filter(id => available.has(id));
+    if (current.length !== selected.length) { selected = current; renderSelected(); }
     for (const row of document.querySelectorAll('.match-row')) {
       const match = snapshot.matches.find(match => match.matchId === row.dataset.match);
       if (match) { const badge = row.querySelector('.badge'); badge.textContent = `${match.isLive ? 'مباشر' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`; badge.classList.toggle('ready', match.sourceReady); }

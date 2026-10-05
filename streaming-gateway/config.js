@@ -61,7 +61,7 @@ export function loadConfig(env = process.env) {
   const providerPoolEnabled = env.PROVIDER_POOL_ENABLED === 'true';
   const catalog = providerPoolEnabled ? createProviderCatalog(env) : null;
   const liveResolver = catalog && env.PROVIDER_LIVE_RESOLVER_ENABLED !== 'false'
-    ? createProviderLiveResolver({ env, accounts: () => catalog.accounts() })
+    ? createProviderLiveResolver({ env, accounts: () => catalog.accounts(), channels: () => catalog.channels() })
     : null;
   const getKoooraMatches = createSnapshotReader(createMatchesReader(env, koooraSources, catalog));
   const getApiFootballMatches = createSnapshotReader(createMatchesReader(env, apiFootballSources, catalog));

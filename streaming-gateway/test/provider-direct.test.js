@@ -86,3 +86,15 @@ test('active metadata does not prevent trying a second origin when all media var
   assert.equal(result.origin, 'https://two.example');
   assert.equal(result.selected.length, 1);
 });
+
+test('scheduled discovery prefers a previously media-verified compatible variant', async () => {
+  const fetchImpl = async url => {
+    if (!url.searchParams.has('action')) return Response.json({ user_info: { auth: 1, status: 'Active' } });
+    if (url.searchParams.get('action') === 'get_live_categories') return Response.json([]);
+    return Response.json([{ name: 'AR - BEIN SPORTS 1 HD', stream_id: 123 }, { name: '[AR] BEIN SPORTS 1 4k', stream_id: 456 }]);
+  };
+  const result = await discoverProvider(credentials, ['https://one.example'], ['beIN SPORTS HD 1'], {
+    fetchImpl, preferredSourceNames: { 'beIN SPORTS HD 1': '[AR] BEIN SPORTS 1 4k' }
+  });
+  assert.match(result.selected[0].chosen.original_url, /456\.m3u8$/);
+});

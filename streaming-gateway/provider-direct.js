@@ -36,7 +36,7 @@ export async function providerM3u(credentials, origin, fetchImpl = fetch) {
   return parseM3uText(body).filter(entry => sport.test(`${entry.name} ${entry.group}`));
 }
 
-export async function discoverProvider(credentials, origins, canonicalNames, { fetchImpl = fetch, retry = 2, verifySource = null } = {}) {
+export async function discoverProvider(credentials, origins, canonicalNames, { fetchImpl = fetch, retry = 2, verifySource = null, preferredSourceNames = {} } = {}) {
   const attempts = [];
   const requestedSearches = [...new Set((canonicalNames || []).map((name) => normalizeName(name)).filter(Boolean))];
   const matchesRequestedTarget = (entry) => {
@@ -86,7 +86,7 @@ export async function discoverProvider(credentials, origins, canonicalNames, { f
     for (const match of matchChannels(canonicalNames, entries, { candidatesPerChannel: 30 })) {
       const candidates = [...(match.candidates || [])];
       while (candidates.length) {
-        const chosen = selectProviderChannel({ ...match, candidates });
+        const chosen = selectProviderChannel({ ...match, candidates, preferredSourceName: preferredSourceNames[match.name] });
         if (!chosen) break;
         if (!verifySource || await verifySource(chosen, match.name)) {
           selected.push({ name: match.name, chosen });

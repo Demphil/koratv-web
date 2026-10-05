@@ -14,6 +14,7 @@ for (const [id, url] of Object.entries(input.sources)) {
   (entry.sourceNames ||= {})[id] = source.name;
   (entry.sourceGroups ||= {})[id] = source.group;
   (entry.sourcePolicyVersions ||= {})[id] = CHANNEL_MATCH_POLICY_VERSION;
+  (entry.mediaVerifiedNames ||= {})[id] = source.name;
 }
 catalog.updatedAt = new Date().toISOString();
 const temporary = `${path}.operator-${process.pid}.tmp`;

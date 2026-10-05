@@ -15,6 +15,7 @@ function uniqueNames(names) {
 export function createProviderLiveResolver({
   env = process.env,
   accounts,
+  channels,
   fetchImpl = fetch,
   cacheTtlMs = Number(process.env.PROVIDER_LIVE_RESOLVER_CACHE_MS || 60_000),
   staggerMs = Number(process.env.PROVIDER_LIVE_RESOLVER_STAGGER_MS || 250),
@@ -76,7 +77,9 @@ export function createProviderLiveResolver({
       }
 
       try {
-        const result = await discoverProvider(credentials, origins, names, { fetchImpl, retry: 1 });
+        const inventory = typeof channels === 'function' ? channels() : {};
+        const preferredSourceNames = Object.fromEntries(names.map(name => [name, inventory?.[name]?.mediaVerifiedNames?.[providerId]]).filter(([, value]) => value));
+        const result = await discoverProvider(credentials, origins, names, { fetchImpl, retry: 1, preferredSourceNames });
         const chosen = result.selected?.[0]?.chosen;
         for (const selected of result.selected || []) {
           if (!selected.chosen?.original_url) continue;

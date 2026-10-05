@@ -1,6 +1,11 @@
 name: Repair failed provider media
 on:
   workflow_dispatch:
+    inputs:
+      refresh_runtime:
+        description: Deploy verified runtime and operator-selection fixes with one gateway restart
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -25,7 +30,7 @@ jobs:
           host: ${{ secrets.ORACLE_HOST }}
           username: ${{ secrets.ORACLE_USER }}
           key: ${{ secrets.ORACLE_SSH_KEY }}
-          source: streaming-gateway/provider-direct.js,streaming-gateway/scripts/repair-provider-media.mjs,shared/provider-channel-match.mjs
+          source: streaming-gateway/provider-direct.js,streaming-gateway/provider-catalog.js,streaming-gateway/provider-catalog-update.js,streaming-gateway/provider-live-resolver.js,streaming-gateway/config.js,streaming-gateway/operator-console.js,streaming-gateway/operator/console.js,streaming-gateway/operator/selection.js,streaming-gateway/scripts/sync-provider-pool.js,streaming-gateway/scripts/operator-catalog-install.mjs,streaming-gateway/scripts/repair-provider-media.mjs,shared/provider-channel-match.mjs
           target: /tmp/koratv-media-repair-${{ github.run_id }}
       - name: Verify alternative media without restarting the gateway
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
@@ -45,5 +50,30 @@ jobs:
             cp ../shared/provider-channel-match.mjs /etc/koratv/backups/media-repair-${{ github.run_id }}/provider-channel-match.mjs
             cp /etc/koratv/provider-catalog.json /etc/koratv/backups/media-repair-${{ github.run_id }}/provider-catalog.json
             install -m 0644 "$SOURCE/provider-direct.js" provider-direct.js
+            for FILE in provider-catalog.js provider-catalog-update.js scripts/sync-provider-pool.js scripts/operator-catalog-install.mjs; do
+              node --check "$SOURCE/$FILE"
+              mkdir -p "/etc/koratv/backups/media-repair-${{ github.run_id }}/$(dirname "$FILE")"
+              cp "$FILE" "/etc/koratv/backups/media-repair-${{ github.run_id }}/$FILE"
+              install -m 0644 "$SOURCE/$FILE" "$FILE"
+            done
             install -m 0644 "$SOURCE/../shared/provider-channel-match.mjs" ../shared/provider-channel-match.mjs
+            if [ "${{ inputs.refresh_runtime }}" = true ]; then
+              for FILE in config.js provider-live-resolver.js operator-console.js operator/console.js operator/selection.js; do
+                node --check "$SOURCE/$FILE"
+                mkdir -p "/etc/koratv/backups/media-repair-${{ github.run_id }}/$(dirname "$FILE")"
+                if [ -f "$FILE" ]; then cp "$FILE" "/etc/koratv/backups/media-repair-${{ github.run_id }}/$FILE"; fi
+                install -m 0644 "$SOURCE/$FILE" "$FILE"
+              done
+              node --env-file=/etc/koratv/gateway.env --input-type=module -e "import { loadConfig } from './config.js'; loadConfig(); console.log('Runtime configuration validated')"
+              pm2 restart koratv-oracle-watch --update-env
+              for ATTEMPT in 1 2 3 4 5 6; do
+                if curl -fsS --max-time 5 http://127.0.0.1:3100/healthz >/dev/null; then break; fi
+                sleep 2
+              done
+              curl -fsS --max-time 5 http://127.0.0.1:3100/healthz >/dev/null
+            fi
             node --env-file=/etc/koratv/gateway.env "$SOURCE/scripts/repair-provider-media.mjs"
+            sleep 65
+            node --env-file=/etc/koratv/gateway.env --input-type=module -e 'import { createHmac } from "node:crypto"; const authorization = `Bearer ${createHmac("sha256", process.env.HMAC_SECRET).update("koratv-account-admin-v1").digest("hex")}`; const health = await (await fetch("http://127.0.0.1:3100/healthz", { signal: AbortSignal.timeout(6000) })).json(); console.log(JSON.stringify({ status: health.status, prewarm: health.providerPrewarm })); const state = await (await fetch("http://127.0.0.1:3100/internal/accounts-status", { headers: { authorization }, signal: AbortSignal.timeout(6000) })).json(); console.log(JSON.stringify({ accounts: state.accounts.map(({ provider, status, current_channel, last_http_code }) => ({ provider, status, current_channel, last_http_code })) }));'
+      - name: Public gateway connectivity
+        run: curl -fsS --max-time 20 https://stream-api.koratv.click/healthz > /dev/null

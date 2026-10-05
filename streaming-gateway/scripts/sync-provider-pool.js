@@ -69,7 +69,8 @@ for (const id of PROVIDER_IDS) {
   const origins = [...new Set((credentials.origins?.length ? credentials.origins : catalog.providers[id]?.origins || []).filter(Boolean))];
   if (!origins.length) { report.push({ provider: id, error: 'origins_missing' }); continue; }
   let discovered;
-  try { discovered = await discoverProvider(credentials, origins, canonicalNames); }
+  const preferredSourceNames = Object.fromEntries(canonicalNames.map(name => [name, catalog.channels[name]?.mediaVerifiedNames?.[id]]).filter(([, value]) => value));
+  try { discovered = await discoverProvider(credentials, origins, canonicalNames, { preferredSourceNames }); }
   catch (error) { discovered = { attempts: [{ error: error.message }], selected: [] }; }
   const update = applyProviderDiscovery(catalog, id, credentials, origins, discovered, checkedAt);
   if (update.replaced) refreshedProviders++;

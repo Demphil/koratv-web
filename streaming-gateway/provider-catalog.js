@@ -15,7 +15,8 @@ export function selectProviderChannel(match) {
   return [...(match.candidates || [])]
     .filter(candidate => providerNameMatches(candidate.source_name)
       && isProviderChannelCompatible(match.name, { name: candidate.source_name, group: candidate.group || '' }))
-    .sort((a, b) => Number(beinRegion(`${b.source_name} ${b.group || ''}`) === 'ar')
+    .sort((a, b) => Number(b.source_name === match.preferredSourceName) - Number(a.source_name === match.preferredSourceName)
+      || Number(beinRegion(`${b.source_name} ${b.group || ''}`) === 'ar')
       - Number(beinRegion(`${a.source_name} ${a.group || ''}`) === 'ar')
       || qualityRank(a) - qualityRank(b) || a.source_name.localeCompare(b.source_name))[0] || null;
 }

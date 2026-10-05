@@ -17,12 +17,22 @@ const status = async () => (await (await fetch('http://127.0.0.1:3100/internal/a
 let credentials = {};
 try { credentials = JSON.parse(await readFile(`${dir}/provider-credentials.json`, 'utf8')); } catch {}
 const targets = [['B', 'beIN SPORTS HD 1'], ['D', 'beIN SPORTS HD 4']];
+async function installVerified(provider, channel, chosen) {
+  const file = `${dir}/verified-repair-${randomUUID()}.json`;
+  await writeFile(file, JSON.stringify({ name: channel, sources: { [provider]: chosen.original_url }, names: { [provider]: { name: chosen.source_name, group: chosen.group || '' } } }), { mode: 0o600 });
+  try { await execute('flock', ['-w', '45', `${dir}/provider-catalog.lock`, process.execPath, 'scripts/operator-catalog-install.mjs', file], { timeout: 50000 }); }
+  finally { await unlink(file).catch(() => {}); }
+}
 for (const [provider, channel] of targets) {
   const state = (await status()).find(row => row.provider === provider);
   const entry = catalog.channels()[channel];
   const compatible = isProviderChannelCompatible(channel, { name: entry?.sourceNames?.[provider] || '', group: entry?.sourceGroups?.[provider] || '' });
-  if (state?.current_channel && state.last_http_code === 200 && compatible) {
-    console.log(JSON.stringify({ provider, channel, skipped: 'working_account' })); continue;
+  if (state?.current_channel === channel && state.last_http_code === 200 && compatible) {
+    await installVerified(provider, channel, { original_url: entry[provider], source_name: entry.sourceNames[provider], group: entry.sourceGroups?.[provider] });
+    console.log(JSON.stringify({ provider, channel, skipped: 'working_account', preferenceSaved: true })); continue;
+  }
+  if (state?.current_channel && state.current_channel !== channel) {
+    console.log(JSON.stringify({ provider, channel, skipped: 'busy_other_channel' })); continue;
   }
   const account = catalog.accounts()[provider];
   const input = credentials[provider] || credentialsFromCatalog(account);
@@ -58,9 +68,6 @@ for (const [provider, channel] of targets) {
   });
   const chosen = result.selected?.[0]?.chosen;
   if (!chosen) { console.log(JSON.stringify({ provider, channel, repaired: false, probes })); continue; }
-  const file = `${dir}/verified-repair-${randomUUID()}.json`;
-  await writeFile(file, JSON.stringify({ name: channel, sources: { [provider]: chosen.original_url }, names: { [provider]: { name: chosen.source_name, group: chosen.group || '' } } }), { mode: 0o600 });
-  try { await execute('flock', ['-w', '45', `${dir}/provider-catalog.lock`, process.execPath, 'scripts/operator-catalog-install.mjs', file], { timeout: 50000 }); }
-  finally { await unlink(file).catch(() => {}); }
+  await installVerified(provider, channel, chosen);
   console.log(JSON.stringify({ provider, channel, repaired: true, probes, variant: chosen.source_name }));
 }
