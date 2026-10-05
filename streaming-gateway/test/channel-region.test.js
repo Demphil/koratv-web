@@ -108,3 +108,23 @@ test('live refresh returns actual discovered URLs without mixing Arabic and Engl
   assert.equal(english.resolvedChannel, 'beIN SPORTS ENG 1');
   assert.deepEqual(Object.keys(english.provider_sources), ['A', 'B']);
 });
+
+test('operator discovery bypasses cached metadata and verifies fallback variants before saving', async () => {
+  const resolver = createProviderLiveResolver({ staggerMs: 0, accounts: () => ({ A: { enabled: true }, B: { enabled: true } }),
+    env: Object.fromEntries(['A', 'B'].map(id => [`IPTV_PROVIDER_${id}_JSON`, JSON.stringify({ username: 'test', password: 'test', origins: [`https://${id.toLowerCase()}.example`] })])),
+    fetchImpl: async input => {
+      const action = new URL(input).searchParams.get('action');
+      return new Response(JSON.stringify(action === 'get_live_categories' ? [{ category_id: 1, category_name: 'AR | SPORTS' }]
+        : action === 'get_live_streams' ? [{ stream_id: 10, category_id: 1, name: '[AR] BEIN SPORTS 7 HD' }, { stream_id: 20, category_id: 1, name: '[AR] BEIN SPORTS 7 4k' }]
+          : { user_info: { auth: 1, status: 'Active', max_connections: 1 } }), { status: 200 });
+    } });
+  const cached = await resolver.resolve(['beIN SPORTS HD 7'], { providerIds: ['A', 'B'] });
+  assert.ok(cached.provider_sources.A.endsWith('/10.m3u8'));
+  const probes = [];
+  const verified = await resolver.resolve(['beIN SPORTS HD 7'], { providerIds: ['A', 'B'], verifySource: async (id, chosen) => {
+    probes.push([id, chosen.source_name]); return chosen.original_url.endsWith('/20.m3u8');
+  } });
+  assert.deepEqual(probes.map(([id]) => id), ['A', 'A']);
+  assert.deepEqual(Object.keys(verified.provider_sources), ['A']);
+  assert.ok(verified.provider_sources.A.endsWith('/20.m3u8'));
+});

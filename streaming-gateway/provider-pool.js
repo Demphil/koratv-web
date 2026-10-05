@@ -12,12 +12,12 @@ export class ProviderPool {
   constructor({ now = Date.now, idleMs = priorityMatrix.idleReleaseMs, viewerMs = priorityMatrix.viewerWindowMs, health = null } = {}) {
     this.health = health;
     this.now = now; this.idleMs = idleMs; this.viewerMs = viewerMs;
-    this.demands = new Map(); this.leases = new Map(); this.blocked = new Map(); this.tails = new Map(); this.failures = Object.fromEntries(PROVIDER_IDS.map(id => [id, 0]));
+    this.demands = new Map(); this.leases = new Map(); this.blocked = new Map(); this.tails = new Map(); this.probes = new Map(); this.failures = Object.fromEntries(PROVIDER_IDS.map(id => [id, 0]));
     this.timer = setInterval(() => this.rebalance(), 1000); this.timer.unref();
   }
-  close() { clearInterval(this.timer); this.health?.close(); for (const lease of this.leases.values()) lease.controller.abort(); }
+  close() { clearInterval(this.timer); this.health?.close(); for (const lease of [...this.leases.values(), ...this.probes.values()]) lease.controller.abort(); }
   score(demand) { return demand.base + demand.viewers.size * priorityMatrix.viewerPoints; }
-  valid(lease) { return this.leases.get(lease.provider) === lease && !lease.controller.signal.aborted; }
+  valid(lease) { return (this.probes.get(lease.provider) || this.leases.get(lease.provider)) === lease && !lease.controller.signal.aborted; }
   touch(lease, viewer) {
     if (!this.valid(lease)) return false;
     const demand = this.demands.get(lease.key);
@@ -37,10 +37,12 @@ export class ProviderPool {
   rebalance() {
     const now = this.now();
     for (const [key, demand] of this.demands) {
+      if ([...this.probes.keys()].some(provider => this.leases.get(provider)?.key === key)) continue;
       for (const [viewer, at] of demand.viewers) if (now - at >= this.viewerMs) demand.viewers.delete(viewer);
       if (!demand.viewers.size || now - demand.lastSeen >= this.idleMs) this.demands.delete(key);
     }
     for (const [provider, lease] of this.leases) {
+      if (this.probes.has(provider)) continue;
       const demand = this.demands.get(lease.key);
       if (!demand || (lease.channel !== demand.channel && demand.sources[provider] !== lease.url) || (this.blocked.get(provider) || 0) > now
         || (demand.sources[provider] !== lease.url && !demand.viewers.size)) this.revoke(provider);
@@ -61,13 +63,13 @@ export class ProviderPool {
         return Number(b === demand.preferredProvider) - Number(a === demand.preferredProvider) || score(a) - score(b);
       });
       const providers = [...new Set([current, ...available].filter(Boolean))];
-      const provider = providers.find(id => !desired.has(id) && demand.sources[id] && (this.blocked.get(id) || 0) <= now
+      const provider = providers.find(id => !this.probes.has(id) && !desired.has(id) && demand.sources[id] && (this.blocked.get(id) || 0) <= now
         && (!this.leases.has(id) || this.leases.get(id).key === demand.key)
         && (!(demand.failedUntil > now) || !this.leases.has(id) || this.leases.get(id).key === demand.key));
       if (provider) desired.set(provider, demand);
       if (desired.size === PROVIDER_IDS.length) break;
     }
-    for (const [provider, lease] of this.leases) if (desired.get(provider)?.key !== lease.key) this.revoke(provider);
+    for (const [provider, lease] of this.leases) if (!this.probes.has(provider) && desired.get(provider)?.key !== lease.key) this.revoke(provider);
     for (const [provider, demand] of desired) if (!this.leases.has(provider)) {
       this.leases.set(provider, { id: randomUUID(), provider, key: demand.key, channel: demand.channel, url: demand.sources[provider],
         controller: new AbortController(), tail: Promise.resolve() });
@@ -123,6 +125,30 @@ export class ProviderPool {
     }
     lease.url = sourceUrl;
     return true;
+  }
+  async probe(provider, channel, url, operation) {
+    if (this.probes.has(provider)) throw new PoolError('operation_in_progress', 409);
+    const previous = this.leases.get(provider);
+    const controller = new AbortController();
+    const lease = { id: randomUUID(), provider, channel, url, controller, probe: true };
+    this.probes.set(provider, lease);
+    previous?.controller.abort();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      // Drain aborted media before opening a different channel on a one-slot account.
+      await (this.tails.get(provider) || Promise.resolve()).catch(() => {});
+      if (controller.signal.aborted) throw new PoolError('channel_probe_failed');
+      return await operation(lease);
+    } finally {
+      clearTimeout(timeout);
+      controller.abort();
+      await (this.tails.get(provider) || Promise.resolve()).catch(() => {});
+      this.probes.delete(provider);
+      const demand = previous && this.demands.get(previous.key);
+      if (demand) demand.lastSeen = this.now();
+      if (previous && this.leases.get(provider) === previous) this.revoke(provider);
+      this.rebalance();
+    }
   }
   async run(lease, operation) {
     const task = (this.tails.get(lease.provider) || Promise.resolve()).catch(() => {}).then(async () => {

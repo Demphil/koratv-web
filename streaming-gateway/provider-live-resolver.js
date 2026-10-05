@@ -50,7 +50,7 @@ export function createProviderLiveResolver({
 
     const cacheKey = `${names.map((name) => name.toLowerCase()).join('|')}::${[...(options.providerIds || [])].sort().join(',')}`;
     const cached = cache.get(cacheKey);
-    if (!options.fresh && cached && cached.expiresAt > Date.now()) return cached.value;
+    if (!options.verifySource && !options.fresh && cached && cached.expiresAt > Date.now()) return cached.value;
 
     const providerAccounts = typeof accounts === 'function' ? accounts() || {} : {};
     const privateCredentials = loadPrivateCredentials();
@@ -78,8 +78,9 @@ export function createProviderLiveResolver({
 
       try {
         const inventory = typeof channels === 'function' ? channels() : {};
-        const preferredSourceNames = Object.fromEntries(names.map(name => [name, inventory?.[name]?.mediaVerifiedNames?.[providerId]]).filter(([, value]) => value));
-        const result = await discoverProvider(credentials, origins, names, { fetchImpl, retry: 1, preferredSourceNames });
+        const preferredSourceNames = Object.fromEntries(names.map(name => [name, options.preferredSourceName || inventory?.[name]?.mediaVerifiedNames?.[providerId]]).filter(([, value]) => value));
+        const result = await discoverProvider(credentials, origins, names, { fetchImpl, retry: 1, preferredSourceNames,
+          verifySource: options.verifySource ? (chosen, name) => options.verifySource(providerId, chosen, name) : null });
         const chosen = result.selected?.[0]?.chosen;
         for (const selected of result.selected || []) {
           if (!selected.chosen?.original_url) continue;
@@ -105,6 +106,7 @@ export function createProviderLiveResolver({
         attempts.push({ provider: providerId, status: 'error', error: error?.message || String(error) });
       }
 
+      if (options.verifySource && sourcesByChannel.size) break;
       if (staggerMs > 0) await sleep(staggerMs);
     }
 
@@ -121,12 +123,13 @@ export function createProviderLiveResolver({
       : { requestedChannels: names, resolvedChannel: null, provider_sources: {}, attempts, source: 'live-provider-resolver' };
 
     if (cache.size >= 200) cache.delete(cache.keys().next().value);
-    cache.set(cacheKey, { value, expiresAt: Date.now() + Math.max(1000, cacheTtlMs) });
+    if (!options.verifySource) cache.set(cacheKey, { value, expiresAt: Date.now() + Math.max(1000, cacheTtlMs) });
     return value;
   };
 
   return {
     resolve(requestedNames, options = {}) {
+      if (options.verifySource) return discover(requestedNames, options);
       const key = `${uniqueNames(requestedNames).map(name => name.toLowerCase()).join('|')}::${[...(options.providerIds || [])].sort().join(',')}`;
       if (inflight.has(key)) return inflight.get(key);
       const promise = discover(requestedNames, options).finally(() => {

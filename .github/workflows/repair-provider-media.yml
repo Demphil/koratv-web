@@ -30,7 +30,7 @@ jobs:
           host: ${{ secrets.ORACLE_HOST }}
           username: ${{ secrets.ORACLE_USER }}
           key: ${{ secrets.ORACLE_SSH_KEY }}
-          source: streaming-gateway/provider-direct.js,streaming-gateway/provider-catalog.js,streaming-gateway/provider-catalog-update.js,streaming-gateway/provider-live-resolver.js,streaming-gateway/config.js,streaming-gateway/operator-console.js,streaming-gateway/operator/console.js,streaming-gateway/operator/selection.js,streaming-gateway/scripts/sync-provider-pool.js,streaming-gateway/scripts/operator-catalog-install.mjs,streaming-gateway/scripts/repair-provider-media.mjs,shared/provider-channel-match.mjs
+          source: streaming-gateway/app.js,streaming-gateway/provider-pool.js,streaming-gateway/operator-channel.js,streaming-gateway/provider-direct.js,streaming-gateway/provider-catalog.js,streaming-gateway/provider-catalog-update.js,streaming-gateway/provider-live-resolver.js,streaming-gateway/config.js,streaming-gateway/operator-console.js,streaming-gateway/operator/console.js,streaming-gateway/operator/selection.js,streaming-gateway/scripts/sync-provider-pool.js,streaming-gateway/scripts/operator-catalog-install.mjs,streaming-gateway/scripts/repair-provider-media.mjs,shared/provider-channel-match.mjs
           target: /tmp/koratv-media-repair-${{ github.run_id }}
       - name: Verify alternative media without restarting the gateway
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
@@ -58,7 +58,7 @@ jobs:
             done
             install -m 0644 "$SOURCE/../shared/provider-channel-match.mjs" ../shared/provider-channel-match.mjs
             if [ "${{ inputs.refresh_runtime }}" = true ]; then
-              for FILE in config.js provider-live-resolver.js operator-console.js operator/console.js operator/selection.js; do
+              for FILE in app.js provider-pool.js operator-channel.js config.js provider-live-resolver.js operator-console.js operator/console.js operator/selection.js; do
                 node --check "$SOURCE/$FILE"
                 mkdir -p "/etc/koratv/backups/media-repair-${{ github.run_id }}/$(dirname "$FILE")"
                 if [ -f "$FILE" ]; then cp "$FILE" "/etc/koratv/backups/media-repair-${{ github.run_id }}/$FILE"; fi

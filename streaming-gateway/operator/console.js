@@ -5,7 +5,7 @@ import { currentConsoleSelection } from './selection.js';
   let csrf = '', snapshot, selected = [], noticeItems = [], editing = false, polling, activeNotice = 0;
   const previewStage = $('notice-preview-stage');
   const previewView = createNotice(previewStage, { onClose: () => { stopNotice(previewView); previewView.card.hidden = true; }, onImage: src => { $('preview-full-image').src = src; $('preview-viewer').hidden = false; } });
-  const errors = { login_required: 'سجل الدخول أولاً.', invalid_login: 'بيانات الدخول غير صحيحة.', too_many_attempts: 'محاولات كثيرة. حاول بعد 15 دقيقة.', no_free_provider: 'كل الموارد مشغولة الآن. لم تتغير القناة القديمة؛ حرر مورداً قبل اختبار قناة أخرى.', channel_not_found: 'لم يعثر المورد على الاسم المحدد. لم تتغير القناة.', channel_probe_failed: 'رابط القناة لا يمرر الفيديو الآن. لم تتغير القناة.', operation_in_progress: 'هناك عملية قيد التنفيذ.', operation_failed: 'تعذر إكمال العملية. راجع حالة الموارد قبل إعادة المحاولة.', invalid_image: 'الصورة غير صالحة أو كبيرة جداً.' };
+  const errors = { login_required: 'سجل الدخول أولاً.', invalid_login: 'بيانات الدخول غير صحيحة.', too_many_attempts: 'محاولات كثيرة. حاول بعد 15 دقيقة.', no_free_provider: 'هذه المباراة لا تملك مورداً مستقلاً ولا يوجد مورد فارغ. لم تتغير القناة.', channel_not_found: 'لم يعثر المورد على الاسم المحدد. لم تتغير القناة.', channel_probe_failed: 'فشل اختبار فيديو القناة الجديدة. أُعيدت القناة القديمة.', operation_in_progress: 'هناك عملية قيد التنفيذ.', operation_failed: 'تعذر إكمال العملية. راجع حالة الموارد قبل إعادة المحاولة.', invalid_image: 'الصورة غير صالحة أو كبيرة جداً.' };
   const phaseNames = { preparing: 'تحضير', discovering: 'بحث لدى المورد', testing_media: 'اختبار الفيديو', saving: 'حفظ القناة', assigning: 'توزيع وتجهيز الموارد', ready: 'اكتملت العملية' };
   function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
   async function api(path, body) {
@@ -44,7 +44,7 @@ import { currentConsoleSelection } from './selection.js';
       const state = document.createElement('span'); state.className = `badge ${match.isLive ? 'live' : ''} ${match.sourceReady ? 'ready' : ''}`;
       state.textContent = `${match.isLive ? 'مباشر' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`;
       const input = document.createElement('input'); input.setAttribute('list', 'channel-names'); input.value = match.channelName || ''; input.setAttribute('aria-label', 'القناة'); input.oninput = () => { editing = true; };
-      const save = button('radio', 'اختبار واعتماد القناة', async () => { save.disabled = true; try { await api('channel', { matchId: match.matchId, channel: input.value }); message('بدأ البحث والاختبار. القناة القديمة تبقى حتى نجاح اختبار الجديدة.'); await refresh(false); } catch (error) { message(error.message, true); } finally { save.disabled = false; } });
+      const save = button('radio', 'اختبار واعتماد القناة', async () => { save.disabled = true; try { await api('channel', { matchId: match.matchId, channel: input.value }); message('بدأ البحث والاختبار. عند امتلاء الموارد قد يتوقف بث هذه المباراة مؤقتاً أثناء اختبار القناة؛ بقية المباريات لا تتأثر.'); await refresh(false); } catch (error) { message(error.message, true); } finally { save.disabled = false; } });
       save.className = 'channel-save'; save.append(document.createTextNode('اختبار واعتماد'));
       row.append(check, name, state, input, save); return row;
     }));

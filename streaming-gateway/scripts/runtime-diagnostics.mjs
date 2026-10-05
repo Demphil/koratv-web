@@ -68,6 +68,19 @@ if (process.env.DIAGNOSTICS_CHANNELS_ONLY === 'true') {
   report('exactChannelInventory', Object.entries(catalog.channels())
     .filter(([name]) => /arryadia|on\s*(?:time\s*)?sport/i.test(name))
     .map(([name, row]) => ({ name, providers: Object.keys(catalog.sources(name)), sourceNames: row.sourceNames || {} })));
+  const { credentialsFromCatalog, discoverProvider } = await moduleAt('provider-direct.js');
+  let privateCredentials = {};
+  try { privateCredentials = JSON.parse(readFileSync('/etc/koratv/provider-credentials.json', 'utf8')); } catch {}
+  const account = catalog.accounts().H;
+  const input = privateCredentials.H || credentialsFromCatalog(account);
+  const seen = new Set();
+  if (input && account?.enabled) await discoverProvider(input, [...new Set([...(input.origins || []), ...(account.origins || [])])], ['beIN SPORTS HD 7'], {
+    retry: 1, verifySource: async chosen => {
+      if (!seen.has(chosen.source_name)) report('georgiaChannelVariant', { provider: 'H', name: chosen.source_name, group: chosen.group });
+      seen.add(chosen.source_name);
+      return false;
+    }
+  });
   process.exit(0);
 }
 const apps = JSON.parse(execFileSync('pm2', ['jlist'], { encoding: 'utf8' }));

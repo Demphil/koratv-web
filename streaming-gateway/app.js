@@ -16,6 +16,7 @@ import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mj
 import { matchPlaybackState as providerPlaybackState, sourceMatchState, matchListCacheControl } from '../shared/match-lifecycle.mjs';
 import { resolvePublicMatchId } from '../shared/public-match-id.mjs';
 import { registerOperatorConsole, installPreparedOperatorChannel, refreshOperatorResources } from './operator-console.js';
+import { createOperatorChannelPreparer } from './operator-channel.js';
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
@@ -489,7 +490,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         return { ok: false, status: segment.status, error: 'segment_unavailable' };
       }
       if (!(await segment.arrayBuffer()).byteLength) return { ok: false, error: 'empty_segment' };
-      for (let index = Math.max(0, lines.length - 4); index < lines.length; index += 1) {
+      for (let index = Math.max(0, lines.length - 4); !lease.probe && index < lines.length; index += 1) {
         if (index === lastIndex) continue;
         const target = new URL(lines[index], base);
         const version = hasSequence ? `msn-${sequence + index}` : `mf-${hash}-${index}`;
@@ -594,40 +595,12 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       .map(({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastRank, manuallySelected }) => ({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastRank, manuallySelected }))
       .sort((a, b) => Number(b.isLive) - Number(a.isLive) || (a.isLive ? Date.parse(b.scheduledAt) - Date.parse(a.scheduledAt) : Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))),
     status: () => ({ accounts: (accountHealth?.snapshot() || []).map(({ provider, status, current_channel, last_http_code, cooldown_until }) => ({ provider, status, current_channel, last_http_code, cooldown_until })), prewarm: prewarmState, gateway: 'Oracle', player: 'Njalla', maxResources: 8 }),
-    prepareChannel: async (channel, phase) => {
-      if (!providerPool || !config.discoverOperatorChannel) throw new Error('channel_not_found');
-      providerPool.rebalance();
-      const accounts = config.providerAccounts();
-      const available = PROVIDER_IDS.filter(id => accounts[id]?.enabled && !providerPool.leases.has(id)
-        && (providerPool.blocked.get(id) || 0) <= Date.now());
-      if (!available.length) throw new Error('no_free_provider');
-      phase('discovering');
-      const result = await config.discoverOperatorChannel(config.resolveOperatorChannel?.(channel) || channel, available);
-      if (!result?.resolvedChannel || !Object.keys(result.provider_sources || {}).length) throw new Error('channel_not_found');
-      phase('testing_media');
-      const viewer = `operator:${randomUUID()}`;
-      let lease;
-      try {
-        const candidates = { ...result.provider_sources };
-        let tested = false;
-        while (Object.keys(candidates).length) {
-          // A temporary identity prevents a probe from borrowing a busy channel lease.
-          lease = providerPool.acquire({ match_id: viewer, pool_key: viewer, channel_id: viewer,
-            provider_sources: candidates, priority_score: 1 }, viewer);
-          let probe;
-          try { probe = await warmPlaybackManifest({ channel_id: result.resolvedChannel }, lease); }
-          catch { probe = { ok: false }; }
-          if (probe.ok) { tested = true; break; }
-          const failed = lease.provider;
-          providerPool.releaseViewer(lease.key, viewer); lease = null;
-          delete candidates[failed];
-        }
-        if (!tested) throw new Error('channel_probe_failed');
-        await installPreparedOperatorChannel(result);
-        config.refreshProviderCatalog();
-        return { name: result.resolvedChannel };
-      } finally { if (lease) providerPool.releaseViewer(lease.key, viewer); }
-    },
+    prepareChannel: createOperatorChannelPreparer({
+      pool: providerPool, accounts: config.providerAccounts,
+      resolveChannel: config.resolveOperatorChannel, discover: config.discoverOperatorChannel,
+      warm: warmPlaybackManifest, install: installPreparedOperatorChannel,
+      refresh: () => config.refreshProviderCatalog()
+    }),
     applyResources: async () => {
       await refreshOperatorResources();
       config.refreshProviderCatalog?.();

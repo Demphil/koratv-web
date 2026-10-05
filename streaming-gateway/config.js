@@ -96,7 +96,7 @@ export function loadConfig(env = process.env) {
     primeMatchSnapshots: () => Promise.all([getKoooraMatches(), getApiFootballMatches()]),
     refreshProviderCatalog: catalog ? () => catalog.refreshNow() : null,
     refreshMatchSnapshots: () => Promise.all([getKoooraMatches.refresh(), getApiFootballMatches.refresh()]),
-    discoverOperatorChannel: liveResolver ? (name, providerIds) => liveResolver.resolve([name], { fresh: true, providerIds }) : null,
+    discoverOperatorChannel: liveResolver ? (name, providerIds, verifySource, preferredSourceName) => liveResolver.resolve([name], { fresh: true, providerIds, verifySource, preferredSourceName }) : null,
     operatorPasswordHash: env.BROADCAST_ADMIN_PASSWORD_HASH || '',
     operatorOrigin: publicOrigin('BROADCAST_ADMIN_ORIGIN', env.BROADCAST_ADMIN_ORIGIN || 'https://stream-api.koratv.click'),
     operatorConsolePath,

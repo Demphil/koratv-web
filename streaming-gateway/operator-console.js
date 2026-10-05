@@ -125,7 +125,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     const channel = String(req.body.channel || '').trim();
     if (!channel || channel.length > 100 || /https?:|[/\\\r\n]/i.test(channel)) throw new Error('invalid_channel');
     job.matchId = match.matchId;
-    const prepared = await prepareChannel(channel, phase => { job.phase = phase; });
+    const prepared = await prepareChannel(channel, phase => { job.phase = phase; }, match);
     // Persist only after a media segment has passed the bounded probe.
     job.phase = 'saving';
     const previous = (await read()).overrides[match.matchId];
