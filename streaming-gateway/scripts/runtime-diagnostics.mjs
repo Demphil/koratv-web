@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createHmac } from 'node:crypto';
+import { createHmac, createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import assert from 'node:assert/strict';
 
@@ -12,6 +12,49 @@ const moduleAt = name => import(pathToFileURL(resolve(process.cwd(), name)).href
 const { createProviderCatalog } = await moduleAt('provider-catalog.js');
 const { createPlaybackResolver } = await moduleAt('supabase.js');
 const catalog = createProviderCatalog(process.env);
+if (process.env.DIAGNOSTICS_PROVIDER_CONNECTIONS_ONLY === 'true') {
+  const { credentialsFromCatalog, providerApi } = await moduleAt('provider-direct.js');
+  const authorization = `Bearer ${createHmac('sha256', process.env.HMAC_SECRET).update('koratv-account-admin-v1').digest('hex')}`;
+  const status = await (await fetch('http://127.0.0.1:3100/internal/accounts-status', { headers: { authorization } })).json();
+  let privateCredentials = {};
+  try { privateCredentials = JSON.parse(readFileSync('/etc/koratv/provider-credentials.json', 'utf8')); } catch {}
+  for (const provider of ['B', 'D']) {
+    const state = status.accounts.find(row => row.provider === provider);
+    if (state?.current_channel) { report('connectionProbe', { provider, skipped: 'busy_account' }); continue; }
+    const account = catalog.accounts()[provider];
+    const credentials = privateCredentials[provider] || credentialsFromCatalog(account);
+    if (!credentials) { report('connectionProbe', { provider, error: 'credentials_missing' }); continue; }
+    const identity = createHash('sha256').update(credentials.username + ':' + credentials.password).digest('hex').slice(0, 12);
+    const origins = [...new Set([...(credentials.origins || []), ...(account?.origins || [])])];
+    for (let index = 0; index < origins.length; index++) {
+      try {
+        const info = (await providerApi(credentials, origins[index])).user_info;
+        report('providerConnectionMetadata', { provider, identity, originIndex: index, auth: info?.auth, status: info?.status, maxConnections: info?.max_connections, activeConnections: info?.active_cons });
+      } catch (error) { report('providerConnectionMetadata', { provider, identity, originIndex: index, error: error.name, cause: error.cause?.code || null }); }
+    }
+    for (const channel of ['beIN SPORTS HD 1', 'beIN SPORTS HD 4']) {
+      const source = catalog.sources(channel)[provider];
+      if (!source) continue;
+      let url = new URL(source);
+      for (let redirect = 0; redirect < 5; redirect++) {
+        try {
+          const response = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'IPTVSmartersPlayer', Accept: '*/*' }, signal: AbortSignal.timeout(10000) });
+          const location = response.headers.get('location');
+          if (response.status >= 300 && response.status < 400 && location) {
+            const next = new URL(location, url);
+            report('connectionRedirect', { provider, channel, redirect, status: response.status, originChanged: next.origin !== url.origin });
+            await response.body?.cancel(); url = next; continue;
+          }
+          const reader = response.body?.getReader();
+          const first = await reader?.read(); await reader?.cancel();
+          report('connectionMedia', { provider, channel, status: response.status, bytes: first?.value?.length || 0, hls: Buffer.from(first?.value || []).toString('utf8').trimStart().startsWith('#EXTM3U') });
+        } catch (error) { report('connectionMedia', { provider, channel, error: error.name, cause: error.cause?.code || null, redirect }); }
+        break;
+      }
+    }
+  }
+  process.exit(0);
+}
 if (process.env.DIAGNOSTICS_CHANNELS_ONLY === 'true') {
   report('exactChannelInventory', Object.entries(catalog.channels())
     .filter(([name]) => /arryadia|on\s*(?:time\s*)?sport/i.test(name))
