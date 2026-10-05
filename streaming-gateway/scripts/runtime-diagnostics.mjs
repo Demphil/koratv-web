@@ -36,6 +36,7 @@ if (process.env.DIAGNOSTICS_PROVIDER_CONNECTIONS_ONLY === 'true') {
       const source = catalog.sources(channel)[provider];
       if (!source) continue;
       let url = new URL(source);
+      report('connectionTarget', { provider, channel, protocol: url.protocol, port: url.port || 'default', catalogOrigin: new URL(account.sourceUrl).origin === url.origin });
       for (let redirect = 0; redirect < 5; redirect++) {
         try {
           const response = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'IPTVSmartersPlayer', Accept: '*/*' }, signal: AbortSignal.timeout(10000) });
@@ -48,7 +49,15 @@ if (process.env.DIAGNOSTICS_PROVIDER_CONNECTIONS_ONLY === 'true') {
           const reader = response.body?.getReader();
           const first = await reader?.read(); await reader?.cancel();
           report('connectionMedia', { provider, channel, status: response.status, bytes: first?.value?.length || 0, hls: Buffer.from(first?.value || []).toString('utf8').trimStart().startsWith('#EXTM3U') });
-        } catch (error) { report('connectionMedia', { provider, channel, error: error.name, cause: error.cause?.code || null, redirect }); }
+        } catch (error) {
+          report('connectionMedia', { provider, channel, error: error.name, cause: error.cause?.code || null,
+            badPort: error.cause?.message === 'bad port', causeName: error.cause?.name,
+            nestedCodes: (error.cause?.errors || []).map(item => item.code).filter(Boolean), redirect, protocol: url.protocol, port: url.port || 'default' });
+          try {
+            const result = execFileSync('curl', ['-sS', '--max-time', '8', '--range', '0-1023', '-o', '/dev/null', '-w', '%{http_code}', '-A', 'IPTVSmartersPlayer', url.href], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+            report('connectionCurl', { provider, channel, status: Number(result), exitCode: 0 });
+          } catch (curlError) { report('connectionCurl', { provider, channel, status: Number(String(curlError.stdout || '').trim()) || 0, exitCode: curlError.status }); }
+        }
         break;
       }
     }
