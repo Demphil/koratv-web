@@ -33,10 +33,7 @@ export function createProviderLiveResolver({
       fileCredentials = JSON.parse(readFileSync(`${dir}/provider-credentials.json`, 'utf8'));
     } catch {}
     const merged = {};
-    const providerOrder = allowedProviders
-      ? [...allowedProviders].filter(id => PROVIDER_IDS.includes(id))
-      : PROVIDER_IDS;
-    for (const providerId of providerOrder) {
+    for (const providerId of PROVIDER_IDS) {
       const input = env[`IPTV_PROVIDER_${providerId}_JSON`];
       if (input) {
         try { merged[providerId] = JSON.parse(input); } catch {}
@@ -64,7 +61,10 @@ export function createProviderLiveResolver({
       ? new Set(options.providerIds.map((id) => String(id)))
       : null;
 
-    for (const providerId of PROVIDER_IDS) {
+    const providerOrder = allowedProviders
+      ? [...allowedProviders].filter(id => PROVIDER_IDS.includes(id))
+      : PROVIDER_IDS;
+    for (const providerId of providerOrder) {
       if (allowedProviders && !allowedProviders.has(providerId)) continue;
       const account = providerAccounts[providerId];
       if (account && account.enabled === false) continue;
