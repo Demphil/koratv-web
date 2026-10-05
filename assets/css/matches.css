@@ -44,6 +44,19 @@ body::before {
   z-index: -1;
 }
 
+.prerendered-match {
+  padding: 16px;
+  min-width: 0;
+  border: 1px solid rgba(217, 184, 108, 0.18);
+  border-radius: 8px;
+  background: rgba(24, 32, 51, 0.34);
+  line-height: 1.8;
+}
+.prerendered-match h3 { margin: 0 0 8px; font-size: 17px; overflow-wrap: anywhere; }
+.prerendered-match p { margin: 6px 0; }
+.prerendered-match time { font-size: 13px; color: #d2d7df; }
+.prerendered-match a { color: var(--secondary-color); display: inline-block; margin-top: 8px; }
+
 .matches-main {
   padding: clamp(15px, 4vw, 30px);
   max-width: 1600px;

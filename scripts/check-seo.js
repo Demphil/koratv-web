@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { load } = require('cheerio');
 
 const root = path.resolve(__dirname, "..");
 const cnamePath = path.join(root, "CNAME");
@@ -33,6 +34,17 @@ for (const page of pages) {
     const schema = JSON.parse(schemaText);
     if (schema["@context"] !== "https://schema.org" || !Array.isArray(schema["@graph"])) {
       failures.push(`${file}: invalid structured data graph`);
+    }
+    if (new URL(siteUrl).hostname === 'koratv.click') {
+      const website = schema['@graph'].find(node => node['@type'] === 'WebSite');
+      const organization = schema['@graph'].find(node => node['@type'] === 'Organization');
+      const $ = load(html);
+      if (website?.name !== 'koratv' || organization?.name !== 'koratv'
+        || website?.url !== `${siteUrl}/` || !website?.alternateName?.includes('KoraTV')) failures.push(`${file}: inconsistent koratv identity`);
+      if ($('meta[property="og:site_name"]').attr('content') !== 'koratv'
+        || !title.startsWith('koratv |')) failures.push(`${file}: brand missing from metadata`);
+      if (page === '/' && !$('h1').text().includes('koratv')) failures.push(`${file}: homepage heading missing brand`);
+      if (/noindex/i.test($('meta[name="robots"]').attr('content') || '')) failures.push(`${file}: indexable page is noindex`);
     }
   } catch {
     failures.push(`${file}: invalid JSON-LD`);

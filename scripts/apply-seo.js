@@ -8,7 +8,8 @@ const configuredHost = process.env.SITE_URL || (fs.existsSync(cname)
   : "koratv.click");
 const siteUrl = new URL(configuredHost.includes("://") ? configuredHost : `https://${configuredHost}`).origin;
 const isFraja = new URL(siteUrl).hostname.endsWith("frajatv.fun");
-const brand = isFraja ? "فرجة" : "KoraTV";
+const brand = isFraja ? "فرجة" : "koratv";
+const alternateNames = isFraja ? ["Fraja"] : ["KoraTV", "كورا تي في", "koratv.click"];
 const logoPath = isFraja && fs.existsSync(path.join(root, "assets/images/fraja-logo.svg"))
   ? "/assets/images/fraja-logo.svg"
   : "/assets/images/logo.png";
@@ -21,13 +22,13 @@ const pages = [
     path: "/",
     title: isFraja
       ? "جدول مباريات اليوم ونتائج كرة القدم | فرجة"
-      : "نتائج ومواعيد مباريات كرة القدم اليوم | KoraTV",
+      : "koratv | مباريات اليوم والنتائج والقنوات الناقلة",
     description: isFraja
       ? "اعرف مواعيد مباريات كرة القدم ونتائجها اليوم، مرتبة بحسب وقت البداية والبطولة وحالة المباراة، مع تحديثات للمتابعة من الهاتف."
-      : "تابع نتائج وإحصاءات مباريات كرة القدم اليوم والغد، مع مواعيد البداية وحالة كل مباراة وترتيب واضح للبطولات بتوقيت المغرب.",
+      : "تابع مع koratv جدول مباريات اليوم والغد، نتائج كرة القدم وإحصاءاتها والقنوات الناقلة، مع مواعيد المباريات بتوقيت المغرب.",
     h1: isFraja
       ? "مواعيد مباريات اليوم ونتائجها"
-      : "نتائج وإحصاءات مباريات كرة القدم",
+      : "koratv | مباريات اليوم ونتائجها",
     type: "WebPage",
   },
   {
@@ -35,7 +36,7 @@ const pages = [
     path: "/news.html",
     title: isFraja
       ? "مستجدات كرة القدم اليوم | أخبار فرجة"
-      : "أخبار كرة القدم والبطولات | KoraTV",
+      : "koratv | أخبار كرة القدم والبطولات",
     description: isFraja
       ? "تابع مستجدات كرة القدم والبطولات، وابحث في الأخبار حسب المسابقة أو المنتخب، مع روابط تعود إلى مصادر الخبر الأصلية."
       : "اقرأ أحدث مستجدات كرة القدم والبطولات، وابحث في الأخبار حسب المسابقة أو الفريق، مع روابط واضحة إلى المصادر الأصلية.",
@@ -76,14 +77,16 @@ function pageSchema(page, url) {
         "@type": "Organization",
         "@id": orgId,
         name: brand,
-        url: siteUrl,
+        alternateName: alternateNames,
+        url: `${siteUrl}/`,
         logo: { "@type": "ImageObject", url: logoUrl },
       },
       {
         "@type": "WebSite",
         "@id": websiteId,
-        url: siteUrl,
+        url: `${siteUrl}/`,
         name: brand,
+        alternateName: alternateNames,
         inLanguage: "ar",
         publisher: { "@id": orgId },
       },
@@ -151,6 +154,9 @@ function updatePage(page) {
     /<h1\b([^>]*class=["'][^"']*header-title[^"']*["'][^>]*)>[\s\S]*?<\/h1>/i,
     `<h1$1>${escapeHtml(page.h1)}</h1>`,
   );
+  html = html.replace(/href="index\.html"/g, 'href="/"');
+  html = html.replace(/matches\.css\?v=[^"']+/g, 'matches.css?v=20261005-seo');
+  html = html.replace(/matches\.js\?v=[^"']+/g, 'matches.js?v=20261005-seo');
   fs.writeFileSync(file, html, "utf8");
 }
 

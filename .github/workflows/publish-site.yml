@@ -16,6 +16,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/generate-match-pages.cjs"
+      - "scripts/prerender-match-list.cjs"
+      - "scripts/prerender-match-list.test.cjs"
       - "scripts/submit-indexnow.js"
       - "assets/js/matches.js"
       - "shared/match-lifecycle.mjs"
@@ -55,12 +57,13 @@ jobs:
         run: |
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --fund=false
+          node scripts/check-seo.js
           node --test scripts/build-public-site.test.cjs
           node scripts/build-public-site.cjs
 
       - name: Test and generate indexable match pages
         run: |
-          node --test scripts/generate-match-pages.test.cjs
+          node --test scripts/generate-match-pages.test.cjs scripts/prerender-match-list.test.cjs
           node scripts/generate-match-pages.cjs --output _site
 
       - name: Configure GitHub Pages

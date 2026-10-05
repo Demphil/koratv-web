@@ -1,5 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { sameFixture, deduplicateSourceEvents } = require('../shared/match-broadcasts.mjs');
+const { sourceMatchState } = require('../shared/match-lifecycle.mjs');
+const { isAllowedMatch, isGulfCupLeague } = require('../shared/league-whitelist.mjs');
+const { prerenderHomepage } = require('./prerender-match-list.cjs');
 
 const root = path.resolve(__dirname, '..');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -42,7 +46,7 @@ function siteConfig() {
   const configured = process.env.SITE_URL || fs.readFileSync(path.join(root, 'CNAME'), 'utf8').trim();
   const siteUrl = new URL(configured.includes('://') ? configured : `https://${configured}`).origin;
   const isFraja = new URL(siteUrl).hostname.endsWith('frajatv.fun');
-  return { siteUrl, brand: isFraja ? 'فرجة' : 'KoraTV' };
+  return { siteUrl, brand: isFraja ? 'فرجة' : 'koratv' };
 }
 
 function visibleStatistics(payload) {
@@ -70,8 +74,9 @@ function matchPage(row, config) {
   }).format(kickoff);
   const title = `${home} ضد ${away}: الموعد والنتيجة والإحصاءات | ${config.brand}`;
   const league = String(row.league || payload.league || '').trim();
-  const score = String(payload.score || 'لم تبدأ المباراة').trim();
-  const status = payload.isFinished ? 'انتهت المباراة' : payload.isLive ? 'مباراة جارية' : 'موعد المباراة';
+  const state = sourceMatchState(payload);
+  const score = String(payload.score || (state === 'upcoming' ? 'لم تبدأ المباراة' : 'النتيجة غير متوفرة')).trim();
+  const status = state === 'ended' ? 'انتهت المباراة' : state === 'live' ? 'مباراة جارية' : 'موعد المباراة';
   const description = `${status}: ${home} ضد ${away}${league ? ` ضمن ${league}` : ''}. الموعد ${dateText} الساعة ${timeText} بتوقيت المغرب. النتيجة الحالية: ${score}.`;
   const canonical = `${config.siteUrl}/match/${matchSlug(row)}/`;
   const stats = visibleStatistics(payload);
@@ -88,7 +93,8 @@ function matchPage(row, config) {
   const schema = {
     '@context': 'https://schema.org',
     '@graph': [
-      { '@type': 'WebPage', '@id': `${canonical}#webpage`, url: canonical, name: title, description, inLanguage: 'ar' },
+      { '@type': 'WebPage', '@id': `${canonical}#webpage`, url: canonical, name: title, description, inLanguage: 'ar',
+        isPartOf: { '@id': `${config.siteUrl}/#website` }, publisher: { '@id': `${config.siteUrl}/#organization` } },
       { '@type': 'BreadcrumbList', itemListElement: [
         { '@type': 'ListItem', position: 1, name: config.brand, item: `${config.siteUrl}/` },
         { '@type': 'ListItem', position: 2, name: `${home} ضد ${away}`, item: canonical }
@@ -105,7 +111,7 @@ function matchPage(row, config) {
 <title>${escapeHtml(title)}</title><meta name="description" content="${escapeHtml(description)}">
 <meta name="robots" content="index,follow,max-image-preview:large">
 <link rel="canonical" href="${escapeHtml(canonical)}"><meta property="og:type" content="article">
-<meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(description)}"><meta property="og:url" content="${escapeHtml(canonical)}">
+<meta property="og:site_name" content="${escapeHtml(config.brand)}"><meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(description)}"><meta property="og:url" content="${escapeHtml(canonical)}">
 <link rel="stylesheet" href="/assets/css/matches.css">
 <script type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>
 <style>
@@ -131,7 +137,7 @@ async function loadMatches() {
   const from = new Date(now - 7 * DAY_MS).toISOString();
   const to = new Date(now + 14 * DAY_MS).toISOString();
   const url = new URL(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}`);
-  url.searchParams.set('select', 'id,match_id,home_team,away_team,league,kickoff_time,payload,active,updated_at');
+  url.searchParams.set('select', 'id,match_id,source,home_team,away_team,league,channel,kickoff_time,payload,active,updated_at');
   url.searchParams.set('active', 'eq.true');
   url.searchParams.set('and', `(kickoff_time.gte.${from},kickoff_time.lte.${to})`);
   url.searchParams.set('order', 'kickoff_time.asc');
@@ -153,7 +159,8 @@ async function generate(outputDir = path.join(root, '_site'), rows) {
   const config = siteConfig();
   const matches = rows || await loadMatches();
   fs.mkdirSync(outputDir, { recursive: true });
-  const pages = matches.map((row) => matchPage(row, config)).filter(Boolean);
+  const selected = selectIndexableMatches(matches);
+  const pages = selected.map((row) => matchPage(row, config)).filter(Boolean);
   const seen = new Set();
   for (const page of pages) {
     if (seen.has(page.slug)) continue;
@@ -162,6 +169,18 @@ async function generate(outputDir = path.join(root, '_site'), rows) {
     fs.mkdirSync(directory, { recursive: true });
     fs.writeFileSync(path.join(directory, 'index.html'), page.html);
   }
+  // Keep existing bilingual URLs usable, but consolidate their indexing signals.
+  for (const row of matches) {
+    const canonical = selected.find(candidate => sameFixture(candidate, row));
+    if (!canonical || matchSlug(canonical) === matchSlug(row) || !matchPage(row, config)) continue;
+    const target = `${config.siteUrl}/match/${matchSlug(canonical)}/`;
+    const directory = path.join(outputDir, 'match', matchSlug(row));
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'index.html'), `<!doctype html><html lang="ar"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=${escapeHtml(target)}"><link rel="canonical" href="${escapeHtml(target)}"><title>${escapeHtml(config.brand)}</title></head><body><a href="${escapeHtml(target)}">تفاصيل المباراة</a></body></html>`);
+  }
+  const homepage = path.join(outputDir, 'index.html');
+  if (fs.existsSync(homepage)) fs.writeFileSync(homepage,
+    prerenderHomepage(fs.readFileSync(homepage, 'utf8'), selectHomepageMatches(selected), matchSlug));
 
   const staticSitemap = path.join(outputDir, 'sitemap.xml');
   const currentSitemap = fs.existsSync(staticSitemap) ? fs.readFileSync(staticSitemap, 'utf8') : '';
@@ -188,4 +207,23 @@ if (require.main === module) {
   });
 }
 
-module.exports = { escapeHtml, matchSlug, matchPage, generate };
+function selectIndexableMatches(rows) {
+  const preference = row => (/[\u0600-\u06ff]/.test(row.home_team + row.away_team) ? 4 : 0)
+    + (String(row.source).startsWith('kooora') ? 8 : 0);
+  const candidates = deduplicateSourceEvents(rows).filter(row => sourceMatchState(row.payload || {}) !== 'unavailable'
+    && row.home_team && row.away_team && safeDate(row.kickoff_time || row.payload?.scheduledAt))
+    .sort((a, b) => preference(b) - preference(a) || Date.parse(b.updated_at || 0) - Date.parse(a.updated_at || 0));
+  const selected = [];
+  for (const row of candidates) if (!selected.some(candidate => sameFixture(candidate, row))) selected.push(row);
+  return selected.sort((a, b) => Date.parse(a.kickoff_time) - Date.parse(b.kickoff_time));
+}
+
+function selectHomepageMatches(rows) {
+  return rows.filter(row => (String(row.source).startsWith('kooora')
+    || (row.source === 'api-football' && isGulfCupLeague(row.league))) && isAllowedMatch({
+      league: row.league, leagueCountry: row.payload?.leagueCountry,
+      homeTeam: row.home_team, awayTeam: row.away_team
+    }));
+}
+
+module.exports = { escapeHtml, matchSlug, matchPage, generate, selectIndexableMatches, selectHomepageMatches };
