@@ -91,3 +91,18 @@ test('a shared stream is not interrupted for a different match when no spare exi
   await assert.rejects(prepare('New', () => {}, { matchId: 'A' }), /no_free_provider/);
   for (const lease of leases) assert.ok(pool.valid(lease));
 });
+
+test('an explicitly requested provider variant cannot silently fall back to another working edition', async t => {
+  const { pool, accounts } = setup(t);
+  const variant = '[AR] BEIN SPORTS 7 4k';
+  let tested = 0;
+  const prepare = createOperatorChannelPreparer({ pool, accounts: () => accounts, resolveChannel: () => 'beIN SPORTS HD 7',
+    discover: async (name, providers, verify, preferred) => {
+      assert.equal(preferred, variant);
+      assert.equal(await verify('A', { original_url: 'https://test.example/wrong.m3u8', source_name: '[AR] BEIN SPORTS 7 HD' }, name), false);
+      assert.equal(await verify('A', { original_url: 'https://test.example/right.m3u8', source_name: variant }, name), true);
+      return { resolvedChannel: name, provider_sources: { A: 'https://test.example/right.m3u8' } };
+    }, warm: async () => { tested++; return { ok: true }; }, install: async () => {}, refresh: () => {} });
+  await prepare(variant, () => {}, { matchId: 'A' });
+  assert.equal(tested, 1);
+});

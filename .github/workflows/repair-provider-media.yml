@@ -23,7 +23,7 @@ jobs:
       - name: Test compatible variant selection
         run: |
           npm ci --prefix streaming-gateway --ignore-scripts --no-audit
-          node --test streaming-gateway/test/provider-direct.test.js
+          node --test streaming-gateway/test/provider-direct.test.js streaming-gateway/test/operator-channel.test.js streaming-gateway/test/channel-region.test.js streaming-gateway/test/operator-console.test.js
       - name: Upload bounded repair
         uses: appleboy/scp-action@v0.1.7
         with:
