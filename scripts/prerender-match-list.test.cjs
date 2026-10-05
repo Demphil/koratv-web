@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('cheerio');
 const { prerenderHomepage, dateKey } = require('./prerender-match-list.cjs');
+const { nextMoroccoMidnight } = require('../shared/match-lifecycle.mjs');
 
 const markup = '<!doctype html><html><head><title>koratv</title></head><body><div id="featured-matches"><div id="loading">Loading</div></div><div id="today-matches"></div><div id="tomorrow-matches" style="display:none"></div><script type="module" src="/assets/js/matches.js"></script></body></html>';
 const fixture = {
@@ -21,12 +22,16 @@ test('initial HTML includes real visible match facts and crawlable links without
 });
 
 test('prerendering filters calendar days in Morocco, including midnight and DST', () => {
-  assert.equal(dateKey('2026-10-04T23:00:00Z'), '2026-10-05');
+  assert.equal(dateKey('2026-10-05T12:00:00Z'), '2026-10-05');
   for (const now of ['2026-10-04T22:59:59Z', '2026-03-22T22:30:00Z']) {
-    const next = { ...fixture, kickoff_time: new Date(new Date(now).getTime() + 2 * 3600000).toISOString() };
+    const midnight = nextMoroccoMidnight(new Date(now).getTime());
+    assert.notEqual(dateKey(midnight - 1), dateKey(midnight));
+    const next = { ...fixture, kickoff_time: new Date(midnight + 1000).toISOString() };
     const html = prerenderHomepage(markup, [next], () => 'next', new Date(now));
     assert.equal(load(html)('#tomorrow-matches a').length, 1);
     assert.equal(load(html)('#today-matches a').length, 0);
+    const rolled = prerenderHomepage(markup, [next], () => 'next', new Date(midnight + 1000));
+    assert.equal(load(rolled)('#today-matches a').length, 1);
   }
 });
 
