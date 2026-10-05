@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { discoverProvider, PROVIDER_USER_AGENT } from '../provider-direct.js';
+import { isProviderChannelCompatible, normalizeName } from '../../shared/provider-channel-match.mjs';
 
 const credentials = { username: 'sample', password: 'private', origins: ['https://one.example','https://two.example'] };
 const streams = [{ name: 'AR - BEIN SPORTS 1 HD', category_id: 8, stream_id: 123 }];
+
+test('4K quality is not channel number 4 and different beIN channel numbers never match', () => {
+  assert.equal(normalizeName('[AR] BEIN SPORTS 1 4k'), 'bein sport 1');
+  assert.equal(isProviderChannelCompatible('beIN SPORTS HD 4', { name: '[AR] BEIN SPORTS 1 4k' }), false);
+  assert.equal(isProviderChannelCompatible('beIN SPORTS HD 4', { name: '[AR] BEIN SPORTS 4 4k' }), true);
+  assert.equal(isProviderChannelCompatible('beIN SPORTS HD 1', { name: '[AR] BEIN SPORTS 4 4k' }), false);
+});
 
 test('invalid categories do not block direct streams and every request carries the player user agent', async () => {
   const actions = [];

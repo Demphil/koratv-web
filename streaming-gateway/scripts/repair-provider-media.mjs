@@ -9,6 +9,7 @@ const execute = promisify(execFile);
 const moduleAt = name => import(pathToFileURL(resolve(process.cwd(), name)).href);
 const { createProviderCatalog } = await moduleAt('provider-catalog.js');
 const { credentialsFromCatalog, discoverProvider } = await moduleAt('provider-direct.js');
+const { isProviderChannelCompatible } = await moduleAt('../shared/provider-channel-match.mjs');
 const catalog = createProviderCatalog(process.env);
 const dir = process.env.PROVIDER_POOL_DIR || '/etc/koratv';
 const authorization = `Bearer ${createHmac('sha256', process.env.HMAC_SECRET).update('koratv-account-admin-v1').digest('hex')}`;
@@ -18,7 +19,9 @@ try { credentials = JSON.parse(await readFile(`${dir}/provider-credentials.json`
 const targets = [['B', 'beIN SPORTS HD 1'], ['D', 'beIN SPORTS HD 4']];
 for (const [provider, channel] of targets) {
   const state = (await status()).find(row => row.provider === provider);
-  if (state?.current_channel && state.last_http_code === 200) {
+  const entry = catalog.channels()[channel];
+  const compatible = isProviderChannelCompatible(channel, { name: entry?.sourceNames?.[provider] || '', group: entry?.sourceGroups?.[provider] || '' });
+  if (state?.current_channel && state.last_http_code === 200 && compatible) {
     console.log(JSON.stringify({ provider, channel, skipped: 'working_account' })); continue;
   }
   const account = catalog.accounts()[provider];

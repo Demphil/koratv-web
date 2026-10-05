@@ -25,7 +25,7 @@ jobs:
           host: ${{ secrets.ORACLE_HOST }}
           username: ${{ secrets.ORACLE_USER }}
           key: ${{ secrets.ORACLE_SSH_KEY }}
-          source: streaming-gateway/provider-direct.js,streaming-gateway/scripts/repair-provider-media.mjs
+          source: streaming-gateway/provider-direct.js,streaming-gateway/scripts/repair-provider-media.mjs,shared/provider-channel-match.mjs
           target: /tmp/koratv-media-repair-${{ github.run_id }}
       - name: Verify alternative media without restarting the gateway
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
@@ -42,5 +42,8 @@ jobs:
             node --check "$SOURCE/scripts/repair-provider-media.mjs"
             mkdir -p /etc/koratv/backups/media-repair-${{ github.run_id }}
             cp provider-direct.js /etc/koratv/backups/media-repair-${{ github.run_id }}/provider-direct.js
+            cp ../shared/provider-channel-match.mjs /etc/koratv/backups/media-repair-${{ github.run_id }}/provider-channel-match.mjs
+            cp /etc/koratv/provider-catalog.json /etc/koratv/backups/media-repair-${{ github.run_id }}/provider-catalog.json
             install -m 0644 "$SOURCE/provider-direct.js" provider-direct.js
+            install -m 0644 "$SOURCE/../shared/provider-channel-match.mjs" ../shared/provider-channel-match.mjs
             node --env-file=/etc/koratv/gateway.env "$SOURCE/scripts/repair-provider-media.mjs"

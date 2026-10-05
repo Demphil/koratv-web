@@ -31,6 +31,7 @@ export function normalizeName(name) {
     .replace(/\bthree\b/g, '3')
     .replace(/\bfour\b/g, '4')
     .replace(/\bfive\b/g, '5')
+    .replace(/\b(?:[48]\s*k|(?:720|1080|2160)p|uhd|fullhd)\b/g, ' ')
     .replace(/([\p{L}])([0-9])/gu, '$1 $2')
     .replace(/([0-9])([\p{L}])/gu, '$1 $2')
     .replace(/\bar\b/g, ' ')
@@ -188,7 +189,8 @@ function scoreEntry(entry, rule, requestedName = '') {
   if (rule.required.includes('bein')) {
     const nameWords = new Set(normalizeName(entry.name).split(/\s+/));
     const number = rule.required.find((token) => /^\d+$/.test(token));
-    if (number && !nameWords.has(number)) return -1;
+    const sourceNumber = normalizeName(entry.name).match(/\b(\d{1,2})\b/)?.[1];
+    if (number && sourceNumber !== number) return -1;
     for (const variant of ['max', 'xtra', 'premium', 'connect']) {
       if (nameWords.has(variant) !== rule.required.includes(variant)) return -1;
     }
