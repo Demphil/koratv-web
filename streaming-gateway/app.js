@@ -13,7 +13,7 @@ import { HlsProgressMonitor } from './hls-progress.js';
 import { singleQualityManifest } from './single-quality.js';
 import { diagnosticPlayback, registerMultiview } from './multiview.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
-import { matchPlaybackState as providerPlaybackState, sourceMatchState } from '../shared/match-lifecycle.mjs';
+import { matchPlaybackState as providerPlaybackState, sourceMatchState, matchListCacheControl } from '../shared/match-lifecycle.mjs';
 import { resolvePublicMatchId } from '../shared/public-match-id.mjs';
 import { registerOperatorConsole, installPreparedOperatorChannel, refreshOperatorResources } from './operator-console.js';
 
@@ -848,7 +848,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         : day === 'tomorrow'
           ? matches.filter((match) => moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === tomorrow)
           : matches.filter((match) => [today, tomorrow].includes(moroccoPart(match.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' })));
-      res.set('Cache-Control', 'public, max-age=15, s-maxage=30, stale-while-revalidate=120');
+      res.set('Cache-Control', matchListCacheControl());
       res.json({ matches: filtered.filter(allowedMatch) });
     } catch {
       res.status(503).json({ error: 'Match service is unavailable' });

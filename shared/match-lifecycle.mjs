@@ -3,6 +3,24 @@ const liveStatuses = new Set(['LIVE', '1H', 'HT', '2H', 'ET', 'BT', 'P', 'INT', 
 const waitingStatuses = new Set(['FIXTURE', 'NS', 'TBD', 'NOT STARTED', 'SCHEDULED']);
 const unavailableStatuses = new Set(['PST', 'POSTPONED', 'CANC', 'CANCELLED', 'CANCELED', 'ABD', 'ABANDONED', 'AWD', 'WO']);
 
+export function nextMoroccoMidnight(reference = Date.now()) {
+  const parts = value => Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Casablanca', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  }).formatToParts(new Date(value)).filter(part => part.type !== 'literal').map(part => [part.type, Number(part.value)]));
+  const current = parts(reference);
+  const local = Date.UTC(current.year, current.month - 1, current.day + 1);
+  const seen = parts(local);
+  const seenUtc = Date.UTC(seen.year, seen.month - 1, seen.day, seen.hour, seen.minute, seen.second);
+  return local - (seenUtc - local);
+}
+
+export function matchListCacheControl(now = Date.now()) {
+  const remaining = Math.max(0, Math.floor((nextMoroccoMidnight(now) - now) / 1000));
+  const shared = Math.min(30, remaining);
+  return `public, max-age=${Math.min(15, remaining)}, s-maxage=${shared}, stale-while-revalidate=${Math.min(120, Math.max(0, remaining - shared))}`;
+}
+
 export function sourceMatchState(payload = {}) {
   const raw = payload.status || payload.state || payload.matchStatus || '';
   const status = String(typeof raw === 'object' ? raw.short || raw.long || '' : raw)

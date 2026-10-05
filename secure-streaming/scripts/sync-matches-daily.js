@@ -16,9 +16,10 @@ function log(event, details = {}) {
   }));
 }
 
-export async function syncMatchesDaily() {
+export async function syncMatchesDaily({ collectRows = collectMatchRowsFromSource, upsertRows = upsertMatchRows,
+  createClient = getSupabaseAdmin, cleanupDay = runDailyRolloverCleanup, pruneRows = pruneMatchData } = {}) {
   log("daily_matches_sync_started");
-  const rows = await collectMatchRowsFromSource();
+  const rows = await collectRows();
   const minParsed = Number(process.env.MATCH_SYNC_MIN_PARSED || 1);
   if (!dryRun && rows.length < minParsed) {
     throw new Error(`Refusing to clean matches because only ${rows.length} rows were parsed. Set MATCH_SYNC_MIN_PARSED lower only if this is expected.`);
@@ -32,12 +33,13 @@ export async function syncMatchesDaily() {
     }
     matches = { parsed: rows.length, upserted: 0, enriched: null };
   } else {
-    const supabase = getSupabaseAdmin();
+    const supabase = createClient();
+    // Persist the replacement first; a failed refresh must not empty the next day.
+    matches = await upsertRows(rows, { prune: false });
     const rollover = process.env.MATCH_DAILY_ROLLOVER_CLEANUP === "false"
       ? { skipped: true }
-      : await runDailyRolloverCleanup(supabase, matchesTable, { dateKey: moroccoDateKey() });
-    cleanup = { rollover, deleted: await pruneMatchData(supabase, matchesTable) };
-    matches = await upsertMatchRows(rows, { prune: false });
+      : await cleanupDay(supabase, matchesTable, { dateKey: moroccoDateKey() });
+    cleanup = { rollover, deleted: await pruneRows(supabase, matchesTable) };
   }
   const result = { cleanup, matches };
   log("daily_matches_sync_finished", result);

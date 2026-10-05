@@ -147,8 +147,8 @@ test('both frontend readers coalesce concurrent initial loads', async () => {
     let calls = 0, release;
     const promise = new Promise(resolve => { release = resolve; });
     const context = vm.createContext({ fetch: () => { calls++; return promise; }, Date, AbortSignal,
-      MATCHES_API_ORIGIN: 'https://api.example', CACHE_EXPIRY_MS: 1000, normalizeStagingMatch: value => value });
-    vm.runInContext('let stagingMatchesPromise=null, stagingMatchesExpiresAt=0, stagingMatchesPending=false;\n' + fn, context);
+      getMoroccoDateKey: () => '2026-10-04', MATCHES_API_ORIGIN: 'https://api.example', CACHE_EXPIRY_MS: 1000, normalizeStagingMatch: value => value });
+    vm.runInContext('let stagingMatchesPromise=null, stagingMatchesExpiresAt=0, stagingMatchesPending=false, stagingMatchesDay="";\n' + fn, context);
     const first = vm.runInContext('getStagingMatches()', context);
     const second = vm.runInContext('getStagingMatches()', context);
     assert.equal(calls, 1);

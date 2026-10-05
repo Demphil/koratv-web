@@ -1,3 +1,5 @@
+import { sourceMatchState, nextMoroccoMidnight } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
+
 // --- 1. Cache Configuration ---
 
 const CACHE_EXPIRY_MS = 20 * 1000;
@@ -21,11 +23,17 @@ function setCache(key, data) {
 function getCache(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || 'null');
-    if (!parsed || !Array.isArray(parsed.data) || Date.now() - Number(parsed.savedAt || 0) > SNAPSHOT_CACHE_TTL_MS) {
+    if (!parsed || !Array.isArray(parsed.data)) {
       localStorage.removeItem(key);
       return null;
     }
-    return parsed.data;
+    const expired = Date.now() - Number(parsed.savedAt || 0) > SNAPSHOT_CACHE_TTL_MS;
+    const data = parsed.data.filter(match => {
+      const day = getMoroccoDay(match.scheduledAt);
+      return ['today', 'tomorrow'].includes(day) && (!expired || (day === 'today' && completedMatch(match)));
+    });
+    if (!data.length) { localStorage.removeItem(key); return null; }
+    return data;
   } catch {
     localStorage.removeItem(key);
     return null;
@@ -95,6 +103,20 @@ export function getMoroccoDay(timestamp, reference = new Date()) {
   return difference === 0 ? 'today' : difference === 1 ? 'tomorrow' : difference === -1 ? 'yesterday' : 'other';
 }
 
+export function getMoroccoDateKey(reference = new Date()) {
+  const { year, month, day } = zonedParts(reference, MOROCCO_TIME_ZONE);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+export function getNextMoroccoDayDelay(reference = new Date()) {
+  return Math.max(25, nextMoroccoMidnight(reference) - reference.getTime() + 25);
+}
+
+function completedMatch(match) {
+  const state = sourceMatchState(match);
+  return state === 'ended' || (state === 'unknown' && match.playbackState === 'ended');
+}
+
 function stableMatchId(homeTeam, awayTeam, scheduledAt = '') {
   const slug = (value) => String(value || '').trim().toLocaleLowerCase('ar')
     .replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
@@ -123,6 +145,7 @@ function cleanApiScore(value) {
 let stagingMatchesPromise = null;
 let stagingMatchesExpiresAt = 0;
 let stagingMatchesPending = false;
+let stagingMatchesDay = '';
 
 function normalizeStagingMatch(match) {
   const homeName = typeof match.homeTeam === 'object' ? match.homeTeam.name : match.homeTeam;
@@ -161,6 +184,10 @@ function normalizeStagingMatch(match) {
 }
 
 async function getStagingMatches({ force = false } = {}) {
+  const day = getMoroccoDateKey();
+  if (stagingMatchesDay !== day) {
+    stagingMatchesDay = day; stagingMatchesPromise = null; stagingMatchesPending = false; stagingMatchesExpiresAt = 0;
+  }
   if (!stagingMatchesPending && (force || Date.now() >= stagingMatchesExpiresAt)) {
     stagingMatchesPromise = null;
   }
@@ -169,20 +196,21 @@ async function getStagingMatches({ force = false } = {}) {
     const endpoint = force
       ? `${MATCHES_API_ORIGIN}/api/matches?t=${Date.now()}`
       : `${MATCHES_API_ORIGIN}/api/matches`;
-    stagingMatchesPromise = fetch(endpoint, { cache: force ? 'no-store' : 'default', signal: AbortSignal.timeout(8000) })
+    const request = fetch(endpoint, { cache: force ? 'no-store' : 'default', signal: AbortSignal.timeout(8000) })
       .then((response) => {
         if (!response.ok) throw new Error(`Status: ${response.status}`);
         return response.json();
       })
       .then((body) => (Array.isArray(body.matches) ? body.matches : []).map(normalizeStagingMatch).filter(Boolean))
       .then((matches) => {
-        stagingMatchesExpiresAt = Date.now() + CACHE_EXPIRY_MS;
+        if (stagingMatchesPromise === request) stagingMatchesExpiresAt = Date.now() + CACHE_EXPIRY_MS;
         return matches;
       })
       .catch((error) => {
-        stagingMatchesPromise = null;
+        if (stagingMatchesPromise === request) stagingMatchesPromise = null;
         throw error;
-      }).finally(() => { stagingMatchesPending = false; });
+      }).finally(() => { if (stagingMatchesPromise === request || stagingMatchesPromise === null) stagingMatchesPending = false; });
+    stagingMatchesPromise = request;
   }
   return stagingMatchesPromise;
 }
@@ -196,11 +224,16 @@ export async function getTodayMatches(options = {}) {
       const day = getMoroccoDay(match.scheduledAt);
       return day === 'today';
     });
+    const refreshedIds = new Set(today.map(match => match.matchId));
+    // A finished fixture is a result for the whole day, not an expiring live stream.
+    for (const match of getCachedMatchSnapshot().today) {
+      if (completedMatch(match) && !refreshedIds.has(match.matchId)) today.push(match);
+    }
     setCache(CACHE_KEY_TODAY, today);
     return today;
   } catch (error) {
     console.error(`Today matches fetch failed: ${error.message}`);
-    return getCache(CACHE_KEY_TODAY) || [];
+    return getCachedMatchSnapshot().today;
   }
 }
 
@@ -212,14 +245,15 @@ export async function getTomorrowMatches(options = {}) {
     return tomorrow;
   } catch (error) {
     console.error(`Tomorrow matches fetch failed: ${error.message}`);
-    return getCache(CACHE_KEY_TOMORROW) || [];
+    return getCachedMatchSnapshot().tomorrow;
   }
 }
 
 export function getCachedMatchSnapshot() {
+  const rows = [...new Map([...(getCache(CACHE_KEY_TOMORROW) || []), ...(getCache(CACHE_KEY_TODAY) || [])].map(match => [match.matchId, match])).values()];
   return {
-    today: getCache(CACHE_KEY_TODAY) || [],
-    tomorrow: getCache(CACHE_KEY_TOMORROW) || []
+    today: rows.filter(match => getMoroccoDay(match.scheduledAt) === 'today'),
+    tomorrow: rows.filter(match => getMoroccoDay(match.scheduledAt) === 'tomorrow')
   };
 }
 

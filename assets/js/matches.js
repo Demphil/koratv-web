@@ -5,9 +5,11 @@ import {
   getTomorrowMatches,
   getCachedMatchSnapshot,
   getMoroccoWallClockNow,
-  getMoroccoDay
-} from './api.js?v=20261003-exact-clock';
-import { frontendMatchState } from '../../shared/match-lifecycle.mjs?v=20261003-source-status';
+  getMoroccoDay,
+  getMoroccoDateKey,
+  getNextMoroccoDayDelay
+} from './api.js?v=20261004-day-retention';
+import { frontendMatchState } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
 
 const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
 const PLAYER_ORIGIN = 'https://fabor.sbs';
@@ -445,6 +447,26 @@ window.refreshLiveMatches = () => loadAndRenderMatches({ force: true }).catch(er
 });
 
 function startLiveRefresh() {
+    let displayedDay = getMoroccoDateKey(), rolloverTimer;
+    const checkDayChange = () => {
+        const nextDay = getMoroccoDateKey();
+        if (nextDay === displayedDay) return false;
+        displayedDay = nextDay;
+        const snapshot = getCachedMatchSnapshot();
+        renderMatchCollections(snapshot.today, snapshot.tomorrow);
+        return true;
+    };
+    const scheduleRollover = () => {
+        clearTimeout(rolloverTimer);
+        rolloverTimer = setTimeout(() => {
+            checkDayChange();
+            loadAndRenderMatches({ force: true }).catch(error => console.warn('[MATCHES] day rollover failed:', error));
+            scheduleRollover();
+        }, getNextMoroccoDayDelay());
+    };
+    scheduleRollover();
+    window.addEventListener('pagehide', () => clearTimeout(rolloverTimer));
+    window.addEventListener('pageshow', event => { if (event.persisted) { checkDayChange(); scheduleRollover(); } });
     const updates = new EventSource(`${STREAM_API_ORIGIN}/api/broadcast-events`);
     let revision;
     updates.addEventListener('control', event => {
@@ -457,6 +479,7 @@ function startLiveRefresh() {
     window.addEventListener('pagehide', () => updates.close(), { once: true });
     setInterval(() => {
         if (document.hidden) return;
+        checkDayChange();
         loadAndRenderMatches({ force: true }).catch(error => {
             console.warn('[MATCHES] live refresh failed:', error);
         });
@@ -464,6 +487,7 @@ function startLiveRefresh() {
 
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
+            checkDayChange();
             loadAndRenderMatches({ force: true }).catch(error => {
                 console.warn('[MATCHES] resume refresh failed:', error);
             });

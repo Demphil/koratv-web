@@ -41,7 +41,7 @@ const puppeteer = require('puppeteer');
     }
   }
   for (const frontend of ['https://koratv.click', 'https://fraja.online']) {
-    const html = await (await fetch(frontend)).text(); assert.match(html, /20261004-operator-live/);
+    const html = await (await fetch(frontend)).text(); assert.match(html, /20261004-day-retention/);
   }
   let browser;
   try {

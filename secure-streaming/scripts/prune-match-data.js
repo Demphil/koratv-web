@@ -35,7 +35,7 @@ export function staleDailyRows(rows = [], dateKey = moroccoDateKey()) {
   return rows.filter((row) => {
     if (!row?.id || row.active === false || !isManagedMatchSource(row.source)) return false;
     const kickoffKey = moroccoDateKey(row.kickoff_time);
-    return kickoffKey && kickoffKey !== dateKey;
+    return kickoffKey && kickoffKey < dateKey;
   });
 }
 
@@ -69,7 +69,7 @@ export async function deactivateRowsOutsideDailyWindow(supabase, table = 'matche
 export async function deleteDailyStateOutsideDate(supabase, dateKey = moroccoDateKey()) {
   const results = {};
   for (const { table, column } of DAILY_STATE_TABLES) {
-    const { data, error } = await supabase.from(table).delete().neq(column, dateKey).select(column);
+    const { data, error } = await supabase.from(table).delete().lt(column, dateKey).select(column);
     if (error) {
       if (isMissingTableError(error)) {
         results[table] = { deleted: 0, skipped: true };

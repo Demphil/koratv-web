@@ -33,8 +33,9 @@ test('daily rollover only deactivates old managed match rows', async () => {
   const old = { id: 2, source: 'kooora-schedule', kickoff_time: '2026-10-02T19:00:00Z', active: true, updated_at: 'old-version' };
   const inactiveOld = { id: 3, source: 'api-football', kickoff_time: '2026-10-02T21:00:00Z', active: false, updated_at: 'inactive-version' };
   const manualOld = { id: 4, source: 'manual', kickoff_time: '2026-10-02T21:00:00Z', active: true, updated_at: 'manual-version' };
+  const tomorrow = { ...today, id: 5, kickoff_time: '2026-10-04T19:00:00Z' };
 
-  assert.deepEqual(staleDailyRows([today, old, inactiveOld, manualOld], '2026-10-03'), [old]);
+  assert.deepEqual(staleDailyRows([today, old, inactiveOld, manualOld, tomorrow], '2026-10-03'), [old]);
 
   const calls = [];
   const supabase = { from(table) {
@@ -58,4 +59,23 @@ test('daily rollover only deactivates old managed match rows', async () => {
   assert.ok(calls.some(x => x[0] === 'eq' && x[1] === 'id' && x[2] === old.id));
   assert.ok(calls.some(x => x[0] === 'eq' && x[1] === 'updated_at' && x[2] === old.updated_at));
   assert.ok(!calls.some(x => x[0] === 'eq' && x[1] === 'id' && x[2] === today.id));
+});
+
+test('completed fixtures remain protected through 23:59:59 Morocco time', async () => {
+  const { obsoleteMatchRows } = await import('../../shared/match-broadcasts.mjs');
+  const ended = { id: 1, match_id: 'ended', source: 'kooora', kickoff_time: '2026-10-03T00:01:00Z', updated_at: '2026-10-02T12:00:00Z', payload: { status: 'RESULT', isFinished: true } };
+  assert.deepEqual(obsoleteMatchRows([ended], [], Date.parse('2026-10-03T22:59:59.999Z')), []);
+  assert.deepEqual(obsoleteMatchRows([ended], [], Date.parse('2026-10-03T23:00:00Z')), [ended]);
+});
+
+test('new snapshots are stored before cleanup and a failed write never cleans old data', async () => {
+  const { syncMatchesDaily } = await import('../scripts/sync-matches-daily.js');
+  const calls = [], db = {};
+  const services = { collectRows: async () => [{ match_id: 'new-day' }], createClient: () => db,
+    upsertRows: async () => { calls.push('write'); return { upserted: 1 }; },
+    cleanupDay: async () => { calls.push('rollover'); return {}; }, pruneRows: async () => { calls.push('prune'); return 0; } };
+  await syncMatchesDaily(services); assert.deepEqual(calls, ['write', 'rollover', 'prune']);
+  calls.length = 0;
+  await assert.rejects(syncMatchesDaily({ ...services, upsertRows: async () => { calls.push('write'); throw new Error('storage_unavailable'); } }), /storage_unavailable/);
+  assert.deepEqual(calls, ['write']);
 });
