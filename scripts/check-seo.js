@@ -44,6 +44,18 @@ for (const page of pages) {
       if ($('meta[property="og:site_name"]').attr('content') !== 'koratv'
         || !title.startsWith('koratv |')) failures.push(`${file}: brand missing from metadata`);
       if (page === '/' && !$('h1').text().includes('koratv')) failures.push(`${file}: homepage heading missing brand`);
+      if (page === '/') {
+        const pageNode = schema['@graph'].find(node => node['@type'] === 'WebPage');
+        const metadata = [title, description, pageNode?.name, pageNode?.description,
+          $('meta[property="og:title"]').attr('content'), $('meta[property="og:description"]').attr('content'),
+          $('meta[name="twitter:title"]').attr('content'), $('meta[name="twitter:description"]').attr('content')];
+        if (metadata.some(value => /القنوات الناقلة|بث مباشر|رادار/.test(value || '')))
+          failures.push(`${file}: metadata must describe results and existing statistics, not channel playback or an unimplemented radar`);
+        if (!/نتائج/.test(title) || !/إحصائيات/.test(title) || !/الأحداث الحية/.test(description))
+          failures.push(`${file}: results, statistics and live-event positioning is missing`);
+        if (pageNode?.name !== title || pageNode?.description !== description)
+          failures.push(`${file}: structured page description differs from visible metadata`);
+      }
       if (/noindex/i.test($('meta[name="robots"]').attr('content') || '')) failures.push(`${file}: indexable page is noindex`);
     }
   } catch {

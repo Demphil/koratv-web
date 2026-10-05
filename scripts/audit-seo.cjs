@@ -18,6 +18,10 @@ async function main() {
   const homepage = await read('/');
   const $ = load(homepage);
   assert.ok($('title').text().startsWith('koratv |'));
+  assert.equal($('title').text(), 'koratv | نتائج المباريات وإحصائيات كرة القدم');
+  assert.match($('meta[name=description]').attr('content'), /الأحداث الحية/);
+  assert.doesNotMatch($('meta[name=description]').attr('content'), /القنوات الناقلة|بث مباشر|رادار/);
+  assert.doesNotMatch($('.prerendered-match').text(), /القناة الناقلة/);
   assert.equal($('link[rel=canonical]').attr('href'), origin + '/');
   assert.equal($('meta[property="og:site_name"]').attr('content'), 'koratv');
   const schema = JSON.parse($('script[type="application/ld+json"]').first().text());

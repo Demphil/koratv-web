@@ -14,8 +14,9 @@ test('initial HTML includes real visible match facts and crawlable links without
   const html = prerenderHomepage(markup, [fixture], () => 'fixture-1', new Date('2026-10-05T10:00:00Z'));
   const $ = load(html);
   assert.match($('#featured-matches').text(), /مصر/);
-  assert.match($('#featured-matches').text(), /On Sport Plus/);
+  assert.doesNotMatch($('#featured-matches').text(), /On Sport Plus|القناة الناقلة/);
   assert.equal($('#today-matches a').attr('href'), '/match/fixture-1/');
+  assert.equal($('#today-matches a').text(), 'نتيجة المباراة وإحصائياتها');
   assert.equal($('#loading').length, 0);
   assert.equal($('script[type=module]').attr('src'), '/assets/js/matches.js');
   assert.equal($('#featured-matches').attr('data-prerendered-day'), '2026-10-05');
@@ -48,4 +49,17 @@ test('empty daily snapshot keeps the ordinary loading state without fabricated m
   const html = prerenderHomepage(markup, [], () => 'none', new Date('2026-10-05T10:00:00Z'));
   assert.equal(load(html)('#loading').length, 1);
   assert.equal(load(html)('.prerendered-match').length, 0);
+});
+
+test('public schedule links only to statistics pages and never serializes playback resources', () => {
+  const row = { ...fixture, channel: 'On Sport Plus', payload: {
+    ...fixture.payload, broadcast: { channels: ['On Sport Plus'] },
+    streamUrl: 'https://private.example/stream.m3u8', playerUrl: 'https://fabor.sbs/739184.html'
+  } };
+  const html = prerenderHomepage(markup, [row], () => 'fixture-1', new Date('2026-10-05T10:00:00Z'));
+  const $ = load(html);
+  assert.doesNotMatch(html, /On Sport Plus|private\.example|fabor\.sbs|\.m3u8/);
+  for (const link of $('.prerendered-match a').toArray()) {
+    assert.equal($(link).attr('href'), '/match/fixture-1/');
+  }
 });

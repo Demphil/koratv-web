@@ -21,14 +21,12 @@ function renderScheduleCard(row, slug) {
   }).format(new Date(kickoff));
   const state = sourceMatchState(payload);
   const score = /^\d+\s*-\s*\d+$/.test(String(payload.score || '')) ? payload.score : '';
-  const channel = row.channel || payload.broadcast?.channels?.[0] || payload.channel;
   return `<article class="prerendered-match" data-fixture-day="${dateKey(kickoff)}">
   <h3>${escapeHtml(row.home_team)} <span>ضد</span> ${escapeHtml(row.away_team)}</h3>
   <p>${escapeHtml(row.league || 'كرة القدم')}</p>
   <time datetime="${escapeHtml(new Date(kickoff).toISOString())}">${escapeHtml(time)} · توقيت المغرب</time>
   ${score ? `<p>${state === 'ended' ? 'النتيجة النهائية' : 'النتيجة عند تحديث الجدول'}: <b dir="ltr">${escapeHtml(score)}</b></p>` : ''}
-  ${typeof channel === 'string' && channel.trim() && !/:\/\//.test(channel) ? `<p>القناة الناقلة: ${escapeHtml(channel)}</p>` : ''}
-  <a href="/match/${encodeURIComponent(slug)}/">تفاصيل المباراة</a>
+  <a href="/match/${encodeURIComponent(slug)}/">نتيجة المباراة وإحصائياتها</a>
 </article>`;
 }
 
