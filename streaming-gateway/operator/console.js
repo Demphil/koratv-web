@@ -7,6 +7,7 @@ import { currentConsoleSelection } from './selection.js';
   const previewView = createNotice(previewStage, { onClose: () => { stopNotice(previewView); previewView.card.hidden = true; }, onImage: src => { $('preview-full-image').src = src; $('preview-viewer').hidden = false; } });
   const errors = { login_required: 'سجل الدخول أولاً.', invalid_login: 'بيانات الدخول غير صحيحة.', too_many_attempts: 'محاولات كثيرة. حاول بعد 15 دقيقة.', no_free_provider: 'هذه المباراة لا تملك مورداً مستقلاً ولا يوجد مورد فارغ. لم تتغير القناة.', channel_not_found: 'لم يعثر المورد على الاسم المحدد. لم تتغير القناة.', channel_probe_failed: 'فشل اختبار فيديو القناة الجديدة. أُعيدت القناة القديمة.', operation_in_progress: 'هناك عملية قيد التنفيذ.', operation_failed: 'تعذر إكمال العملية. راجع حالة الموارد قبل إعادة المحاولة.', invalid_image: 'الصورة غير صالحة أو كبيرة جداً.' };
   const phaseNames = { preparing: 'تحضير', discovering: 'بحث لدى المورد', testing_media: 'اختبار الفيديو', saving: 'حفظ القناة', assigning: 'توزيع وتجهيز الموارد', ready: 'اكتملت العملية' };
+  Object.assign(errors, { invalid_notices: 'إعدادات الإشعارات غير صالحة. تحقق من عدد الدورات والمدة والفاصل وجهة العرض.', invalid_notice: 'محتوى أحد الإشعارات غير صالح. تحقق من العنوان والتعليق والصورة والمدة.', invalid_notice_design: 'أحد إعدادات تنسيق الإعلان خارج النطاق المسموح.' });
   function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
   async function api(path, body) {
     const response = await fetch(`/api/operator/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: body === undefined ? {} : { 'Content-Type': 'application/json', 'X-Operator-CSRF': csrf }, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
@@ -135,15 +136,25 @@ import { currentConsoleSelection } from './selection.js';
     preview(noticeItems[activeNotice] || newNotice()); $('add-notice').disabled = noticeItems.length >= 10;
   }
   function field(label, node) { const wrapper = document.createElement('label'); wrapper.className = 'notice-field'; const caption = document.createElement('span'); caption.textContent = label; wrapper.append(caption, node); return wrapper; }
+  function validateNoticeInputs() {
+    for (const input of document.querySelectorAll('#notices-view input[type="number"]')) {
+      if (input.checkValidity()) continue;
+      const label = input.closest('label');
+      const name = label?.querySelector('span')?.textContent || label?.firstChild?.textContent || 'القيمة';
+      input.focus(); input.reportValidity();
+      throw new Error(`${name.trim()} يجب أن يكون عدداً صحيحاً بين ${input.min} و${input.max}.`);
+    }
+  }
   $('login').onsubmit = async event => { event.preventDefault(); try { await api('login', { username: $('username').value, password: $('password').value }); $('password').value = ''; await open(); } catch (error) { message(error.message, true); } };
   async function open() { await refresh(); $('login').hidden = true; $('workspace').hidden = false; $('refresh').hidden = false; $('logout').hidden = false; message(''); clearInterval(polling); polling = setInterval(() => refresh(false).catch(error => message(error.message, true)), 3000); }
   $('logout').onclick = async () => { await api('logout', {}); loggedOut(); };
   $('refresh').onclick = () => { if (!editing || confirm('توجد تغييرات غير محفوظة. تحديث القائمة؟')) refresh().catch(error => message(error.message, true)); };
   $('search').oninput = renderMatches; $('status-filter').onchange = renderMatches;
   $('manual-enabled').onchange = () => { editing = true; };
+  document.querySelectorAll('.notice-settings input, .notice-settings select').forEach(input => { input.oninput = () => { editing = true; }; });
   $('save-selection').onclick = async () => { try { await api('selection', { enabled: $('manual-enabled').checked, matches: selected }); editing = false; message('بدأ تجهيز الاختيار في الخلفية المشتركة.'); await refresh(false); } catch (error) { message(error.message, true); } };
   $('add-notice').onclick = () => { if (noticeItems.length < 10) { noticeItems.push(newNotice()); activeNotice = noticeItems.length - 1; editing = true; } renderNotices(); };
-  $('publish-notices').onclick = async () => { try { await api('notices', { enabled: true, items: noticeItems, repeats: Number($('notice-repeats').value), duration: Number($('notice-duration').value), interval: Number($('notice-interval').value), matchIds: $('notice-target').value === 'selected' ? selected : [] }); message('تم نشر الإشعارات إلى المشغلات المفتوحة والـ embed.'); editing = false; } catch (error) { message(error.message, true); } };
+  $('publish-notices').onclick = async () => { const button = $('publish-notices'); try { validateNoticeInputs(); button.disabled = true; await api('notices', { enabled: true, items: noticeItems, repeats: Number($('notice-repeats').value), duration: Number($('notice-duration').value), interval: Number($('notice-interval').value), matchIds: $('notice-target').value === 'selected' ? selected : [] }); message('تم نشر الإشعارات إلى المشغلات المفتوحة والـ embed.'); editing = false; } catch (error) { message(error.message, true); } finally { button.disabled = false; } };
   $('stop-notices').onclick = async () => { try { await api('notices/stop', {}); message('تم إيقاف الإشعارات فوراً.'); } catch (error) { message(error.message, true); } };
   document.querySelectorAll('nav button').forEach(node => { node.onclick = () => { document.querySelectorAll('nav button').forEach(button => button.classList.toggle('active', button === node)); for (const id of ['matches-view', 'notices-view']) $(id).hidden = id !== node.dataset.view; if (node.dataset.view === 'notices-view') preview(noticeItems[activeNotice] || newNotice()); else stopNotice(previewView); }; });
   open().catch(() => loggedOut());

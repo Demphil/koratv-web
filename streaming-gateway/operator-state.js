@@ -28,7 +28,7 @@ export function validateSelection(input, availableIds) {
 export function validateNotices(input) {
   const integer = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
   if (typeof input?.enabled !== 'boolean' || !Array.isArray(input.items) || input.items.length > 10
-    || (input.enabled && !input.items.length) || !integer(input.repeats, 1, 50)
+    || (input.enabled && !input.items.length) || !integer(input.repeats, 1, 1000)
     || !integer(input.duration, 5, 120) || !integer(input.interval, 0, 3600)
     || !Array.isArray(input.matchIds) || input.matchIds.length > 8
     || input.matchIds.some(id => typeof id !== 'string' || id.length > 160)) throw new Error('invalid_notices');

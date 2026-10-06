@@ -30,6 +30,11 @@ test('operator selections and notice schedules reject invalid limits and raw mar
   const valid = { enabled: true, items: [{ text: '<script>no execution</script>', image: '' }], repeats: 2, duration: 5, interval: 5, matchIds: [] };
   assert.equal(validateNotices(valid).items[0].text, valid.items[0].text);
   assert.throws(() => validateNotices({ ...valid, repeats: 0 }));
+  const screenshotSettings = validateNotices({ ...valid, repeats: 1000, duration: 30, interval: 100 });
+  assert.equal(screenshotSettings.repeats, 1000);
+  assert.equal(screenshotSettings.duration, 30);
+  assert.equal(screenshotSettings.interval, 100);
+  for (const repeats of [1001, 1.5, '1000', NaN]) assert.throws(() => validateNotices({ ...valid, repeats }));
   assert.throws(() => validateNotices({ ...valid, duration: 121 }));
   assert.throws(() => validateNotices({ ...valid, items: [{ text: 'x', image: 'javascript:alert(1)' }] }));
   const state = { ...emptyOperatorState(), selection: { matches: ['private-match'] }, overrides: { 'private-match': { channel: 'private' } }, channels: { 'private-match': 'version' } };
@@ -85,9 +90,13 @@ test('operator login, CSRF, protected jobs, image validation and realtime notice
   const controller = new AbortController();
   const stream = await fetch(`${config.api}/api/broadcast-events`, { signal: controller.signal }); const reader = stream.body.getReader();
   assert.match(new TextDecoder().decode((await reader.read()).value), /event: control/);
-  const notice = { enabled: true, items: [{ text: 'Live notice', image: '' }], repeats: 2, duration: 5, interval: 5, matchIds: [] };
+  const notice = { enabled: true, items: [{ text: 'Live notice', image: '' }], repeats: 1000, duration: 30, interval: 100, matchIds: [] };
   assert.equal((await post('/api/operator/notices', notice, credentials)).status, 200);
   assert.match(new TextDecoder().decode((await reader.read()).value), /Live notice/);
+  const persistedNotice = (await (await get('/api/operator/state', credentials)).json()).state.notices;
+  for (const key of ['repeats', 'duration', 'interval']) assert.equal(persistedNotice[key], notice[key]);
+  assert.equal((await post('/api/operator/notices', { ...notice, repeats: 1001 }, credentials)).status, 400);
+  assert.equal((await (await get('/api/operator/state', credentials)).json()).state.notices.campaign, persistedNotice.campaign);
   assert.equal((await post('/api/operator/notices/stop', {}, credentials)).status, 200);
   assert.match(new TextDecoder().decode((await reader.read()).value), /"enabled":false/);
   controller.abort();
