@@ -8,6 +8,7 @@ import { currentConsoleSelection } from './selection.js';
   const errors = { login_required: 'سجل الدخول أولاً.', invalid_login: 'بيانات الدخول غير صحيحة.', too_many_attempts: 'محاولات كثيرة. حاول بعد 15 دقيقة.', no_free_provider: 'هذه المباراة لا تملك مورداً مستقلاً ولا يوجد مورد فارغ. لم تتغير القناة.', channel_not_found: 'لم يعثر المورد على الاسم المحدد. لم تتغير القناة.', channel_probe_failed: 'فشل اختبار فيديو القناة الجديدة. أُعيدت القناة القديمة.', operation_in_progress: 'هناك عملية قيد التنفيذ.', operation_failed: 'تعذر إكمال العملية. راجع حالة الموارد قبل إعادة المحاولة.', invalid_image: 'الصورة غير صالحة أو كبيرة جداً.' };
   const phaseNames = { preparing: 'تحضير', discovering: 'بحث لدى المورد', testing_media: 'اختبار الفيديو', saving: 'حفظ القناة', assigning: 'توزيع وتجهيز الموارد', ready: 'اكتملت العملية' };
   Object.assign(errors, { invalid_notices: 'إعدادات الإشعارات غير صالحة. تحقق من عدد الدورات والمدة والفاصل وجهة العرض.', invalid_notice: 'محتوى أحد الإشعارات غير صالح. تحقق من العنوان والتعليق والصورة والمدة.', invalid_notice_design: 'أحد إعدادات تنسيق الإعلان خارج النطاق المسموح.' });
+  errors.channel_not_found = 'لم يعثر المورد على قناة تطابق هذا الاسم. اختر قناة من قائمة Kooora الخاصة بالمباراة؛ أسماء المنصات مثل MBC Shahid ليست بديلاً عن اسم قناة محددة. لم تتغير القناة المعتمدة.';
   function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
   async function api(path, body) {
     const response = await fetch(`/api/operator/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: body === undefined ? {} : { 'Content-Type': 'application/json', 'X-Operator-CSRF': csrf }, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
@@ -44,16 +45,25 @@ import { currentConsoleSelection } from './selection.js';
       const meta = document.createElement('small'); meta.textContent = `${match.league} · ${match.time || ''} · ${match.score}`; name.append(meta);
       const state = document.createElement('span'); state.className = `badge ${match.isLive ? 'live' : ''} ${match.sourceReady ? 'ready' : ''}`;
       state.textContent = `${match.isLive ? 'مباشر' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`;
-      const input = document.createElement('input'); input.setAttribute('list', 'channel-names'); input.value = match.channelName || ''; input.setAttribute('aria-label', 'القناة'); input.oninput = () => { editing = true; };
-      const save = button('radio', 'اختبار واعتماد القناة', async () => { save.disabled = true; try { await api('channel', { matchId: match.matchId, channel: input.value }); message('بدأ البحث والاختبار. عند امتلاء الموارد قد يتوقف بث هذه المباراة مؤقتاً أثناء اختبار القناة؛ بقية المباريات لا تتأثر.'); await refresh(false); } catch (error) { message(error.message, true); } finally { save.disabled = false; } });
+      const input = document.createElement('input'); input.setAttribute('list', 'channel-names'); input.value = match.channelName || ''; input.setAttribute('aria-label', 'القناة'); input.oninput = () => { input.dataset.dirty = 'true'; editing = true; };
+      const channelEditor = document.createElement('div'); channelEditor.className = 'channel-editor';
+      const broadcasts = document.createElement('select'); broadcasts.setAttribute('aria-label', 'قنوات Kooora الناقلة لهذه المباراة');
+      const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'قنوات Kooora'; broadcasts.append(placeholder);
+      for (const channel of match.broadcastChannels || []) { const option = document.createElement('option'); option.value = channel; option.textContent = channel; broadcasts.append(option); }
+      broadcasts.value = (match.broadcastChannels || []).includes(input.value) ? input.value : '';
+      broadcasts.hidden = !(match.broadcastChannels || []).length;
+      broadcasts.onchange = () => { if (!broadcasts.value) return; input.value = broadcasts.value; input.dataset.dirty = 'true'; editing = true; };
+      channelEditor.append(broadcasts, input);
+      const save = button('radio', 'اختبار واعتماد القناة', async () => { save.disabled = true; try { const result = await api('channel', { matchId: match.matchId, channel: input.value }); row.dataset.job = result.job.id; message('بدأ البحث والاختبار. عند امتلاء الموارد قد يتوقف بث هذه المباراة مؤقتاً أثناء اختبار القناة؛ بقية المباريات لا تتأثر.'); await refresh(false); } catch (error) { message(error.message, true); save.disabled = false; } });
       save.className = 'channel-save'; save.append(document.createTextNode('اختبار واعتماد'));
-      row.append(check, name, state, input, save); return row;
+      row.append(check, name, state, channelEditor, save); return row;
     }));
   }
   function renderJobs() {
     $('jobs').replaceChildren(...snapshot.jobs.slice().reverse().map(job => { const row = document.createElement('div'); row.className = `job ${job.state === 'failed' ? 'error' : ''}`; row.textContent = `${job.state === 'failed' ? errors[job.error] || 'تعذر الإكمال' : phaseNames[job.phase] || job.phase}${job.channel ? ` · ${job.channel}` : ''}`; return row; }));
     const running = snapshot.jobs.some(job => job.state === 'running');
     $('save-selection').disabled = running;
+    for (const button of document.querySelectorAll('.channel-save')) button.disabled = running;
     $('resource-count').textContent = `${snapshot.status.prewarm.warmed} روابط جاهزة / 8`;
   }
   async function refresh(render = true) {
@@ -75,7 +85,13 @@ import { currentConsoleSelection } from './selection.js';
     if (current.length !== selected.length) { selected = current; renderSelected(); }
     for (const row of document.querySelectorAll('.match-row')) {
       const match = snapshot.matches.find(match => match.matchId === row.dataset.match);
-      if (match) { const badge = row.querySelector('.badge'); badge.textContent = `${match.isLive ? 'مباشر' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`; badge.classList.toggle('ready', match.sourceReady); }
+      if (match) {
+        const badge = row.querySelector('.badge'); badge.textContent = `${match.isLive ? 'مباشر' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`; badge.classList.toggle('ready', match.sourceReady);
+        const input = row.querySelector('input[list]'), broadcasts = row.querySelector('.channel-editor select');
+        const job = snapshot.jobs.find(job => job.id === row.dataset.job);
+        if (job?.state === 'complete') { delete input.dataset.dirty; delete row.dataset.job; }
+        if (input.dataset.dirty !== 'true') { input.value = match.channelName || ''; broadcasts.value = (match.broadcastChannels || []).includes(input.value) ? input.value : ''; }
+      }
     }
     renderJobs();
   }

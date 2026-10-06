@@ -9,6 +9,35 @@ import { hashOperatorPassword, verifyOperatorPassword } from '../operator-auth.j
 import { validateSelection, validateNotices, publicControlState, emptyOperatorState, activeOperatorOverride } from '../operator-state.js';
 import { createProviderCatalog } from '../provider-catalog.js';
 import { loadConfig } from '../config.js';
+import { createApp } from '../app.js';
+
+test('private console exposes only the exact fixture broadcasters, not channels from unrelated matches', async t => {
+  const values = new Map();
+  const redis = { get: async key => values.get(key), set: async (key, value) => values.set(key, value), del: async key => values.delete(key), incr: async key => { const next = Number(values.get(key) || 0) + 1; values.set(key, next); return next; }, expire: async () => {} };
+  const dir = await mkdtemp(join(tmpdir(), 'operator-broadcast-test-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const password = 'local-only-broadcast-test-password';
+  const config = { secret: 'test-secret-longer-than-32-characters', hmacSecret: 'independent-hmac-longer-than-32-characters',
+    frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: '', frontendOrigins: new Set(['https://koratv.click']), upstreamOrigins: new Set(), trustedProxies: [], enableAntiBot: false,
+    operatorPasswordHash: await hashOperatorPassword(password), operatorControlPath: join(dir, 'control.json'),
+    getMatchesForOrigin: async () => [
+      { id: 'gulf-final', match_id: 'gulf-final', home_team: 'Saudi Arabia', away_team: 'United Arab Emirates', league: 'كأس الخليج', kickoff_time: new Date().toISOString(), active: true,
+        channel: 'MBC Action', payload: { status: 'FIXTURE', broadcast: { source: 'kooora', channels: ['MBC Action', 'AL KASS One'] } } },
+      { id: 'other-fixture', match_id: 'other-fixture', home_team: 'France', away_team: 'England', league: 'المباريات الودية', kickoff_time: new Date().toISOString(), active: true,
+        channel: 'beIN SPORTS HD 1', payload: { status: 'FIXTURE', broadcast: { source: 'kooora', channels: ['beIN SPORTS HD 1'] } } }
+    ] };
+  const server = createApp({ config, redis }).listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  config.api = `http://127.0.0.1:${server.address().port}`;
+  const login = await fetch(config.api + '/api/operator/login', { method: 'POST', headers: { Origin: config.api, 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password }) });
+  assert.equal(login.status, 200);
+  const response = await fetch(config.api + '/api/operator/state', { headers: { Cookie: login.headers.get('set-cookie').split(';')[0] } });
+  const snapshot = await response.json();
+  assert.deepEqual(snapshot.matches.find(row => row.matchId === 'gulf-final').broadcastChannels, ['MBC Action', 'AL KASS One']);
+  assert.deepEqual(snapshot.matches.find(row => row.matchId === 'other-fixture').broadcastChannels, ['beIN SPORTS HD 1']);
+  assert.equal((await fetch(config.api + '/api/operator/state')).status, 401);
+});
 
 test('operator origin is independent from a legacy player API origin', () => {
   const config = loadConfig({ JWT_SECRET: 'test-operator-jwt-secret-over-32-bytes', HMAC_SECRET: 'test-independent-hmac-secret-over-32-bytes', PUBLIC_API_ORIGIN: 'https://fabor.sbs', NEXT_PUBLIC_SUPABASE_URL: 'https://storage.example', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-only-key' });

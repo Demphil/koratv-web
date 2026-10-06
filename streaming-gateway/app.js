@@ -15,6 +15,7 @@ import { diagnosticPlayback, registerMultiview } from './multiview.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
 import { matchPlaybackState as providerPlaybackState, sourceMatchState, matchListCacheControl } from '../shared/match-lifecycle.mjs';
 import { resolvePublicMatchId } from '../shared/public-match-id.mjs';
+import { broadcastChannelCandidates } from '../shared/match-broadcasts.mjs';
 import { registerOperatorConsole, installPreparedOperatorChannel, refreshOperatorResources } from './operator-console.js';
 import { createOperatorChannelPreparer } from './operator-channel.js';
 
@@ -591,9 +592,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     config, redis, clientIp,
     getMatches: async () => (await config.getMatchesForOrigin(config.frontend))
       .filter(row => isAllowedMatch({ league: row.league, leagueCountry: row.payload?.leagueCountry, homeTeam: row.home_team, awayTeam: row.away_team }) && sourceMatchState(row.payload || row) !== 'unavailable')
-      .map(normalizeRuntimeMatch)
+      .map(row => ({ ...normalizeRuntimeMatch(row), broadcastChannels: broadcastChannelCandidates(row) }))
       .filter(row => moroccoPart(row.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === moroccoPart(new Date(), { year: 'numeric', month: '2-digit', day: '2-digit' }))
-      .map(({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastRank, manuallySelected }) => ({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastRank, manuallySelected }))
+      .map(({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected }) => ({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected }))
       .sort((a, b) => Number(b.isLive) - Number(a.isLive) || (a.isLive ? Date.parse(b.scheduledAt) - Date.parse(a.scheduledAt) : Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))),
     status: () => ({ accounts: (accountHealth?.snapshot() || []).map(({ provider, status, current_channel, last_http_code, cooldown_until }) => ({ provider, status, current_channel, last_http_code, cooldown_until })), prewarm: prewarmState, gateway: 'Oracle', player: 'Njalla', maxResources: 8 }),
     prepareChannel: createOperatorChannelPreparer({
