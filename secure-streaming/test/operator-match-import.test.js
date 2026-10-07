@@ -58,3 +58,12 @@ test('import approval applies only to the confirmed fixture and survives source 
   assert.equal(isOperatorImportedMatch({ ...result.match, kickoff_time: '2020-01-01T12:00:00Z' }), false);
   assert.equal(parseKoooraMatches(html).length, 0);
 });
+
+test('finished results may be imported for display without requiring a broadcast channel', async () => {
+  const [row] = all();
+  const result = await runOperatorMatchImport('import', { ...query(), matchId: row.match_id, sourceMatchId: row.payload.sourceMatchId }, {
+    load: async () => [{ ...row, payload: { ...row.payload, status: 'RESULT', score: '1 - 0' } }], enrich: async () => {}, persist: async () => {}
+  });
+  assert.equal(result.match.payload.status, 'RESULT');
+  assert.ok(isOperatorImportedMatch(result.match));
+});

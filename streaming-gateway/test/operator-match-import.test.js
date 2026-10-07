@@ -6,9 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerOperatorConsole } from '../operator-console.js';
 import { hashOperatorPassword } from '../operator-auth.js';
-import { readOperatorState } from '../operator-state.js';
+import { emptyOperatorState, readOperatorState, writeOperatorState } from '../operator-state.js';
 import { createApp } from '../app.js';
-import { publicAssignmentMatches } from '../scripts/resource-assignment.js';
+import { publicAssignmentMatches, buildProjectAssignmentPlan } from '../scripts/resource-assignment.js';
 import { moroccoMatchDay } from '../../shared/operator-imported-match.mjs';
 
 function fixture() {
@@ -35,20 +35,22 @@ test('unlisted manually imported fixture passes public display and assignment on
   assert.deepEqual(result.matches.map(row => row.matchId), [row.match_id]);
 });
 
-test('search/import require authentication, CSRF, server candidates and preserve the eight-resource limit', async t => {
+test('display-only imports require authentication and CSRF without changing a full broadcast selection', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'operator-import-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const password = 'local-test-password-for-import';
   const config = { api: '', operatorControlPath: join(dir, 'control.json'), operatorPasswordHash: await hashOperatorPassword(password),
     providerChannels: () => ({ 'Fixture TV': { A: 'private-source' } }), providerAccounts: () => ({ A: { enabled: true } }), resolveOperatorChannel: name => name, refreshMatchSnapshots: async () => {} };
   const row = fixture();
-  let imported = false, full = false, imports = 0;
+  let imported = false, imports = 0, probes = 0;
   const calls = [];
+  const before = { ...emptyOperatorState(), selection: { enabled: true, date: moroccoMatchDay(), matches: Array.from({ length: 8 }, (_, i) => `existing-${i}`), source: 'operator-console' }, overrides: { 'existing-0': { channel: 'Existing TV', enabled: true, expiresAt: new Date(Date.now() + 3600000).toISOString() } } };
+  await writeOperatorState(config.operatorControlPath, before);
   const app = express(); app.use(express.json());
   registerOperatorConsole(app, { config, redis: redisFor(), clientIp: () => 'test', status: () => ({}),
-    getMatches: async () => full ? Array.from({ length: 8 }, (_, i) => ({ matchId: `existing-${i}`, broadcastRank: i + 1 })) : imported ? [{ matchId: row.match_id }] : [],
+    getMatches: async () => [...Array.from({ length: 8 }, (_, i) => ({ matchId: `existing-${i}`, broadcastRank: i + 1 })), ...(imported ? [{ matchId: row.match_id }] : [])],
     matchWorker: async (mode, input) => { if (mode === 'search') return { matches: [row] }; assert.equal(input.sourceMatchId, 'fixture-id'); imported = true; imports++; return { match: row }; },
-    prepareChannel: async () => { throw new Error('Unexpected probe'); }, applyResources: async input => { calls.push(input); } });
+    prepareChannel: async () => { probes++; throw new Error('Unexpected probe'); }, applyResources: async input => { calls.push(input); } });
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   t.after(() => { server.closeAllConnections(); server.close(); });
   config.api = `http://127.0.0.1:${server.address().port}`;
@@ -60,28 +62,37 @@ test('search/import require authentication, CSRF, server candidates and preserve
   const results = await (await post('matches/search', { homeTeam: 'Local Alpha', awayTeam: 'Local Beta' }, headers)).json();
   assert.equal(results.matches.length, 1);
   assert.equal(JSON.stringify(results).includes('private-source'), false);
-  full = true;
-  const capacity = await post('matches/import', { candidateId: results.matches[0].candidateId }, headers);
-  const capacityJob = (await capacity.json()).job;
+  const invalid = await post('matches/import', { candidateId: 'untrusted-candidate' }, headers);
+  const invalidJob = (await invalid.json()).job;
   await new Promise(resolve => setTimeout(resolve, 30));
   let state = await (await fetch(config.api + '/api/operator/state', { headers })).json();
-  assert.equal(state.jobs.find(job => job.id === capacityJob.id).error, 'capacity_full');
+  assert.equal(state.jobs.find(job => job.id === invalidJob.id).error, 'search_expired');
   assert.equal(imports, 0);
-  full = false;
   const add = await post('matches/import', { candidateId: results.matches[0].candidateId }, headers);
   const job = (await add.json()).job;
   await new Promise(resolve => setTimeout(resolve, 80));
   state = await (await fetch(config.api + '/api/operator/state', { headers })).json();
   assert.equal(state.jobs.find(item => item.id === job.id).state, 'complete');
-  assert.equal(state.jobs.find(item => item.id === job.id).scheduled, true);
+  assert.equal(state.jobs.find(item => item.id === job.id).displayOnly, true);
+  assert.equal(state.jobs.find(item => item.id === job.id).channel, undefined);
   assert.equal(imports, 1);
-  assert.deepEqual(calls, [{}]);
-  assert.deepEqual((await readOperatorState(config.operatorControlPath)).selection.matches, [row.match_id]);
-  config.streamOpensBeforeMinutes = 300;
-  const opened = await post('matches/import', { candidateId: results.matches[0].candidateId }, headers);
-  const openedJob = (await opened.json()).job;
-  await new Promise(resolve => setTimeout(resolve, 80));
-  state = await (await fetch(config.api + '/api/operator/state', { headers })).json();
-  assert.equal(state.jobs.find(item => item.id === openedJob.id).scheduled, false);
-  assert.deepEqual(calls.at(-1), { matchId: row.match_id });
+  assert.deepEqual(calls, []);
+  assert.equal(probes, 0);
+  const after = await readOperatorState(config.operatorControlPath);
+  assert.deepEqual(after.selection, before.selection);
+  assert.deepEqual(after.overrides, before.overrides);
+  assert.deepEqual(after.notices, before.notices);
+});
+
+test('a display-only exception reserves a provider only after the existing manual selection approves it', () => {
+  const row = fixture();
+  const input = { matches: [row], routeStates: { [row.match_id]: { status: 'RESOLVED', resolvedChannel: 'Fixture TV', providerIds: ['A'] } }, providerCatalog: { providers: { A: { enabled: true } } }, now: new Date(row.kickoff_time) };
+  const automatic = buildProjectAssignmentPlan(input);
+  assert.equal(automatic.assignments.length, 0);
+  assert.equal(automatic.ignored[0].reason, 'manual_selection_required');
+  const selected = buildProjectAssignmentPlan({ ...input, manualMatchIds: [row.match_id] });
+  assert.equal(selected.assignments.length, 1);
+  assert.equal(selected.assignments[0].manual, true);
+  const normal = buildProjectAssignmentPlan({ ...input, matches: [{ ...row, league: 'La Liga' }] });
+  assert.equal(normal.assignments.length, 1);
 });

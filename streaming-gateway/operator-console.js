@@ -11,8 +11,6 @@ import { access } from 'node:fs/promises';
 import { validateMatchSearch } from '../shared/operator-match-search.mjs';
 import { moroccoMatchDay } from '../shared/operator-imported-match.mjs';
 import { sourceMatchState } from '../shared/match-lifecycle.mjs';
-import { broadcastChannelCandidates } from '../shared/match-broadcasts.mjs';
-import { currentConsoleSelection } from './operator/selection.js';
 import { readOperatorState, writeOperatorState, validateSelection, validateNotices, publicControlState } from './operator-state.js';
 import { verifyOperatorPassword, sessionDigest, operatorCookie, readOperatorCookie } from './operator-auth.js';
 
@@ -129,7 +127,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
         searchResults.set(candidateId, { owner, query, matchId: row.match_id, sourceMatchId: row.payload?.sourceMatchId, expiresAt: Date.now() + 5 * 60000 });
         return { candidateId, homeTeam: row.home_team, awayTeam: row.away_team, league: row.league, scheduledAt: row.kickoff_time,
           status: row.payload?.status, score: row.payload?.score, channels: row.payload?.channels || [],
-          canImport: row.active !== false && !['ended', 'unavailable'].includes(sourceMatchState(row.payload)) };
+          canImport: row.active !== false && sourceMatchState(row.payload) !== 'unavailable' };
       });
       while (searchResults.size > 120) searchResults.delete(searchResults.keys().next().value);
       res.json({ matches, day: query.day });
@@ -140,45 +138,13 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     const candidate = searchResults.get(req.body?.candidateId);
     if (!candidate || candidate.expiresAt <= Date.now() || candidate.owner !== sessionDigest(readOperatorCookie(req))
       || candidate.query.day !== moroccoMatchDay()) throw new Error('search_expired');
-    const previous = await read(), matches = await getMatches();
-    const selection = currentConsoleSelection({ state: previous.selection?.enabled === true ? previous : { ...previous, selection: null }, matches, day: candidate.query.day });
-    if (selection.matches.length >= 8 && !selection.matches.includes(candidate.matchId)) throw new Error('capacity_full');
     job.phase = 'searching_match';
     const { match } = await matchWorker('import', { ...candidate.query, matchId: candidate.matchId, sourceMatchId: candidate.sourceMatchId });
     if (!match || match.match_id !== candidate.matchId) throw new Error('invalid_match');
     job.matchId = match.match_id;
     job.published = true;
+    job.displayOnly = true;
     await config.refreshMatchSnapshots?.();
-    publish(await update(state => ({ ...state, channels: { ...state.channels, [match.match_id]: randomUUID() } })));
-    let channel;
-    for (const name of broadcastChannelCandidates(match).slice(0, 3)) {
-      const canonical = config.resolveOperatorChannel?.(name) || name;
-      const entry = config.providerChannels?.()[canonical];
-      if (entry && Object.keys(config.providerAccounts?.() || {}).some(id => entry[id])) { channel = canonical; break; }
-      try { channel = (await prepareChannel(name, phase => { job.phase = phase; }, { matchId: match.match_id })).name; break; }
-      catch (error) { if (error.message !== 'channel_not_found') throw error; }
-    }
-    if (!channel) throw new Error('channel_not_found');
-    const expiresAt = new Date(Date.now() + 24 * 3600000).toISOString();
-    const ids = [...new Set([...selection.matches, match.match_id])];
-    await update(state => ({ ...state, selection: { enabled: true, date: candidate.query.day, matches: ids, source: 'operator-console' },
-      overrides: { ...state.overrides, [match.match_id]: { enabled: true, channel, expiresAt } } }));
-    job.phase = 'assigning';
-    const due = sourceMatchState(match.payload) === 'live' || Date.parse(match.kickoff_time) <= Date.now() + (config.streamOpensBeforeMinutes ?? 20) * 60000;
-    try { await applyResources(due ? { matchId: match.match_id } : {}); }
-    catch (error) {
-      await update(state => {
-        const overrides = { ...state.overrides };
-        if (previous.overrides[match.match_id]) overrides[match.match_id] = previous.overrides[match.match_id];
-        else delete overrides[match.match_id];
-        return { ...state, selection: previous.selection, overrides };
-      });
-      await applyResources().catch(() => {});
-      publish(await read());
-      throw error;
-    }
-    job.channel = channel;
-    job.scheduled = !due;
     publish(await update(state => ({ ...state, channels: { ...state.channels, [match.match_id]: randomUUID() } })));
   }));
   app.post('/api/operator/selection', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, async job => {

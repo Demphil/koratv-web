@@ -13,7 +13,7 @@ export async function runOperatorMatchImport(mode, input, dependencies = {}) {
   if (mode !== 'import') throw new Error('invalid_match');
   const selected = rows.find(row => row.match_id === input.matchId && row.payload?.sourceMatchId === input.sourceMatchId);
   if (!selected) throw new Error('match_not_found');
-  if (['ended', 'unavailable'].includes(sourceMatchState(selected.payload)) || selected.active === false) throw new Error('match_not_broadcastable');
+  if (sourceMatchState(selected.payload) === 'unavailable' || selected.active === false) throw new Error('match_not_broadcastable');
   const enrich = dependencies.enrich || (async rows => { await enrichKoooraRowsWithScheduleChannels(rows); await enrichKoooraRowsWithDetailChannels(rows); });
   await enrich([selected]);
   const [row] = reconcileBroadcasts([selected]);

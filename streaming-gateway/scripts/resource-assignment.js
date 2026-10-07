@@ -213,6 +213,8 @@ export function buildProjectAssignmentPlan({
       const kickoff = Date.parse(match.kickoff_time || match.start_time || '');
       const reason = match.active === false || phase === 'unavailable' ? 'unavailable'
         : phase === 'ended' ? 'ended'
+        : isOperatorImportedMatch(match) && row.manualRank === null
+          && !isAllowedMatch({ league: match.league, leagueCountry: match.payload?.leagueCountry, homeTeam: match.home_team, awayTeam: match.away_team }) ? 'manual_selection_required'
         : phase !== 'live' && (!Number.isFinite(kickoff) || kickoff > nowMs + opensBeforeMinutes * 60_000) ? 'not_due' : null;
       if (reason) { deferred.push({ ...row, reason }); return null; }
       return { ...row, phase };
