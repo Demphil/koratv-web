@@ -19,6 +19,7 @@ function tokensFor(value) {
     .replace(/\b(hd|fhd|uhd)(\d{1,2})\b/giu, '$1 $2')
     .replace(/[^a-z0-9\p{L}]+/giu, ' ')
     .toLowerCase()
+    .replace(/\b(?:dz\s+)?en\s*tv(?:\s+algerie)?\b/g, 'entv')
     .replace(/\bsabc\s+plus\b/g, 'sabc plus')
     .replace(/\bdisney\s+plus\b/g, 'disney plus')
     .replace(/\bsport\b/g, 'sports')

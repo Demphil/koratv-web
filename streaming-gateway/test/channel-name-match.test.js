@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import { findChannelNameMatch } from '../../shared/channel-name-match.mjs';
 import { matchChannels, isCatalogChannelSourceVerified } from '../../shared/provider-channel-match.mjs';
 
+test('ENTV matches the exact provider alias without selecting other Algerian channels', () => {
+  const names = ['[DZ] CANAL ALGERIE', '[DZ] CANAL 6 ALGERIE', '[DZ] EN TV ALGERIE'];
+  const entries = names.map((name, index) => ({ name, rawName: name, group: 'DZ', url: `https://example.test/${index}` }));
+  assert.equal(findChannelNameMatch('ENTV', names), '[DZ] EN TV ALGERIE');
+  assert.equal(matchChannels(['ENTV'], entries)[0].source_name, '[DZ] EN TV ALGERIE');
+  assert.equal(isCatalogChannelSourceVerified('ENTV', { sourceNames: { B: '[DZ] EN TV ALGERIE' } }, 'B'), true);
+  assert.equal(findChannelNameMatch('ENTV', names.slice(0, 2)), null);
+  assert.equal(matchChannels(['ENTV'], entries.slice(0, 2)).length, 0);
+});
+
 test('exact Arryadia number and On Sport Plus edition cannot downgrade to the ordinary channel', () => {
   const entries = ['MA - ARRYADIA 1 HD', 'MA - ARRYADIA 3 HD', 'EGY| ON SPORT HD',
     'EGY| ON SPORT PLUS HEVC', 'EGY| ON SPORT PLUS HD'].map((name, index) => ({name, rawName:name, group:'AR', url:`https://example.test/${index}`}));

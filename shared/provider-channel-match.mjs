@@ -53,6 +53,7 @@ export function normalizeName(name) {
     .replace(/\bbein\b/g, 'bein')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .replace(/\s+/g, ' ')
+    .replace(/\b(?:dz\s+)?en\s*tv(?:\s+algerie)?\b/g, 'entv')
     .trim();
 }
 
