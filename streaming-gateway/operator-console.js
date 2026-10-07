@@ -164,7 +164,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     await update(state => ({ ...state, selection: { enabled: true, date: candidate.query.day, matches: ids, source: 'operator-console' },
       overrides: { ...state.overrides, [match.match_id]: { enabled: true, channel, expiresAt } } }));
     job.phase = 'assigning';
-    const due = sourceMatchState(match.payload) === 'live' || Date.parse(match.kickoff_time) <= Date.now() + (config.opensBeforeMinutes ?? 20) * 60000;
+    const due = sourceMatchState(match.payload) === 'live' || Date.parse(match.kickoff_time) <= Date.now() + (config.streamOpensBeforeMinutes ?? 20) * 60000;
     try { await applyResources(due ? { matchId: match.match_id } : {}); }
     catch (error) {
       await update(state => {

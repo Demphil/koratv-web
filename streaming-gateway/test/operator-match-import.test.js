@@ -77,4 +77,11 @@ test('search/import require authentication, CSRF, server candidates and preserve
   assert.equal(imports, 1);
   assert.deepEqual(calls, [{}]);
   assert.deepEqual((await readOperatorState(config.operatorControlPath)).selection.matches, [row.match_id]);
+  config.streamOpensBeforeMinutes = 300;
+  const opened = await post('matches/import', { candidateId: results.matches[0].candidateId }, headers);
+  const openedJob = (await opened.json()).job;
+  await new Promise(resolve => setTimeout(resolve, 80));
+  state = await (await fetch(config.api + '/api/operator/state', { headers })).json();
+  assert.equal(state.jobs.find(item => item.id === openedJob.id).scheduled, false);
+  assert.deepEqual(calls.at(-1), { matchId: row.match_id });
 });
