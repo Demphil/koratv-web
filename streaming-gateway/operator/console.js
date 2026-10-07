@@ -2,12 +2,14 @@ import { createNotice, renderNotice, startNotice, stopNotice, normalizeNoticeDes
 import { currentConsoleSelection } from './selection.js';
 (() => {
   const $ = id => document.getElementById(id);
-  let csrf = '', snapshot, selected = [], noticeItems = [], editing = false, polling, activeNotice = 0;
+  let csrf = '', snapshot, selected = [], noticeItems = [], editing = false, polling, activeNotice = 0, importJob = '';
   const previewStage = $('notice-preview-stage');
   const previewView = createNotice(previewStage, { onClose: () => { stopNotice(previewView); previewView.card.hidden = true; }, onImage: src => { $('preview-full-image').src = src; $('preview-viewer').hidden = false; } });
   const errors = { login_required: 'سجل الدخول أولاً.', invalid_login: 'بيانات الدخول غير صحيحة.', too_many_attempts: 'محاولات كثيرة. حاول بعد 15 دقيقة.', no_free_provider: 'هذه المباراة لا تملك مورداً مستقلاً ولا يوجد مورد فارغ. لم تتغير القناة.', channel_not_found: 'لم يعثر المورد على الاسم المحدد. لم تتغير القناة.', channel_probe_failed: 'فشل اختبار فيديو القناة الجديدة. أُعيدت القناة القديمة.', operation_in_progress: 'هناك عملية قيد التنفيذ.', operation_failed: 'تعذر إكمال العملية. راجع حالة الموارد قبل إعادة المحاولة.', invalid_image: 'الصورة غير صالحة أو كبيرة جداً.' };
   const phaseNames = { preparing: 'تحضير', discovering: 'بحث لدى المورد', testing_media: 'اختبار الفيديو', saving: 'حفظ القناة', assigning: 'توزيع وتجهيز الموارد', ready: 'اكتملت العملية' };
   Object.assign(errors, { invalid_notices: 'إعدادات الإشعارات غير صالحة. تحقق من عدد الدورات والمدة والفاصل وجهة العرض.', invalid_notice: 'محتوى أحد الإشعارات غير صالح. تحقق من العنوان والتعليق والصورة والمدة.', invalid_notice_design: 'أحد إعدادات تنسيق الإعلان خارج النطاق المسموح.' });
+  Object.assign(errors, { invalid_team_names: 'أدخل اسمين مختلفين للفريقين، من حرفين إلى 80 حرفاً.', source_search_failed: 'تعذر الاتصال بـ Kooora. لم تُضف مباراة غير مؤكدة.', search_expired: 'انتهت صلاحية نتائج البحث. ابحث مجدداً.', match_not_found: 'لم تعد المباراة موجودة بالهوية نفسها في Kooora.', match_not_broadcastable: 'المباراة ملغاة أو مؤجلة أو انتهت؛ لا يمكن تجهيز بثها.', capacity_full: 'الاختيار يضم ثماني مباريات. أزل مباراة واحفظ الاختيار قبل إضافة أخرى.', search_rate_limited: 'بلغت حد البحث لهذه الساعة. حاول لاحقاً.' });
+  phaseNames.searching_match = 'تأكيد المباراة والقنوات من Kooora';
   errors.channel_not_found = 'لم يعثر المورد على قناة تطابق هذا الاسم. اختر قناة من قائمة Kooora الخاصة بالمباراة؛ أسماء المنصات مثل MBC Shahid ليست بديلاً عن اسم قناة محددة. لم تتغير القناة المعتمدة.';
   function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
   async function api(path, body) {
@@ -60,14 +62,22 @@ import { currentConsoleSelection } from './selection.js';
     }));
   }
   function renderJobs() {
-    $('jobs').replaceChildren(...snapshot.jobs.slice().reverse().map(job => { const row = document.createElement('div'); row.className = `job ${job.state === 'failed' ? 'error' : ''}`; row.textContent = `${job.state === 'failed' ? errors[job.error] || 'تعذر الإكمال' : phaseNames[job.phase] || job.phase}${job.channel ? ` · ${job.channel}` : ''}`; return row; }));
+    $('jobs').replaceChildren(...snapshot.jobs.slice().reverse().map(job => { const row = document.createElement('div'); row.className = `job ${job.state === 'failed' ? 'error' : ''}`; row.textContent = `${job.state === 'failed' ? `${job.published ? 'أُضيفت المباراة، لكن لم يجهز البث: ' : ''}${errors[job.error] || 'تعذر الإكمال'}` : job.scheduled && job.state === 'complete' ? 'أُضيفت المباراة؛ تجهيز البث تلقائياً قبل البداية' : phaseNames[job.phase] || job.phase}${job.channel ? ` · ${job.channel}` : ''}`; return row; }));
     const running = snapshot.jobs.some(job => job.state === 'running');
     $('save-selection').disabled = running;
     for (const button of document.querySelectorAll('.channel-save')) button.disabled = running;
+    for (const button of document.querySelectorAll('.import-match-button')) button.disabled = running || button.dataset.unavailable === 'true';
     $('resource-count').textContent = `${snapshot.status.prewarm.warmed} روابط جاهزة / 8`;
   }
   async function refresh(render = true) {
     snapshot = await api('state');
+    const importedJob = snapshot.jobs.find(job => job.id === importJob);
+    if (importedJob && importedJob.state !== 'running') {
+      selected = currentConsoleSelection(snapshot).matches;
+      $('manual-enabled').checked = currentConsoleSelection(snapshot).enabled;
+      renderMatches();
+      importJob = '';
+    }
     if (render) {
       const selection = currentConsoleSelection(snapshot);
       selected = selection.matches;
@@ -166,6 +176,38 @@ import { currentConsoleSelection } from './selection.js';
   $('logout').onclick = async () => { await api('logout', {}); loggedOut(); };
   $('refresh').onclick = () => { if (!editing || confirm('توجد تغييرات غير محفوظة. تحديث القائمة؟')) refresh().catch(error => message(error.message, true)); };
   $('search').oninput = renderMatches; $('status-filter').onchange = renderMatches;
+  $('import-search-form').onsubmit = async event => {
+    event.preventDefault();
+    $('import-search').disabled = true;
+    $('import-results').replaceChildren();
+    $('import-search-status').textContent = 'جاري البحث في Kooora…';
+    try {
+      const result = await api('matches/search', { homeTeam: $('import-home').value, awayTeam: $('import-away').value });
+      $('import-search-status').textContent = result.matches.length ? `${result.matches.length} مباراة · ${result.day}` : 'لم توجد مباراة بين الفريقين اليوم في Kooora.';
+      $('import-results').replaceChildren(...result.matches.map(match => {
+        const row = document.createElement('div'); row.className = 'import-result';
+        const name = document.createElement('div'); name.className = 'match-name'; name.textContent = `${match.homeTeam} - ${match.awayTeam}`;
+        const meta = document.createElement('small'); meta.textContent = `${match.league} · ${new Intl.DateTimeFormat('ar', { timeZone: 'Africa/Casablanca', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(match.scheduledAt))} · ${match.status || ''}`;
+        name.append(meta);
+        const channels = document.createElement('span'); channels.className = 'import-channels'; channels.textContent = match.channels.join(' · ') || 'القنوات غير محددة حالياً';
+        const add = button('plus', 'إضافة وتجهيز البث', async () => {
+          if (editing && !confirm('توجد تغييرات غير محفوظة. متابعة إضافة المباراة؟')) return;
+          add.disabled = true;
+          try {
+            const result = await api('matches/import', { candidateId: match.candidateId });
+            importJob = result.job.id;
+            message('بدأ تأكيد المباراة وتجهيز قناتها.');
+            await refresh(false);
+          } catch (error) { message(error.message, true); add.disabled = false; }
+        });
+        add.append(document.createTextNode('إضافة وتجهيز البث')); add.className = 'import-match-button primary';
+        add.dataset.unavailable = String(!match.canImport); add.disabled = !match.canImport;
+        row.append(name, channels, add); return row;
+      }));
+      renderJobs();
+    } catch (error) { $('import-search-status').textContent = error.message; message(error.message, true); }
+    finally { $('import-search').disabled = false; }
+  };
   $('manual-enabled').onchange = () => { editing = true; };
   document.querySelectorAll('.notice-settings input, .notice-settings select').forEach(input => { input.oninput = () => { editing = true; }; });
   $('save-selection').onclick = async () => { try { await api('selection', { enabled: $('manual-enabled').checked, matches: selected }); editing = false; message('بدأ تجهيز الاختيار في الخلفية المشتركة.'); await refresh(false); } catch (error) { message(error.message, true); } };

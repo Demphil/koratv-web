@@ -18,6 +18,7 @@ import { resolvePublicMatchId } from '../shared/public-match-id.mjs';
 import { broadcastChannelCandidates } from '../shared/match-broadcasts.mjs';
 import { registerOperatorConsole, installPreparedOperatorChannel, refreshOperatorResources } from './operator-console.js';
 import { createOperatorChannelPreparer } from './operator-channel.js';
+import { isOperatorImportedMatch } from '../shared/operator-imported-match.mjs';
 
 const issuer = 'koratv-gateway';
 const entryTtl = 300;
@@ -150,6 +151,7 @@ function normalizeMatch(row, config) {
     resourceStatus: row.resource_status || null,
     broadcastRank: row.broadcast_rank || null,
     manuallySelected: row.manually_selected === true,
+    operatorImported: isOperatorImportedMatch(row),
     viewingMode: playbackState === 'live' ? (sourceAvailable ? 'stream' : 'live_updates') : playbackState,
     playbackState,
     isLive: playbackState === 'live',
@@ -294,7 +296,7 @@ function dedupeNormalizedMatches(matches) {
 
 function allowedMatch(match) {
   if (sourceMatchState(match) === 'unavailable') return false;
-  return isAllowedMatch({
+  return match.operatorImported === true || isOperatorImportedMatch(match) || isAllowedMatch({
     league: match.league,
     leagueCountry: match.leagueCountry,
     homeTeam: match.homeTeam,
@@ -591,7 +593,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   registerOperatorConsole(app, {
     config, redis, clientIp,
     getMatches: async () => (await config.getMatchesForOrigin(config.frontend))
-      .filter(row => isAllowedMatch({ league: row.league, leagueCountry: row.payload?.leagueCountry, homeTeam: row.home_team, awayTeam: row.away_team }) && sourceMatchState(row.payload || row) !== 'unavailable')
+      .filter(row => (isOperatorImportedMatch(row) || isAllowedMatch({ league: row.league, leagueCountry: row.payload?.leagueCountry, homeTeam: row.home_team, awayTeam: row.away_team })) && sourceMatchState(row.payload || row) !== 'unavailable')
       .map(row => ({ ...normalizeRuntimeMatch(row), broadcastChannels: broadcastChannelCandidates(row) }))
       .filter(row => moroccoPart(row.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === moroccoPart(new Date(), { year: 'numeric', month: '2-digit', day: '2-digit' }))
       .map(({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected }) => ({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected }))

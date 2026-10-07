@@ -71,6 +71,7 @@ jobs:
           cp secure-streaming/scripts/sync-matches-from-source.js _oracle-sync/metadata/
           cp secure-streaming/scripts/api-football-client.mjs _oracle-sync/metadata/
           cp secure-streaming/scripts/prune-match-data.js _oracle-sync/metadata/
+          cp secure-streaming/scripts/operator-match-import.mjs _oracle-sync/metadata/
           cp secure-streaming/src/lib/loadEnv.js secure-streaming/src/lib/supabaseAdmin.js _oracle-sync/metadata/
           cp ecosystem.oracle.config.js _oracle-sync/ecosystem.oracle.config.js
       - name: Prepare private console password hash
@@ -129,13 +130,13 @@ jobs:
             LEGACY="/home/ubuntu/iptv-system/secure-streaming"
             if test -f "$LEGACY/scripts/sync-matches-from-source.js"; then
               BACKUP_PATHS=(secure-streaming/scripts/sync-matches-from-source.js)
-              for FILE in secure-streaming/scripts/prune-match-data.js secure-streaming/scripts/api-football-client.mjs secure-streaming/src/lib/loadEnv.js secure-streaming/src/lib/supabaseAdmin.js shared; do
+              for FILE in secure-streaming/scripts/prune-match-data.js secure-streaming/scripts/api-football-client.mjs secure-streaming/scripts/operator-match-import.mjs secure-streaming/src/lib/loadEnv.js secure-streaming/src/lib/supabaseAdmin.js shared; do
                 if test -e "/home/ubuntu/iptv-system/$FILE"; then BACKUP_PATHS+=("$FILE"); fi
               done
               tar -czf "/opt/koratv/backups/metadata-${{ github.run_id }}.tgz" \
                 -C /home/ubuntu/iptv-system "${BACKUP_PATHS[@]}"
               install -d -m 0755 "$LEGACY/src/lib" /home/ubuntu/iptv-system/shared
-              for FILE in sync-matches-from-source.js prune-match-data.js api-football-client.mjs; do
+              for FILE in sync-matches-from-source.js prune-match-data.js api-football-client.mjs operator-match-import.mjs; do
                 install -m 0644 "$STAGING/metadata/$FILE" "$LEGACY/scripts/$FILE"
               done
               for FILE in loadEnv.js supabaseAdmin.js; do

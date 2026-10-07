@@ -13,6 +13,16 @@
         <div id="servers" class="servers"></div>
         <div class="selection-toolbar"><label><input id="manual-enabled" type="checkbox"> تفضيل يدوي</label><span id="selected-count">0 / 8</span><button id="save-selection" class="primary"><img src="/api/operator/ui/icons/save" alt="">حفظ الاختيار</button></div>
         <div id="selected-list" class="selected-list"></div>
+        <div class="match-import">
+          <h2>إضافة مباراة من Kooora</h2>
+          <form id="import-search-form" class="import-search-form">
+            <label>الفريق الأول<input id="import-home" required minlength="2" maxlength="80" autocomplete="off"></label>
+            <label>الفريق الثاني<input id="import-away" required minlength="2" maxlength="80" autocomplete="off"></label>
+            <button id="import-search" type="submit"><img src="/api/operator/ui/icons/search" alt="">بحث</button>
+          </form>
+          <p id="import-search-status" role="status"></p>
+          <div id="import-results"></div>
+        </div>
         <div class="filter-row"><input id="search" type="search" placeholder="بحث عن مباراة أو بطولة" aria-label="بحث"><select id="status-filter" aria-label="حالة المباراة"><option value="all">كل المباريات</option><option value="live">المباشرة</option><option value="assigned">المختارة للبث</option></select></div>
         <datalist id="channel-names"></datalist>
         <div id="match-list"></div>

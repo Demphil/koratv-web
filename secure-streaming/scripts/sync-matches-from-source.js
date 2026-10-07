@@ -9,6 +9,7 @@ import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
 import { normalizeKnockoutFixtures } from '../../shared/knockout.mjs';
 import { createApiFootballClient } from './api-football-client.mjs';
 import { attachApiFootballDetails } from '../../shared/match-details.mjs';
+import { isOperatorImportedMatch } from '../../shared/operator-imported-match.mjs';
 
 const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
@@ -310,7 +311,7 @@ async function collectApiFootballRows() {
   return rows;
 }
 
-async function fetchHtml(url) {
+export async function fetchHtml(url) {
   const response = await fetch(url, {
     signal: AbortSignal.timeout(20000),
     headers: {
@@ -322,8 +323,8 @@ async function fetchHtml(url) {
   return response.text();
 }
 
-function parseMatches(html, dayOffset) {
-  if (html.includes('__NEXT_DATA__')) return parseKoooraMatches(html);
+function parseMatches(html, dayOffset, options) {
+  if (html.includes('__NEXT_DATA__')) return parseKoooraMatches(html, options);
 
   const $ = cheerio.load(html);
   const rows = [];
@@ -696,7 +697,7 @@ function matchMinute(match = {}) {
 }
 
 
-export function parseKoooraMatches(html) {
+export function parseKoooraMatches(html, { includeAll = false, includeMatchIds = new Set(), importedSourceIds = new Map() } = {}) {
   const $ = cheerio.load(html);
   const raw = $('#__NEXT_DATA__').text();
   if (!raw) throw new Error('Kooora __NEXT_DATA__ payload is missing.');
@@ -712,7 +713,6 @@ export function parseKoooraMatches(html) {
       const awayTeam = match?.teamB?.name?.trim();
       const kickoff = match?.startDate;
       if (!homeTeam || !awayTeam || !kickoff) continue;
-      if (!isAllowedMatch({ league, homeTeam, awayTeam })) continue;
 
       const status = String(match.status || 'FIXTURE').toUpperCase();
       const homeScore = scorePart(match.score, 'teamA');
@@ -727,6 +727,8 @@ export function parseKoooraMatches(html) {
       const date = String(kickoff).slice(0, 10);
       const baseMatchId = matchSlug(homeTeam, awayTeam);
       const matchId = `kooora_${date}_${baseMatchId}`;
+      if (importedSourceIds.has(matchId) && importedSourceIds.get(matchId) !== String(match.id || '')) continue;
+      if (!includeAll && !includeMatchIds.has(matchId) && !isAllowedMatch({ league, homeTeam, awayTeam })) continue;
       const events = normalizeMatchEvents(match);
 
       rows.push({
@@ -772,7 +774,7 @@ export function parseKoooraMatches(html) {
   return rows;
 }
 
-async function enrichKoooraRowsWithScheduleChannels(rows) {
+export async function enrichKoooraRowsWithScheduleChannels(rows) {
   let scheduleRows = [];
   try {
     scheduleRows = parseKoooraScheduleBroadcasts(await fetchHtml(TV_SCHEDULE_SITE_URL));
@@ -1037,7 +1039,7 @@ export function koooraDetailChannelTargets(rows, limit = koooraDetailChannelLimi
     || Date.parse(a.kickoff_time) - Date.parse(b.kickoff_time)).slice(0, limit);
 }
 
-async function enrichKoooraRowsWithDetailChannels(rows) {
+export async function enrichKoooraRowsWithDetailChannels(rows) {
   const targets = koooraDetailChannelTargets(rows);
 
   for (const row of targets) {
@@ -1064,6 +1066,14 @@ async function enrichKoooraRowsWithDetailChannels(rows) {
 }
 
 export async function collectMatchRowsFromSource() {
+  const { data: imported, error: importError } = await getSupabaseAdmin().from(matchesTable)
+    .select('id,match_id,source,kickoff_time,payload').eq('active', true)
+    .gte('kickoff_time', new Date(Date.now() - 36 * 3600000).toISOString())
+    .lte('kickoff_time', new Date(Date.now() + 72 * 3600000).toISOString())
+    .eq('payload->operatorImport->>source', 'operator-console').limit(32);
+  if (importError) throw new Error('Cannot read manually imported matches safely');
+  const includeMatchIds = new Set((imported || []).filter(isOperatorImportedMatch).map(row => row.match_id || row.id));
+  const importedSourceIds = new Map((imported || []).filter(isOperatorImportedMatch).map(row => [row.match_id || row.id, String(row.payload.sourceMatchId)]));
   const provider = String(process.env.MATCH_SOURCE_PROVIDER || "").trim().toLowerCase();
   let rows = [];
   if (apiFootballEnabled()) {
@@ -1087,7 +1097,7 @@ export async function collectMatchRowsFromSource() {
   for (const page of pages) {
     try {
       const html = await fetchHtml(page.url);
-      koooraRows.push(...parseMatches(html, page.dayOffset));
+      koooraRows.push(...parseMatches(html, page.dayOffset, { includeMatchIds, importedSourceIds }));
     } catch (error) {
       failedDates.push(moroccoDateParts(page.dayOffset));
       console.error(`Failed source ${page.url}: ${error.message}`);

@@ -7,6 +7,7 @@ import { sameFixture, teamIdentity } from '../../shared/match-broadcasts.mjs';
 import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
 import { isAllowedMatch, isGulfCupLeague } from '../../shared/league-whitelist.mjs';
 import { operatorPath, readOperatorState } from '../operator-state.js';
+import { isOperatorImportedMatch } from '../../shared/operator-imported-match.mjs';
 
 const DEFAULT_MAX_RESOURCES = 8;
 const DEFAULT_NATIONAL_TEAM_POINTS = 1000;
@@ -453,7 +454,7 @@ export async function assignEventResources({
 }
 
 export function publicAssignmentMatches(matches) {
-  const allowed = matches.filter(row => isAllowedMatch({league:row.league,
+  const allowed = matches.filter(row => isOperatorImportedMatch(row) || isAllowedMatch({league:row.league,
     leagueCountry:row.payload?.leagueCountry, homeTeam:row.home_team, awayTeam:row.away_team}));
   const kooora = allowed.filter(row => String(row.source || '').startsWith('kooora'));
   return [...kooora, ...allowed.filter(row => row.source === 'api-football'
