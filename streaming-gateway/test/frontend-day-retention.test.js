@@ -4,17 +4,29 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { sourceMatchState, nextMoroccoMidnight, matchListCacheControl } from '../../shared/match-lifecycle.mjs';
 
-async function fixture(path, time = '2026-10-04T22:58:00Z') {
+async function fixture(path, time = '2026-10-04T22:58:00Z', storageBlocked = false) {
   let now = Date.parse(time), response = [], calls = 0;
   const storage = new Map();
   class Clock extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
-  const localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) };
+  const check = () => { if (storageBlocked) throw new Error('Storage unavailable'); };
+  const localStorage = { getItem: key => { check(); return storage.get(key) ?? null; }, setItem: (key, value) => { check(); return storage.set(key, value); }, removeItem: key => { check(); return storage.delete(key); } };
   const context = vm.createContext({ window: {}, localStorage, Date: Clock, Intl, sourceMatchState, nextMoroccoMidnight, AbortSignal,
     console: { error() {} }, fetch: async () => { calls++; if (typeof response === 'function') return response(); if (response instanceof Error) throw response; return { ok: true, json: async () => ({ matches: response }) }; } });
   const source = (await readFile(new URL(path, import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   vm.runInContext(source + '\nthis.api = {getTodayMatches,getTomorrowMatches,getCachedMatchSnapshot,getMoroccoDateKey,getNextMoroccoDayDelay};', context);
   return { api: context.api, storage, setTime: time => now = Date.parse(time), setRows: rows => response = rows, calls: () => calls };
 }
+
+test('Fraja retains completed results until midnight even when browser storage is unavailable', async () => {
+  const f = await fixture('../../../foottv6/assets/js/api.js', '2026-10-04T22:58:00Z', true);
+  f.setRows([ended, next]);
+  assert.equal((await f.api.getTodayMatches())[0].matchId, 'final');
+  await f.api.getTomorrowMatches();
+  f.setTime('2026-10-04T22:59:59.999Z'); f.setRows([]);
+  assert.equal((await f.api.getTodayMatches({ force: true }))[0].matchId, 'final');
+  f.setTime('2026-10-04T23:00:00Z');
+  assert.deepEqual(Array.from(f.api.getCachedMatchSnapshot().today, row => row.matchId), ['next']);
+});
 
 test('HTTP cache freshness and stale lifetime cannot cross Morocco midnight', () => {
   assert.equal(matchListCacheControl(Date.parse('2026-10-04T22:59:50Z')), 'public, max-age=10, s-maxage=10, stale-while-revalidate=0');

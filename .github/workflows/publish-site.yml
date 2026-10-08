@@ -20,6 +20,8 @@ on:
       - "scripts/prerender-match-list.test.cjs"
       - "scripts/submit-indexnow.js"
       - "assets/js/matches.js"
+      - "assets/js/news.js"
+      - "assets/js/news-images.js"
       - "shared/match-lifecycle.mjs"
       - "assets/css/matches.css"
       - ".github/workflows/publish-site.yml"
@@ -59,6 +61,7 @@ jobs:
           npm ci --ignore-scripts --no-audit --fund=false
           node scripts/check-seo.js
           node --test scripts/build-public-site.test.cjs
+          node --test scripts/news-images.test.cjs
           node scripts/build-public-site.cjs
 
       - name: Test and generate indexable match pages

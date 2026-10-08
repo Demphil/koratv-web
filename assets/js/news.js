@@ -1,4 +1,5 @@
 // assets/js/news.js
+import { newsImageCandidates } from './news-images.js?v=20261008-article-images';
 
 const CACHE_KEY = "koratv_rss_news_v5_hespress"; // كاش جديد تماماً
 const CACHE_DURATION = 2 * 60 * 60 * 1000; 
@@ -124,7 +125,8 @@ function createNewsCard(article, type) {
     const title = article.title || 'تحديث رياضي';
     const description = stripHTML(article.description || article.content || '');
     const articleUrl = sanitizeUrl(article.link);
-    const imgUrl = '/assets/images/logo.png';
+    const images = newsImageCandidates(article, window.location.origin, html => new DOMParser().parseFromString(html, 'text/html'));
+    const imgUrl = images[0] || '';
     
     let badge = "عالمي";
     if (title.includes("سعودي") || title.includes("النصر") || title.includes("الهلال")) badge = "السعودية";
@@ -139,7 +141,7 @@ function createNewsCard(article, type) {
     card.innerHTML = `
         <div class="news-image-wrapper">
             <span class="news-category-badge">${escapeHTML(badge)}</span>
-            <img src="${escapeAttribute(imgUrl)}" alt="شعار منصة المعلومات الرياضية" loading="lazy" onerror="this.src='/assets/images/logo.png'">
+            ${imgUrl ? `<img src="${escapeAttribute(imgUrl)}" alt="${escapeAttribute(title)}" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}
         </div>
         <div class="news-content">
             <h3 class="news-title">
@@ -152,6 +154,14 @@ function createNewsCard(article, type) {
             </div>
         </div>
     `;
+    const image = card.querySelector('.news-image-wrapper img');
+    if (image) {
+        let next = 1;
+        image.addEventListener('error', () => {
+            if (next < images.length) image.src = images[next++];
+            else image.remove();
+        });
+    }
     return card;
 }
 

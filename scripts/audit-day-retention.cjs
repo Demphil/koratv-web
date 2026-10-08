@@ -12,10 +12,14 @@ const assert = require('node:assert/strict');
       for (const width of [390, 1366]) {
         const page = await browser.newPage(), errors = []; let requests = 0, omit = false;
         await page.setViewport({ width, height: 900 }); page.on('pageerror', error => errors.push(error.message));
-        await page.evaluateOnNewDocument(() => {
+        const storageBlocked = Boolean(process.env.QA_BLOCK_STORAGE && origin === 'https://fraja.online');
+        await page.evaluateOnNewDocument(blockStorage => {
+          if (blockStorage) {
+            for (const method of ['getItem', 'setItem', 'removeItem']) Storage.prototype[method] = () => { throw new Error('Storage unavailable'); };
+          }
           const OriginalDate = Date; window.qaNow = OriginalDate.parse('2026-10-04T22:59:56Z');
           window.Date = class extends OriginalDate { constructor(...args) { super(...(args.length ? args : [window.qaNow])); } static now() { return window.qaNow; } };
-        });
+        }, storageBlocked);
         const ended = { matchId: 'ended-today', homeTeam: 'Real Madrid', awayTeam: 'Barcelona', league: 'La Liga', scheduledAt: '2026-10-04T14:00:00Z', status: 'FT', playbackState: 'ended', score: '2 - 1' };
         const next = { ...ended, matchId: 'new-day', scheduledAt: '2026-10-05T14:00:00Z', status: 'FIXTURE', playbackState: 'upcoming', score: 'VS' };
         await page.setRequestInterception(true);
@@ -48,7 +52,7 @@ const assert = require('node:assert/strict');
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         assert.ok(requests >= 3); assert.deepEqual(errors, []);
         if (output) await page.screenshot({ path: join(output, `retention-after-${new URL(origin).hostname}-${width}.png`), fullPage: true });
-        console.log(JSON.stringify({ origin, width, completedMatchRetainedOnOmission: true, automaticMidnightReplacement: true, overflow: false }));
+        console.log(JSON.stringify({ origin, width, storageBlocked, completedMatchRetainedOnOmission: true, automaticMidnightReplacement: true, overflow: false }));
         await page.close();
       }
     }
