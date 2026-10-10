@@ -7,6 +7,15 @@ const extensions = new Set(['.html', '.css', '.js', '.png', '.jpg', '.jpeg', '.w
 const rootFiles = new Set(['CNAME', 'robots.txt', 'sitemap.xml', 'sw.js']);
 const verificationFile = /^(?:[a-f0-9]{32}|hta-code-\d+|ppck-ver-[a-f0-9]+)\.txt$/i;
 const prohibitedAds = /\b(?:adsterra|highrevenueformat|profitableratecpmnetwork|highperformanceformat|profitabledisplaynetwork|topcreativeformat|effectivegatecpm|effectivecreativeformat|profitablecpmrate)\.com\b|\batOptions\s*=/i;
+// Retired aliases previously displayed this same daily results table.
+const legacyMatchPages = ['kora-online.html', 'koora-extra.html', 'kooracity.html', 'yalla-live.html', 'yalla-shoot-hd.html'];
+
+function legacyMatchRedirect(siteUrl) {
+  const target = new URL('/', siteUrl).href;
+  if (!/^https?:$/.test(new URL(target).protocol)) throw new Error('Invalid website origin');
+  const escaped = target.replace(/[&"<>]/g, c => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' })[c]);
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${escaped}"><link rel="canonical" href="${escaped}"><title>KoraTV</title></head><body><a href="${escaped}">جدول المباريات والنتائج</a></body></html>`;
+}
 
 function assertNoSecret(text, path) {
   if (/\/api\/operator\//.test(text)) throw new Error('Private console route in public asset: ' + path);
@@ -66,9 +75,12 @@ async function buildPublicSite({ root = process.cwd(), output = join(root, '_sit
   await mkdir(join(output, 'shared'), { recursive: true });
   await cp(join(root, 'shared/match-lifecycle.mjs'), join(output, 'shared/match-lifecycle.mjs'));
   await minifyScripts(output);
+  const configuredHost = (await readFile(join(root, 'CNAME'), 'utf8')).trim();
+  const siteUrl = new URL(configuredHost.includes('://') ? configuredHost : `https://${configuredHost}`).origin;
+  for (const page of legacyMatchPages) await writeFile(join(output, page), legacyMatchRedirect(siteUrl));
   return output;
 }
 
-module.exports = { buildPublicSite };
+module.exports = { buildPublicSite, legacyMatchPages, legacyMatchRedirect };
 if (require.main === module) buildPublicSite().then(path => console.log('Public website built: ' + path))
   .catch(error => { console.error(error.message); process.exitCode = 1; });

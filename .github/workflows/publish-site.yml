@@ -16,6 +16,9 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/generate-match-pages.cjs"
+      - "scripts/match-archive.cjs"
+      - "scripts/match-archive.test.cjs"
+      - "assets/css/archive.css"
       - "scripts/prerender-match-list.cjs"
       - "scripts/prerender-match-list.test.cjs"
       - "scripts/submit-indexnow.js"
@@ -66,7 +69,7 @@ jobs:
 
       - name: Test and generate indexable match pages
         run: |
-          node --test scripts/generate-match-pages.test.cjs scripts/prerender-match-list.test.cjs
+          node --test scripts/generate-match-pages.test.cjs scripts/prerender-match-list.test.cjs scripts/match-archive.test.cjs
           node scripts/generate-match-pages.cjs --output _site
 
       - name: Configure GitHub Pages

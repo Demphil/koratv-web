@@ -210,6 +210,9 @@ jobs:
 
   deploy-pages:
     name: Redeploy GitHub Pages frontend
+    concurrency:
+      group: static-pages-production
+      cancel-in-progress: false
     needs: catalog
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -238,7 +241,7 @@ jobs:
           node scripts/build-public-site.cjs
       - name: Test and generate indexable match pages
         run: |
-          node --test scripts/generate-match-pages.test.cjs scripts/prerender-match-list.test.cjs
+          node --test scripts/generate-match-pages.test.cjs scripts/prerender-match-list.test.cjs scripts/match-archive.test.cjs
           node scripts/generate-match-pages.cjs --output _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

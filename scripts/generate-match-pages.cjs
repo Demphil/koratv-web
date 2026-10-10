@@ -4,6 +4,7 @@ const { sameFixture, deduplicateSourceEvents } = require('../shared/match-broadc
 const { sourceMatchState } = require('../shared/match-lifecycle.mjs');
 const { isAllowedMatch, isGulfCupLeague } = require('../shared/league-whitelist.mjs');
 const { prerenderHomepage } = require('./prerender-match-list.cjs');
+const { loadArchive, restoreSlugs, writeArchive, id: archiveId } = require('./match-archive.cjs');
 
 const root = path.resolve(__dirname, '..');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -29,6 +30,7 @@ function idHash(value) {
 }
 
 function matchSlug(match) {
+  if (match.archiveSlug && /^[\p{L}\p{N}_-]{1,200}$/u.test(match.archiveSlug)) return match.archiveSlug;
   const home = String(match.home_team || match.homeTeam?.name || match.homeTeam || '')
     .normalize('NFKD').replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
     .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
@@ -104,6 +106,7 @@ function matchPage(row, config) {
 
   return {
     slug: matchSlug(row),
+    date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Casablanca', year: 'numeric', month: '2-digit', day: '2-digit' }).format(kickoff),
     lastmod: safeDate(row.updated_at)?.toISOString().slice(0, 10) || kickoff.toISOString().slice(0, 10),
     html: `<!doctype html>
 <html lang="ar" dir="rtl"><head>
@@ -157,10 +160,14 @@ async function loadMatches() {
 
 async function generate(outputDir = path.join(root, '_site'), rows) {
   const config = siteConfig();
-  const matches = rows || await loadMatches();
+  const archive = rows ? { version: 1, pages: [], aliases: [] } : await loadArchive(config);
+  const matches = restoreSlugs(rows || await loadMatches(), archive);
   fs.mkdirSync(outputDir, { recursive: true });
   const selected = selectIndexableMatches(matches);
-  const pages = selected.map((row) => matchPage(row, config)).filter(Boolean);
+  const pages = selected.map((row) => {
+    const page = matchPage(row, config);
+    return page ? { ...page, identity: archiveId(row) } : null;
+  }).filter(Boolean);
   const seen = new Set();
   for (const page of pages) {
     if (seen.has(page.slug)) continue;
@@ -174,6 +181,8 @@ async function generate(outputDir = path.join(root, '_site'), rows) {
     const canonical = selected.find(candidate => sameFixture(candidate, row));
     if (!canonical || matchSlug(canonical) === matchSlug(row) || !matchPage(row, config)) continue;
     const target = `${config.siteUrl}/match/${matchSlug(canonical)}/`;
+    archive.aliases = archive.aliases.filter(alias => alias.slug !== matchSlug(row));
+    archive.aliases.push({ slug: matchSlug(row), target: matchSlug(canonical) });
     const directory = path.join(outputDir, 'match', matchSlug(row));
     fs.mkdirSync(directory, { recursive: true });
     fs.writeFileSync(path.join(directory, 'index.html'), `<!doctype html><html lang="ar"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=${escapeHtml(target)}"><link rel="canonical" href="${escapeHtml(target)}"><title>${escapeHtml(config.brand)}</title></head><body><a href="${escapeHtml(target)}">تفاصيل المباراة</a></body></html>`);
@@ -195,6 +204,8 @@ async function generate(outputDir = path.join(root, '_site'), rows) {
   fs.writeFileSync(staticSitemap,
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${[...staticEntries, ...matchEntries].map((entry) => `  <url>${entry.replace(/^\s*<url>|<\/url>\s*$/g, '')}</url>`).join('\n')}\n</urlset>\n`);
   console.log(`Generated ${seen.size} match pages for ${config.siteUrl}.`);
+  const retained = writeArchive(outputDir, config, archive, pages, selected);
+  console.log(`Retained ${retained.count} match pages and ${retained.urls} archive URLs.`);
   return { count: seen.size, sitemap: staticSitemap };
 }
 

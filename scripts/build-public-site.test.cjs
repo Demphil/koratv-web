@@ -4,7 +4,7 @@ const { mkdtemp, mkdir, writeFile, readFile, access, rm } = require('node:fs/pro
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const vm = require('node:vm');
-const { buildPublicSite } = require('./build-public-site.cjs');
+const { buildPublicSite, legacyMatchPages, legacyMatchRedirect } = require('./build-public-site.cjs');
 
 test('publication allowlist excludes backend files, maps, credentials, and docs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'public-site-'));
@@ -45,6 +45,7 @@ test('publication allowlist excludes backend files, maps, credentials, and docs'
 test('publication rejects Adsterra tags in HTML and nested scripts but preserves Monetag', async () => {
   const root = await mkdtemp(join(tmpdir(), 'public-ads-policy-'));
   try {
+    await writeFile(join(root, 'CNAME'), 'koratv.click');
     await mkdir(join(root, 'shared'));
     await mkdir(join(root, 'assets/js'), { recursive: true });
     await writeFile(join(root, 'shared/match-lifecycle.mjs'), 'export const live = true;');
@@ -61,4 +62,12 @@ test('publication rejects Adsterra tags in HTML and nested scripts but preserves
     assert.match(await readFile(join(output, 'index.html'), 'utf8'), /al5sm\.com/);
     assert.match(await readFile(join(output, 'assets/js/ads.js'), 'utf8'), /omg10\.com/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('known retired daily-table aliases lead to their equivalent current page', () => {
+  assert.equal(legacyMatchPages.length, 5);
+  const html = legacyMatchRedirect('https://koratv.click');
+  assert.match(html, /http-equiv="refresh"/);
+  assert.match(html, /rel="canonical" href="https:\/\/koratv.click\/"/);
+  assert.doesNotMatch(html, /<script/);
 });
