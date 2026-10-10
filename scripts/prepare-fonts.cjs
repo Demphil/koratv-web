@@ -12,6 +12,8 @@ async function main() {
   if (!response.ok) throw new Error(`Font CSS: ${response.status}`);
   let css = await response.text();
   if (!css.includes("format('woff2')")) throw new Error('Expected WOFF2 font response');
+  // A slow connection keeps its readable fallback instead of repainting all headings late.
+  css = css.replaceAll('font-display: swap;', 'font-display: optional;');
   const urls = [...new Set([...css.matchAll(/url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/g)].map(match => match[1]))];
   for (const [index, url] of urls.entries()) {
     const font = await fetch(url);

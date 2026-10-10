@@ -53,11 +53,15 @@ const { resolve, join, extname, sep } = require('node:path');
       }));
       await page.evaluate(() => { window.qaFirstCard = document.querySelector('#featured-matches > :first-child'); });
       await page.evaluate(() => window.refreshLiveMatches());
-      result.stableRefresh = await page.evaluate(() => window.qaFirstCard === document.querySelector('#featured-matches > :first-child'));
+      Object.assign(result, await page.evaluate(() => {
+        const next = document.querySelector('#featured-matches > :first-child');
+        return { stableRefresh: window.qaFirstCard === next,
+          dataChanged: window.qaFirstCard?.dataset.renderSignature !== next?.dataset.renderSignature };
+      }));
       assert.equal(result.overflow, false);
       assert.equal(result.logoLoaded, true);
       assert.equal(result.localFontLoaded, true);
-      assert.equal(result.stableRefresh, true);
+      assert.ok(result.dataChanged || result.stableRefresh, 'Unchanged match data must reuse its DOM node');
       await page.screenshot({ path: join(output, `${site}-${width}-${live ? 'live' : 'local'}.png`), fullPage: false });
       results.push({ site, width, live, ...result, errors });
       console.log(JSON.stringify(results.at(-1)));

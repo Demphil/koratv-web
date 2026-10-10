@@ -64,7 +64,7 @@ body::before {
 }
 
 /* Reserve the match viewport while the live feed replaces the daily snapshot. */
-.featured-section { min-height: min(640px, 80svh); }
+.featured-section { min-height: calc(100svh - var(--header-height)); }
 .section-title > i, .filter-btn > i, .social-icon > i { display: inline-block; width: 1.25em; min-width: 1.25em; text-align: center; }
 #news-grid-container { min-height: 420px; }
 
