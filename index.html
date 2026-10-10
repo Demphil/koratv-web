@@ -13,7 +13,7 @@
     <link rel="sitemap" type="application/xml" href="/sitemap.xml">
     <link rel="icon" href="/assets/images/favicon.ico" type="image/x-icon">
     <link rel="apple-touch-icon" href="/assets/images/logo.png">
-    <link rel="preload" as="image" href="/assets/images/logo.png">
+    <link rel="preload" as="image" href="/assets/images/logo-header.webp">
     <link rel="dns-prefetch" href="//al5sm.com">
     <link rel="dns-prefetch" href="//nap5k.com">
     <link rel="dns-prefetch" href="//quge5.com">
@@ -30,17 +30,17 @@
     <meta name="twitter:description" content="تابع مع koratv نتائج مباريات كرة القدم وإحصائياتها والأحداث الحية، مع جدول مباريات اليوم والغد ومواعيدها بتوقيت المغرب.">
     <meta name="twitter:image" content="https://koratv.click/assets/images/logo.png">
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <link rel="preconnect" href="https://stream-api.koratv.click" crossorigin>
-    <link rel="preconnect" href="https://fabor.sbs" crossorigin>
+    <link rel="preload" as="font" type="font/woff2" href="/assets/fonts/cairo-0.woff2" crossorigin>
+    <link rel="preload" as="font" type="font/woff2" href="/assets/fonts/cairo-2.woff2" crossorigin>
     <link rel="modulepreload" href="/assets/js/api.js?v=20261004-day-retention">
     <link rel="modulepreload" href="/assets/js/matches.js?v=20261005-seo">
     <link rel="stylesheet" href="/assets/css/matches.css?v=20261005-seo">
     <link rel="stylesheet" href="/assets/css/footer.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/assets/css/fonts.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
     <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-HKXWEPJ14K"></script>
 <script>
@@ -75,7 +75,7 @@
     <!-- 1. الشعار (على اليسار) -->
     <div class="logo">
         <a href="/">
-            <img src="assets/images/logo.png" alt="koratv Logo" loading="lazy" width="45" height="45">
+            <img src="assets/images/logo-header.webp" alt="koratv Logo" fetchpriority="high" width="70" height="70">
         </a>
     </div>
     
@@ -113,7 +113,7 @@
     <section class="news-controls-section">
         <div class="news-search-container">
             <input type="text" id="news-search-input" placeholder="ابحث في الأحداث الرياضية...">
-            <button id="search-btn"><i class="fas fa-search"></i></button>
+            <button id="search-btn" aria-label="البحث في الأخبار"><i class="fas fa-search" aria-hidden="true"></i></button>
         </div>
         
         <div class="news-filters">

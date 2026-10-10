@@ -27,6 +27,9 @@ on:
       - "assets/js/news-images.js"
       - "shared/match-lifecycle.mjs"
       - "assets/css/matches.css"
+      - "assets/css/fonts.css"
+      - "assets/fonts/**"
+      - "assets/images/logo-header.webp"
       - ".github/workflows/publish-site.yml"
   workflow_dispatch:
 

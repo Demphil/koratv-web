@@ -200,7 +200,7 @@ function renderMatch(match) {
         : 'source_unavailable';
   const linkAttributes = canOpenSecurePlayer
     ? `href="${watchUrl}" target="_blank" rel="noopener noreferrer" data-secure-match-id="${encodeURIComponent(stableId)}"`
-    : `href="javascript:void(0)" data-disabled-reason="${disabledReason}"`;
+    : `href="#wait-modal" data-disabled-reason="${disabledReason}"`;
   const linkClass = canOpenSecurePlayer ? 'clickable' : 'not-clickable';
 
   let timeText = match.time;
@@ -210,7 +210,8 @@ function renderMatch(match) {
           timeText = matchDate.toLocaleTimeString('ar-EG-u-nu-latn', {
               hour: '2-digit',
               minute: '2-digit',
-              hour12: false
+              hour12: false,
+              timeZone: 'Africa/Casablanca'
           });
       }
   }
@@ -239,7 +240,7 @@ function renderMatch(match) {
         ${statusBadge}
         <div class="teams">
           <div class="team">
-            <img src="${homeLogo}" alt="${homeTeamName}" loading="lazy" onerror="this.src='assets/images/default-logo.jpg';">
+            <img src="${homeLogo}" alt="${homeTeamName}" loading="lazy" decoding="async" width="50" height="50" onerror="this.onerror=null;this.src='assets/images/default-logo.jpg';">
             <span class="team-name">${homeTeamName}</span>
           </div>
           <div class="match-info">
@@ -247,7 +248,7 @@ function renderMatch(match) {
             <span class="time">${timeText}</span>
           </div>
           <div class="team">
-            <img src="${awayLogo}" alt="${awayTeamName}" loading="lazy" onerror="this.src='assets/images/default-logo.jpg';">
+            <img src="${awayLogo}" alt="${awayTeamName}" loading="lazy" decoding="async" width="50" height="50" onerror="this.onerror=null;this.src='assets/images/default-logo.jpg';">
             <span class="team-name">${awayTeamName}</span>
           </div>
         </div>
@@ -341,12 +342,18 @@ function setupSecurePlayerLinks() {
 }
 
 function matchRenderSignature(match) {
+  const minutesUntilStart = ((matchStartDate(match)?.getTime() || 0) - Date.now()) / 60000;
   return [
     matchIdentity(match),
     match.scheduledAt || '',
     match.time || '',
     match.score || '',
     match.playbackState || '',
+    match.liveExtraMinute || 0,
+    frontendMatchState(match, minutesUntilStart),
+    minutesUntilStart > 0 && minutesUntilStart <= 60,
+    match.resourceStatus || '', match.sourceReady, match.sourceAvailable, match.channelName || '',
+    match.homeTeam?.name || '', match.awayTeam?.name || '',
     Number.isFinite(Number(match.liveMinute)) ? String(match.liveMinute) : '',
     JSON.stringify(match.yellowCards || null),
     JSON.stringify(match.redCards || null),
@@ -365,18 +372,22 @@ function createMatchElement(match) {
 function renderSection(container, matches, message) {
     if (!container) return;
   const nextMatches = matches || [];
-  container.innerHTML = '';
-  container.dataset.matchSignature = nextMatches.map(matchRenderSignature).join('||');
+  const signature = nextMatches.map(matchRenderSignature).join('||');
+  if (container.dataset.matchSignature === signature) return;
+  container.dataset.matchSignature = signature;
   if (!nextMatches.length) {
     container.innerHTML = `<div class="no-matches"><i class="fas fa-futbol"></i><p>${message}</p></div>`;
     return;
   }
 
-  for (const match of nextMatches) {
-    const element = createMatchElement(match);
-    element.dataset.renderSignature = matchRenderSignature(match);
-    container.appendChild(element);
-  }
+  const existing = new Map([...container.children].map(element => [element.dataset.renderSignature, element]));
+  const elements = nextMatches.map(match => {
+    const key = matchRenderSignature(match);
+    const element = existing.get(key) || createMatchElement(match);
+    element.dataset.renderSignature = key;
+    return element;
+  });
+  container.replaceChildren(...elements);
 }
 
 function compareBroadcastPriority(a, b, now = new Date()) {
@@ -516,8 +527,13 @@ function setupTabs() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    const currentDay = getMoroccoDateKey();
+    const promoted = [...(DOM.tomorrowContainer?.querySelectorAll('[data-fixture-day]') || [])]
+      .filter(card => card.dataset.fixtureDay === currentDay);
     for (const container of document.querySelectorAll('[data-prerendered-day]')) {
-        if (container.dataset.prerenderedDay !== getMoroccoDateKey()) container.replaceChildren();
+        if (container.dataset.prerenderedDay === currentDay) continue;
+        container.replaceChildren(...(container === DOM.featuredContainer || container === DOM.todayContainer
+          ? promoted.map(card => card.cloneNode(true)) : []));
     }
     setupTabs();
   setupSecurePlayerLinks();

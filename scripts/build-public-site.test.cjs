@@ -6,6 +6,26 @@ const { join } = require('node:path');
 const vm = require('node:vm');
 const { buildPublicSite, legacyMatchPages, legacyMatchRedirect } = require('./build-public-site.cjs');
 
+test('homepage embeds only its local first-paint CSS and preserves font licensing', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'first-paint-'));
+  try {
+    for (const directory of ['assets/css', 'assets/fonts', 'shared']) await mkdir(join(root, directory), { recursive: true });
+    await writeFile(join(root, 'CNAME'), 'example.com');
+    await writeFile(join(root, 'shared/match-lifecycle.mjs'), 'export const live = true;');
+    await writeFile(join(root, 'assets/css/matches.css'), '.team { color: green; }');
+    await writeFile(join(root, 'assets/fonts/OFL.txt'), 'SIL OPEN FONT LICENSE');
+    await writeFile(join(root, 'assets/fonts/private.txt'), 'not a public font license');
+    await writeFile(join(root, 'index.html'), '<html><head><link rel="stylesheet" href="/assets/css/matches.css?v=1"><link rel="stylesheet" href="https://cdn.example/icons.css" media="print" onload="this.media=\'all\'"></head><body>Score</body></html>');
+    const output = await buildPublicSite({ root });
+    const html = await readFile(join(output, 'index.html'), 'utf8');
+    assert.match(html, /<style data-source="\/assets\/css\/matches.css">.team/);
+    assert.doesNotMatch(html, /href="\/assets\/css\/matches.css/);
+    assert.match(html, /media="print"/);
+    assert.match(await readFile(join(output, 'assets/fonts/OFL.txt'), 'utf8'), /FONT LICENSE/);
+    await assert.rejects(access(join(output, 'assets/fonts/private.txt')));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('publication allowlist excludes backend files, maps, credentials, and docs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'public-site-'));
   try {

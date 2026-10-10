@@ -1,6 +1,7 @@
 const { cp, mkdir, readdir, readFile, rm, writeFile } = require('node:fs/promises');
 const { resolve, relative, join, extname } = require('node:path');
 const { minify } = require('terser');
+const { load } = require('cheerio');
 
 const directories = new Set(['assets', 'abroad', 'at-work', 'low-internet', 'smart-tv']);
 const extensions = new Set(['.html', '.css', '.js', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.svg', '.woff', '.woff2']);
@@ -36,7 +37,7 @@ async function copyPublicDirectory(source, destination) {
     const from = join(source, entry.name);
     const to = join(destination, entry.name);
     if (entry.isDirectory()) await copyPublicDirectory(from, to);
-    else if (entry.isFile() && extensions.has(extname(entry.name).toLowerCase())) await cp(from, to);
+    else if (entry.isFile() && (extensions.has(extname(entry.name).toLowerCase()) || entry.name === 'OFL.txt')) await cp(from, to);
   }
 }
 
@@ -75,6 +76,16 @@ async function buildPublicSite({ root = process.cwd(), output = join(root, '_sit
   await mkdir(join(output, 'shared'), { recursive: true });
   await cp(join(root, 'shared/match-lifecycle.mjs'), join(output, 'shared/match-lifecycle.mjs'));
   await minifyScripts(output);
+  // Keep first-paint styles in the document, without extra network round trips.
+  const homepage = join(output, 'index.html');
+  const $ = load(await readFile(homepage, 'utf8'));
+  for (const link of $('link[rel="stylesheet"]').toArray()) {
+    const path = ($(link).attr('href') || '').split('?')[0];
+    if (!['/assets/css/matches.css', '/assets/css/footer.css', '/assets/css/fonts.css'].includes(path)) continue;
+    const css = await readFile(join(output, path.slice(1)), 'utf8');
+    $(link).replaceWith($('<style>').attr('data-source', path).text(css));
+  }
+  await writeFile(homepage, $.html());
   const configuredHost = (await readFile(join(root, 'CNAME'), 'utf8')).trim();
   const siteUrl = new URL(configuredHost.includes('://') ? configuredHost : `https://${configuredHost}`).origin;
   for (const page of legacyMatchPages) await writeFile(join(output, page), legacyMatchRedirect(siteUrl));
