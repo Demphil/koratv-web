@@ -28,6 +28,7 @@ on:
       - "shared/match-lifecycle.mjs"
       - "assets/css/matches.css"
       - "assets/css/fonts.css"
+      - "assets/css/icons.css"
       - "assets/fonts/**"
       - "assets/images/logo-header.webp"
       - ".github/workflows/publish-site.yml"

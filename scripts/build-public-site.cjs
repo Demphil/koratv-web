@@ -81,7 +81,7 @@ async function buildPublicSite({ root = process.cwd(), output = join(root, '_sit
   const $ = load(await readFile(homepage, 'utf8'));
   for (const link of $('link[rel="stylesheet"]').toArray()) {
     const path = ($(link).attr('href') || '').split('?')[0];
-    if (!['/assets/css/matches.css', '/assets/css/footer.css', '/assets/css/fonts.css'].includes(path)) continue;
+    if (!['/assets/css/matches.css', '/assets/css/footer.css', '/assets/css/fonts.css', '/assets/css/icons.css'].includes(path)) continue;
     const css = await readFile(join(output, path.slice(1)), 'utf8');
     $(link).replaceWith($('<style>').attr('data-source', path).text(css));
   }
