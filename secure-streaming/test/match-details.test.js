@@ -9,7 +9,11 @@ const {
   normalizeApiFootballEvents,
   normalizeApiFootballLineups,
   normalizeApiFootballStandings,
-  normalizeApiFootballStatistics
+  normalizeApiFootballStatistics,
+  normalizeApiFootballPlayers,
+  apiFootballScheduleInterval,
+  parseEnglishSourceTeamNames,
+  attachEnglishSourceNames
 } = await import("../scripts/sync-matches-from-source.js");
 const { normalizeKnockoutFixtures } = await import('../../shared/knockout.mjs');
 
@@ -21,6 +25,15 @@ test('player ratings use the existing fixture response and exact team/player ide
   assert.equal(normalized[0].startXI[0].rating,6.7);
   assert.equal(normalized[0].startXI[1].rating,null);
   assert.equal(normalizeApiFootballLineups(lineups)[0].startXI[0].rating,null);
+});
+
+test('schedule polling slows down without live or imminent fixtures', () => {
+  const now = Date.now();
+  const fixture = (short, time) => ({ fixture: { status: { short }, date: new Date(now + time).toISOString() } });
+  assert.equal(apiFootballScheduleInterval([fixture('FT', -3600000)], now), 1800000);
+  assert.equal(apiFootballScheduleInterval([fixture('NS', 7200000)], now), 1800000);
+  assert.equal(apiFootballScheduleInterval([fixture('NS', 600000)], now), 120000);
+  assert.equal(apiFootballScheduleInterval([fixture('2H', -3600000)], now), 120000);
 });
 
 test('knockout bracket includes only the exact competition, season and announced final rounds', () => {
@@ -168,7 +181,20 @@ test('details scheduler retries finished partial fixtures and cannot starve rows
     detailsUpdatedAt: new Date(now - 3600000).toISOString() } };
   assert.equal(apiFootballDetailTargets([finished], now).length, 1);
   finished.payload.finalDetailsComplete = true;
+  finished.payload.detailSchemaVersion = 3;
   assert.equal(apiFootballDetailTargets([finished], now).length, 0);
+});
+
+test('English source names attach by immutable team ID, never by translated label or kickoff', () => {
+  const page = { props: { pageProps: { content: { liveScores: [{ matches: [{ teamA: { id: 'source-a', name: 'Small Club', short: 'Small' },
+    teamB: { id: 'source-b', name: 'Other Club' } }] }] } } } };
+  const teams = parseEnglishSourceTeamNames(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(page)}</script>`);
+  const row = { home_team: 'نادي غير مشهور', away_team: 'ناد آخر', payload: { homeSourceTeamId: 'source-a', awaySourceTeamId: 'source-b' } };
+  const mapped = attachEnglishSourceNames([row], teams)[0];
+  assert.equal(mapped.home_team, row.home_team);
+  assert.equal(mapped.payload.homeTeamEnglish, 'Small Club');
+  assert.deepEqual(mapped.payload.homeTeamEnglishAliases, ['Small Club', 'Small']);
+  assert.equal(attachEnglishSourceNames([{ ...row, payload: { homeSourceTeamId: 'wrong' } }], teams)[0].payload.homeTeamEnglish, undefined);
 });
 
 test('25 due fixtures use two bounded batches and empty refreshes preserve existing lineups', async () => {
@@ -206,12 +232,25 @@ test('coverage distinguishes unsupported lineups from delayed data and skips uns
   try {
     await enrichApiFootballMatchDetails([row]);
     assert.equal(row.payload.detailStates.lineups, 'not_covered');
-    assert.equal(row.payload.detailStates.events, 'pending');
-    assert.equal(row.payload.eventDetailsLoaded, false);
+    assert.equal(row.payload.detailStates.events, 'available');
+    assert.equal(row.payload.eventDetailsLoaded, true);
     assert.equal(calls.includes('/standings'), false);
     await enrichApiFootballMatchDetails([row]);
     assert.equal(calls.filter(path => path === '/leagues').length, 1);
   } finally { globalThis.fetch = original; }
+});
+
+test('fixture player statistics preserve actual zero values and reject invalid ratings', () => {
+  const teams = normalizeApiFootballPlayers([{ team: { id: 1, name: 'Home' }, players: [
+    { player: { id: 9, name: 'Forward' }, statistics: [{ games: { minutes: 90, rating: '7.2' },
+      goals: { total: 0, assists: 1 }, passes: { total: 12 }, shots: { on: 0 } }] },
+    { player: { id: 10, name: 'Bench' }, statistics: [{ games: { minutes: null, rating: 'NaN' } }] },
+  ] }]);
+  assert.equal(teams[0].players[0].goals, 0);
+  assert.equal(teams[0].players[0].shotsOnTarget, 0);
+  assert.equal(teams[0].players[0].rating, 7.2);
+  assert.equal(teams[0].players[1].minutes, null);
+  assert.equal(teams[0].players[1].rating, null);
 });
 
 test('supported empty batch lineups use a bounded dedicated fallback by exact fixture ID', async () => {

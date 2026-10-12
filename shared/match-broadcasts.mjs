@@ -53,14 +53,28 @@ const aliases = [
   ['JS Soualem', 'Jeunesse Sportive Soualem', 'الشباب الرياضي السالمي'], ['Renaissance Zemamra', 'CR Khemis Zemamra', 'نهضة الزمامرة'],
   ['Pyramids FC', 'Pyramids', 'بيراميدز'], ['Botafogo', 'Botafogo RJ', 'بوتافوجو', 'بوتافوغو'],
   ['RB Bragantino', 'Bragantino', 'Red Bull Bragantino', 'براغانتينو', 'براغانتيـنو'],
+  ['Atalanta', 'أتالانتا', 'اتالانتا'], ['Venezia', 'فينيسيا', 'فينيزيا'],
+  ['Torino', 'تورينو'], ['Udinese', 'أودينيزي', 'اودينيزي'],
+  ['Coventry', 'Coventry City', 'كوفينتري سيتي', 'كوفنتري'],
+  ['Levante', 'ليفانتي'], ['Sevilla', 'إشبيلية', 'اشبيلية'],
+  ['Al-Wasl FC', 'Al Wasl', 'الوصل'], ['Al-Ahli Jeddah', 'Al Ahli Saudi'],
+  ['Tractor Sazi', 'Tractor', 'تراكتور'], ['Al Shamal', 'الشمال'],
+  ['Al-Gharafa', 'Al Gharafa', 'الغرافة'], ['Esteghlal FC', 'Esteghlal', 'الاستقلال', 'استقلال'],
+  ['Al Quwa Al Jawiya', 'القوة الجوية'], ['Al Ain', 'العين'],
+  ['Al-Nassr', 'Al Nassr', 'النصر'], ['Neftchi', 'نيفتشي'],
+  ['Pakhtakor', 'باختاكور'], ['Al-Qadisiyah FC', 'Al Qadisiyah', 'القادسية'],
 ];
 for (const names of aliases) {
   const existing = names.map((name) => identities.get(normalize(name))).find(Boolean);
   register(existing || `team:${normalize(names[0])}`, names);
 }
 
-export function teamIdentity(name) {
+export function teamIdentity(name, row = {}) {
   const key = normalize(name);
+  // The same Arabic label denotes different clubs; competition context is mandatory.
+  if ([normalize('الأهلي'), normalize('Al Ahli')].includes(key) && /AFC|آسيا|Saudi|سعود/i.test(`${row.league} ${row.payload?.leagueCountry}`)) {
+    return identities.get(normalize('Al-Ahli Jeddah'));
+  }
   return identities.get(key) || `name:${key}`;
 }
 
@@ -68,16 +82,24 @@ export function sameFixture(left, right) {
   const delta = Math.abs(Date.parse(left.kickoff_time) - Date.parse(right.kickoff_time));
   if (!Number.isFinite(delta) || delta > 15 * 60_000) return false;
   if (![left.home_team, left.away_team, right.home_team, right.away_team].every(Boolean)) return false;
-  const category = (row) => /women|female|سيدات|نسائ/i.test(`${row.league} ${row.home_team} ${row.away_team}`);
+  const category = row => {
+    const text = `${row.league} ${row.home_team} ${row.away_team}`;
+    const women = /women|female|\bW\b|سيدات|نسائ/i.test(text);
+    const age = text.match(/\bU[- ]?(1[5-9]|2[0-3])\b|تحت\s*(1[5-9]|2[0-3])/i);
+    return `${women}:${age?.[1] || age?.[2] || 'senior'}`;
+  };
   if (category(left) !== category(right)) return false;
   const ids = row => [row.payload?.homeTeamId, row.payload?.awayTeamId].map(Number);
   const leftIds = ids(left), rightIds = ids(right);
   if ([...leftIds, ...rightIds].every(id => Number.isSafeInteger(id) && id > 0)) {
     return leftIds.sort((a, b) => a - b).join(':') === rightIds.sort((a, b) => a - b).join(':');
   }
-  const a = [teamIdentity(left.home_team), teamIdentity(left.away_team)].sort();
-  const b = [teamIdentity(right.home_team), teamIdentity(right.away_team)].sort();
-  return a[0] === b[0] && a[1] === b[1];
+  const names = (row, side) => [...new Set([row[`${side}_team`], row.payload?.[`${side}TeamEnglish`],
+    ...(Array.isArray(row.payload?.[`${side}TeamEnglishAliases`]) ? row.payload[`${side}TeamEnglishAliases`].slice(0, 4) : [])]
+    .filter(Boolean).map(name => teamIdentity(name, row)))];
+  const same = (a, b) => a.some(name => b.includes(name));
+  return (same(names(left, 'home'), names(right, 'home')) && same(names(left, 'away'), names(right, 'away')))
+    || (same(names(left, 'home'), names(right, 'away')) && same(names(left, 'away'), names(right, 'home')));
 }
 
 export function normalizeBroadcastChannel(name) {

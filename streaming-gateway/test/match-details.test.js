@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { attachApiFootballDetails } from '../../shared/match-details.mjs';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { sameFixture } from '../../shared/match-broadcasts.mjs';
 
 const row = { match_id: 'kooora-match', source: 'kooora', home_team: 'جبل طارق', away_team: 'آندورا',
   kickoff_time: '2026-09-27T16:00:00Z', channel: 'beIN SPORTS HD 4',
@@ -23,6 +24,30 @@ test('Kooora identity and channel remain unchanged while card details come from 
   assert.equal(merged.payload.dataSource, 'api-football');
   assert.equal(merged.payload.homeTeamId, 1);
   assert.equal(merged.payload.lineups[0].startXI[0].name, 'Player');
+});
+
+test('Asian Saudi Al Ahli is not confused with Egyptian Al Ahly', () => {
+  const local = { ...row, league: 'دوري أبطال آسيا النخبة', home_team: 'الوصل', away_team: 'الأهلي' };
+  const sports = { ...api, league: 'AFC Champions League Elite', home_team: 'Al-Wasl FC', away_team: 'Al-Ahli Jeddah' };
+  assert.equal(sameFixture(local, sports), true);
+  assert.equal(sameFixture(local, { ...sports, away_team: 'Al Ahly' }), false);
+  const merged = attachApiFootballDetails(local, [sports]);
+  assert.equal(merged.payload.homeTeamId, 1);
+  assert.equal(merged.payload.awayTeamEnglish, 'Al-Ahli Jeddah');
+});
+
+test('fixture identity cannot cross age groups or women competitions', () => {
+  assert.equal(sameFixture(row, { ...api, league: 'Friendlies Women' }), false);
+  assert.equal(sameFixture(row, { ...api, league: 'U19 Friendlies' }), false);
+});
+
+test('exact English source names bridge an unknown Arabic club and preserve lineup orientation', () => {
+  const local = { ...row, home_team: 'اسم محلي غير مسجل', away_team: 'اسم آخر',
+    payload: { ...row.payload, homeTeamEnglish: 'Small Club', awayTeamEnglish: 'Other Club' } };
+  const sports = { ...api, home_team: 'Small Club', away_team: 'Other Club' };
+  assert.equal(sameFixture(local, sports), true);
+  assert.equal(attachApiFootballDetails(local, [sports]).payload.homeTeamId, 1);
+  assert.equal(sameFixture(local, { ...sports, away_team: 'Different Club' }), false);
 });
 
 test('reversed source display order preserves lineup sides, score and cards', () => {

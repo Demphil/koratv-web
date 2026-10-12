@@ -2,7 +2,7 @@ import "../src/lib/loadEnv.js";
 import * as cheerio from "cheerio";
 import { fileURLToPath } from "node:url";
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
-import { isAllowedMatch, normalizeTeamName } from "../../shared/league-whitelist.mjs";
+import { isAllowedMatch, isGulfCupLeague, normalizeTeamName } from "../../shared/league-whitelist.mjs";
 import { reconcileBroadcasts, mergeRefreshedMatch, sameFixture, preferredBroadcastChannels } from "../../shared/match-broadcasts.mjs";
 import { pruneMatchData } from './prune-match-data.js';
 import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
@@ -24,7 +24,7 @@ const apiFootballKey = process.env.API_FOOTBALL_KEY
 const apiFootballBaseUrl = (process.env.API_FOOTBALL_BASE_URL || "https://v3.football.api-sports.io").replace(/\/+$/, "");
 const apiFootballDetailLimit = Math.min(500, Math.max(20, Number(process.env.API_FOOTBALL_DETAIL_LIMIT || 100)));
 const liveDetailsRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_LIVE_DETAILS_REFRESH_MINUTES || 2)) * 60_000;
-const lineupDetailsRefreshMs = Math.max(2, Number(process.env.API_FOOTBALL_LINEUP_DETAILS_REFRESH_MINUTES || 5)) * 60_000;
+const lineupDetailsRefreshMs = Math.max(2, Number(process.env.API_FOOTBALL_LINEUP_DETAILS_REFRESH_MINUTES || 15)) * 60_000;
 const standingsRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_STANDINGS_REFRESH_HOURS || 24)) * 60 * 60_000;
 const standingsLimit = Math.max(0, Number(process.env.API_FOOTBALL_STANDINGS_PER_SYNC || 1));
 const knockoutRefreshMs = 4 * 60 * 60_000;
@@ -32,7 +32,12 @@ const apiFootballTodayRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_TO
 const apiFootballTomorrowRefreshMs = Math.max(1, Number(process.env.API_FOOTBALL_TOMORROW_REFRESH_HOURS || 12)) * 60 * 60_000;
 const koooraDetailChannelLimit = Math.max(0, Number(process.env.KOOORA_DETAIL_CHANNEL_LIMIT || 20));
 const apiFootballFixtureCache = new Map();
-const apiClient = createApiFootballClient({ key: apiFootballKey, baseUrl: apiFootballBaseUrl });
+let englishSourceCache = { checkedAt: 0, teams: new Map() };
+const apiClient = createApiFootballClient({ key: apiFootballKey, baseUrl: apiFootballBaseUrl,
+  cacheDir: process.env.API_FOOTBALL_CACHE_DIR || '',
+  dailyBudget: Math.max(0, Number(process.env.API_FOOTBALL_DAILY_BUDGET || 0)),
+  quotaReserve: Math.max(0, Number(process.env.API_FOOTBALL_QUOTA_RESERVE || 0)),
+});
 
 
 function moroccoDateParts(offsetDays = 0) {
@@ -97,8 +102,55 @@ function apiFootballEnabled() {
   return Boolean(apiFootballKey) && process.env.MATCH_SOURCE_PROVIDER !== "kooora";
 }
 
-async function fetchApiFootball(path, params = {}) {
-  return apiClient.request(path, params);
+async function fetchApiFootball(path, params = {}, cacheTtlMs = null) {
+  let ttlMs = liveDetailsRefreshMs;
+  if (path === '/leagues') ttlMs = 24 * 60 * 60_000;
+  else if (path === '/standings') ttlMs = standingsRefreshMs;
+  else if (path === '/fixtures/lineups') ttlMs = 15 * 60_000;
+  else if (path === '/fixtures' && params.date) ttlMs = params.date === moroccoDateParts(0) ? apiFootballTodayRefreshMs : apiFootballTomorrowRefreshMs;
+  else if (path === '/fixtures' && params.league) ttlMs = knockoutRefreshMs;
+  return apiClient.request(path, params, { ttlMs: process.env.NODE_TEST_CONTEXT ? 0 : cacheTtlMs ?? ttlMs });
+}
+
+export const apiFootballUsage = () => apiClient.quota();
+
+export function parseEnglishSourceTeamNames(html) {
+  const $ = cheerio.load(html);
+  const page = JSON.parse($('#__NEXT_DATA__').text() || '{}');
+  const groups = page?.props?.pageProps?.content?.liveScores;
+  if (!Array.isArray(groups)) throw new Error('English source team identities unavailable');
+  const teams = new Map();
+  for (const group of groups) for (const fixture of group.matches || []) for (const team of [fixture.teamA, fixture.teamB]) {
+    if (!team?.id) continue;
+    const names = [...new Set(['name', 'short', 'long', 'full'].map(key => String(team[key] || '').trim())
+      .filter(name => name.length > 2 && name.length <= 90 && !/[\u0600-\u06ff]/.test(name)))];
+    if (names.length) teams.set(String(team.id), names);
+  }
+  return teams;
+}
+
+export function attachEnglishSourceNames(rows, teams) {
+  return rows.map(row => {
+    const home = teams.get(String(row.payload?.homeSourceTeamId || ''));
+    const away = teams.get(String(row.payload?.awaySourceTeamId || ''));
+    return { ...row, payload: { ...row.payload,
+      ...(home ? { homeTeamEnglish: home[0], homeTeamEnglishAliases: home } : {}),
+      ...(away ? { awayTeamEnglish: away[0], awayTeamEnglishAliases: away } : {}),
+    } };
+  });
+}
+
+async function enrichEnglishSourceNames(rows, apiRows) {
+  if (!apiFootballEnabled() || !rows.some(row => !apiRows.some(api => sameFixture(row, api)))) return rows;
+  if (Date.now() - englishSourceCache.checkedAt >= 30 * 60_000) {
+    englishSourceCache.checkedAt = Date.now();
+    try {
+      const teams = parseEnglishSourceTeamNames(await fetchHtml('https://www.goal.com/en/live-scores'));
+      // Goal and Kooora publish the same immutable source team IDs; names are never joined by score or time alone.
+      englishSourceCache.teams = new Map([...englishSourceCache.teams, ...teams]);
+    } catch (error) { console.warn(`English source identity lookup unavailable: ${error.message}`); }
+  }
+  return attachEnglishSourceNames(rows, englishSourceCache.teams);
 }
 
 function apiFootballStatus(status = {}) {
@@ -207,6 +259,29 @@ export function normalizeApiFootballStatistics(statistics = []) {
   }));
 }
 
+export function normalizeApiFootballPlayers(teams = []) {
+  const number = (value, max = 10000) => value != null && value !== '' && Number.isFinite(Number(value))
+    && Number(value) >= 0 && Number(value) <= max ? Number(value) : null;
+  return (Array.isArray(teams) ? teams : []).slice(0, 2).map(team => ({
+    team: { id: Number(team?.team?.id) || null, name: String(team?.team?.name || '').slice(0, 90) },
+    players: (Array.isArray(team?.players) ? team.players : []).slice(0, 30).map(entry => {
+      const person = entry?.player || {}, stats = entry?.statistics?.[0] || {};
+      const id = Number(person.id) || null;
+      return { id, name: String(person.name || '').slice(0, 90),
+        photo: apiFootballPhoto(person.photo) || (id ? `https://media.api-sports.io/football/players/${id}.png` : ''),
+        minutes: number(stats.games?.minutes, 150), number: number(stats.games?.number, 999),
+        position: String(stats.games?.position || '').slice(0, 12), rating: number(stats.games?.rating, 10),
+        goals: number(stats.goals?.total), assists: number(stats.goals?.assists), saves: number(stats.goals?.saves),
+        shots: number(stats.shots?.total), shotsOnTarget: number(stats.shots?.on),
+        passes: number(stats.passes?.total), keyPasses: number(stats.passes?.key),
+        tackles: number(stats.tackles?.total), interceptions: number(stats.tackles?.interceptions),
+        duels: number(stats.duels?.total), duelsWon: number(stats.duels?.won),
+        yellowCards: number(stats.cards?.yellow), redCards: number(stats.cards?.red),
+      };
+    }).filter(player => player.id && player.name),
+  }));
+}
+
 export function normalizeApiFootballStandings(groups = [], fixture = null) {
   if (!Array.isArray(groups)) return [];
   if (fixture) {
@@ -246,9 +321,11 @@ async function collectApiFootballRows() {
 
   for (const { date, refreshMs } of dates) {
     let cached = apiFootballFixtureCache.get(date);
-    if (!cached || Date.now() - cached.updatedAt >= refreshMs) {
+    const interval = date === moroccoDateParts(0) && cached
+      ? apiFootballScheduleInterval(cached.fixtures, Date.now(), refreshMs) : refreshMs;
+    if (!cached || Date.now() - cached.updatedAt >= interval) {
       try {
-        const fixtures = await fetchApiFootball("/fixtures", { date, timezone: "Africa/Casablanca" });
+        const fixtures = await fetchApiFootball("/fixtures", { date, timezone: "Africa/Casablanca" }, interval);
         cached = { fixtures, updatedAt: Date.now() };
         apiFootballFixtureCache.set(date, cached);
       } catch (error) {
@@ -309,6 +386,15 @@ async function collectApiFootballRows() {
 
   console.log(`Parsed ${rows.length} matches from API-Football (${dates.map(({ date }) => date).join(", ")}).`);
   return rows;
+}
+
+export function apiFootballScheduleInterval(fixtures, now = Date.now(), liveInterval = apiFootballTodayRefreshMs) {
+  const needsLiveRefresh = fixtures.some(fixture => {
+    const state = apiFootballStatus(fixture.fixture?.status);
+    const untilKickoff = Date.parse(fixture.fixture?.date || '') - now;
+    return state.isLive || (!state.isFinished && untilKickoff >= 0 && untilKickoff <= 60 * 60_000);
+  });
+  return needsLiveRefresh ? liveInterval : 30 * 60_000;
 }
 
 export async function fetchHtml(url) {
@@ -864,8 +950,9 @@ export function apiFootballDetailTargets(rows, now = Date.now(), limit = apiFoot
     const kickoff = new Date(row.kickoff_time).getTime();
     const age = now - kickoff;
     const refreshedAt = Date.parse(row.payload?.detailsCheckedAt || row.payload?.detailsUpdatedAt || '') || 0;
-    if (row.payload?.isFinished) return age < 24 * 60 * 60_000 && !row.payload?.finalDetailsComplete
-      && now - refreshedAt >= 15 * 60_000;
+    if (row.payload?.isFinished) return age < 24 * 60 * 60_000
+      && (!row.payload?.finalDetailsComplete || row.payload?.detailSchemaVersion !== 3)
+      && (row.payload?.detailSchemaVersion !== 3 || now - refreshedAt >= 15 * 60_000);
     if (row.payload?.isLive) return now - refreshedAt >= liveDetailsRefreshMs;
     return age >= -60 * 60_000 && age < 0
       && now - refreshedAt >= lineupDetailsRefreshMs;
@@ -885,7 +972,7 @@ async function refreshApiFootballCoverage(rows, now) {
   }
   let budget = 6;
   for (const group of groups.values()) {
-    const cached = group.find(row => row.payload.apiCoverage && now - Date.parse(row.payload.coverageUpdatedAt || '') < 4 * 60 * 60_000);
+    const cached = group.find(row => row.payload.apiCoverage && now - Date.parse(row.payload.coverageUpdatedAt || '') < 24 * 60 * 60_000);
     if (cached) {
       for (const row of group) Object.assign(row.payload, { apiCoverage: cached.payload.apiCoverage, coverageUpdatedAt: cached.payload.coverageUpdatedAt });
       continue;
@@ -930,15 +1017,19 @@ export async function enrichApiFootballMatchDetails(rows) {
           console.warn(`API-Football fixture identity mismatch for ${row.payload.sourceFixtureId}`);
           continue;
         }
-        const normalizedEvents = normalizeApiFootballEvents(detail.events);
-        const eventSummary = apiFootballEvents(detail.events, row.home_team, row.away_team);
+        let normalizedEvents = normalizeApiFootballEvents(detail.events);
+        let eventSummary = apiFootballEvents(detail.events, row.home_team, row.away_team);
+        let players = normalizeApiFootballPlayers(detail.players);
         let lineups = normalizeApiFootballLineups(detail.lineups, detail.players);
         let statistics = normalizeApiFootballStatistics(detail.statistics);
-        for (const feature of ['lineups', 'statistics']) {
+        let eventsReceived = Array.isArray(detail.events) && (detail.events.length > 0 || row.payload.apiCoverage?.events === true);
+        for (const feature of ['lineups', 'statistics', 'players', 'events']) {
           const available = feature === 'lineups' ? lineups.some(team => team.startXI.length)
-            : statistics.some(team => team.statistics.some(stat => stat.value != null));
+            : feature === 'statistics' ? statistics.some(team => team.statistics.some(stat => stat.value != null))
+              : feature === 'players' ? players.some(team => team.players.some(player => player.minutes != null)) : eventsReceived;
           const lastAttempt = Date.parse(row.payload.detailFallbackCheckedAt?.[feature] || '') || 0;
           if (available || row.payload.apiCoverage?.[feature] !== true || fallbackBudget <= 0
+            || (feature !== 'lineups' && !row.payload.isLive && !row.payload.isFinished)
             || now - lastAttempt < 15 * 60_000) continue;
           fallbackBudget--;
           row.payload.detailFallbackCheckedAt = { ...row.payload.detailFallbackCheckedAt, [feature]: new Date(now).toISOString() };
@@ -947,23 +1038,37 @@ export async function enrichApiFootballMatchDetails(rows) {
             const expected = [row.payload.homeTeamId, row.payload.awayTeamId].filter(Boolean).map(String);
             if (expected.length === 2 && data.some(team => !expected.includes(String(team.team?.id)))) continue;
             if (feature === 'lineups') lineups = normalizeApiFootballLineups(data, detail.players);
-            else statistics = normalizeApiFootballStatistics(data);
+            else if (feature === 'statistics') statistics = normalizeApiFootballStatistics(data);
+            else if (feature === 'players') {
+              players = normalizeApiFootballPlayers(data);
+              lineups = normalizeApiFootballLineups(detail.lineups?.length ? detail.lineups : lineups.map(team => ({ ...team,
+                startXI: team.startXI.map(player => ({ player: { ...player, pos: player.position } })),
+                substitutes: team.substitutes.map(player => ({ player: { ...player, pos: player.position } })),
+              })), data);
+            } else {
+              normalizedEvents = normalizeApiFootballEvents(data);
+              eventSummary = apiFootballEvents(data, row.home_team, row.away_team);
+              eventsReceived = true;
+            }
           } catch (error) { console.warn(`API-Football ${feature} fallback unavailable: ${error.message}`); }
         }
         const hasLineups = lineups.some(team => team.startXI.length > 0);
         const hasStatistics = statistics.some(team => team.statistics.some(stat => stat.value != null));
         const hasEvents = normalizedEvents.length > 0;
+        const hasPlayers = players.some(team => team.players.some(player => player.minutes != null));
         const featureState = (feature, available, cached) => available ? 'available' : cached ? 'stale'
           : row.payload.apiCoverage?.[feature] === false ? 'not_covered' : 'pending';
         const detailStates = { lineups: featureState('lineups', hasLineups, row.payload.lineups?.some(team => team.startXI?.length)),
           statistics: featureState('statistics', hasStatistics, row.payload.statistics?.some(team => team.statistics?.some(stat => stat.value != null))),
-          events: featureState('events', hasEvents, row.payload.events?.length) };
+          events: featureState('events', eventsReceived, row.payload.events?.length),
+          players: featureState('players', hasPlayers, row.payload.players?.some(team => team.players?.length)) };
         const loaded = Object.values(detailStates).some(state => ['available', 'stale'].includes(state));
         const complete = Object.values(detailStates).every(state => ['available', 'not_covered'].includes(state));
         row.payload = {
           ...row.payload,
-          ...(hasEvents ? { events: normalizedEvents, ...eventSummary } : {}),
+          ...(hasEvents || (eventsReceived && !row.payload.events?.length) ? { events: normalizedEvents, ...eventSummary } : {}),
           ...(hasLineups ? { lineups } : {}),
+          ...(hasPlayers ? { players } : {}),
           ...(detail.league ? { leagueId: detail.league.id, season: detail.league.season,
             leagueType: detail.league.type || '', leagueRound: detail.league.round || '' } : {}),
           ...(hasStatistics ? { statistics } : {}),
@@ -971,11 +1076,12 @@ export async function enrichApiFootballMatchDetails(rows) {
           ...(detail.fixture?.venue?.city ? { venueCity: String(detail.fixture.venue.city).slice(0, 90) } : {}),
           ...(detail.fixture?.referee ? { referee: String(detail.fixture.referee).slice(0, 90) } : {}),
           eventDetailsLoaded: loaded,
+          detailSchemaVersion: 3,
           detailStates,
           detailsState: complete ? 'ready' : loaded ? 'partial' : 'pending',
           finalDetailsComplete: row.payload.isFinished === true && complete,
           detailsCheckedAt: new Date(now).toISOString(),
-          ...(hasEvents || hasLineups || hasStatistics ? { detailsUpdatedAt: new Date(now).toISOString() } : {})
+          ...(hasEvents || hasLineups || hasStatistics || hasPlayers ? { detailsUpdatedAt: new Date(now).toISOString() } : {})
         };
       }
     } catch (error) {
@@ -1090,7 +1196,7 @@ export async function collectMatchRowsFromSource() {
     { url: BASE_SITE_URL, dayOffset: 0 },
     { url: fixturesUrlForDate(tomorrowDate), dayOffset: 1 },
   ];
-  const koooraRows = [];
+  let koooraRows = [];
   const failedDates = [];
   const checkedAt = new Date().toISOString();
 
@@ -1106,9 +1212,13 @@ export async function collectMatchRowsFromSource() {
 
   await enrichKoooraRowsWithScheduleChannels(koooraRows);
   await enrichKoooraRowsWithDetailChannels(koooraRows);
+  koooraRows = await enrichEnglishSourceNames(koooraRows, rows);
   // Visibility policy must not discard a details source for an existing Kooora fixture.
-  rows = rows.filter(row => isAllowedMatch({ league: row.league, leagueCountry: row.payload?.leagueCountry,
-    homeTeam: row.home_team, awayTeam: row.away_team }) || koooraRows.some(candidate => sameFixture(row, candidate)));
+  rows = rows.filter(row => koooraRows.some(candidate => sameFixture(row, candidate))
+    || (isGulfCupLeague(row.league) && isAllowedMatch({ league: row.league, leagueCountry: row.payload?.leagueCountry,
+      homeTeam: row.home_team, awayTeam: row.away_team }))
+    || (failedDates.includes(String(row.kickoff_time).slice(0, 10)) && isAllowedMatch({ league: row.league,
+      leagueCountry: row.payload?.leagueCountry, homeTeam: row.home_team, awayTeam: row.away_team })));
   rows.push(...koooraRows);
   const uniqueRows = [...new Map(rows.map((row) => [`${String(row.kickoff_time || '').slice(0, 10)}:${row.match_id}`, row])).values()];
   console.log(`Parsed ${uniqueRows.length} matches from ${pages.map((page) => page.url).join(', ')}.`);

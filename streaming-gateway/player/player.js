@@ -369,7 +369,7 @@ function renderLineups(match) {
   if (!lineup || !players.length) return `${teamButtons}<p class="empty-match-data">${match.detailStates?.lineups === 'not_covered'
     ? 'لا يوفّر مزود البيانات التشكيلات لهذه البطولة والموسم.'
     : match.detailsState === 'unmatched_fixture' ? 'تعذر ربط المباراة بمعرّفها لدى مزود البيانات حتى الآن.'
-      : 'لم يرسل مزود البيانات التشكيلة الرسمية لهذه المباراة بعد.'}</p>`;
+      : 'لم يرسل مزود البيانات التشكيلة الرسمية لهذه المباراة بعد.'}</p>${renderFixturePlayers(match)}`;
   const pitch = placed.length ? `
     <div class="lineup-pitch lineup-coordinate-pitch" aria-label="تشكيلة ${escapeHtml(teamName)}">
       <div class="pitch-lines" aria-hidden="true"><i class="pitch-circle"></i><i class="pitch-box top"></i><i class="pitch-box bottom"></i></div>
@@ -385,7 +385,23 @@ function renderLineups(match) {
     ${pitch}
     ${unplaced.length ? `<div class="lineup-gallery">${unplaced.map(renderPlayerCard).join('')}</div>` : ''}
     ${bench ? `<section class="lineup-bench"><h4>مقاعد البدلاء <small>${lineup.substitutes.length} بدلاء</small></h4>${bench}</section>` : ''}
-    ${lineup.coach ? `<section class="lineup-coach">${lineup.coachPhoto ? `<img src="${escapeHtml(lineup.coachPhoto)}" alt="" loading="lazy">` : ''}<span><small>المدرب</small><strong>${escapeHtml(lineup.coach)}</strong></span></section>` : ''}`;
+    ${lineup.coach ? `<section class="lineup-coach">${lineup.coachPhoto ? `<img src="${escapeHtml(lineup.coachPhoto)}" alt="" loading="lazy">` : ''}<span><small>المدرب</small><strong>${escapeHtml(lineup.coach)}</strong></span></section>` : ''}${renderFixturePlayers(match)}`;
+}
+
+function renderFixturePlayers(match) {
+  const teamId = selectedLineupSide === 'home' ? match.homeTeamId : match.awayTeamId;
+  const group = (match.players || []).find(team => teamId && String(team.teamId) === String(teamId));
+  if (!group?.players?.length) return '';
+  const value = number => number == null ? '--' : escapeHtml(number);
+  const rows = group.players.filter(player => player.minutes != null).map(player => `<tr>
+    <th scope="row">${player.photo ? `<img src="${escapeHtml(player.photo)}" alt="" loading="lazy">` : ''}${escapeHtml(player.name)}</th>
+    <td>${value(player.minutes)}</td><td>${value(player.rating)}</td><td>${value(player.goals)}</td>
+    <td>${value(player.assists)}</td><td>${value(player.shotsOnTarget)}</td><td>${value(player.passes)}</td>
+  </tr>`).join('');
+  return rows ? `<section class="fixture-players"><h4>إحصائيات اللاعبين</h4><div class="fixture-players-scroll"><table>
+    <thead><tr><th scope="col">اللاعب</th><th scope="col">الدقائق</th><th scope="col">التقييم</th><th scope="col">الأهداف</th>
+    <th scope="col">التمريرات الحاسمة</th><th scope="col">على المرمى</th><th scope="col">التمريرات</th></tr></thead><tbody>${rows}</tbody>
+  </table></div></section>` : '';
 }
 
 function matchInfoItem(icon, label, value) {
@@ -421,7 +437,11 @@ function renderMatchDetail(tab, match) {
   const percentages = possession.map(v => /^\d+(?:\.\d+)?%$/.test(String(v)) ? Number(String(v).replace('%', '')) : NaN);
   const possessionBar = percentages.every(v => Number.isFinite(v) && v >= 0 && v <= 100) && Math.abs(percentages[0] + percentages[1] - 100) < 2
     ? `<div class="match-possession"><small>الاستحواذ</small><div class="possession-track" role="img" aria-label="${escapeHtml(match.homeTeam)} ${escapeHtml(possession[0])}، ${escapeHtml(match.awayTeam)} ${escapeHtml(possession[1])}"><i data-possession="${percentages[0]}"></i></div><div><b>${escapeHtml(possession[0])}</b><b>${escapeHtml(possession[1])}</b></div></div>` : '';
-  const statTypes = [['Total Shots', 'إجمالي التسديدات'], ['Shots on Goal', 'التسديدات على المرمى'], ['Shots insidebox', 'التسديدات داخل المنطقة'], ['Passes accurate', 'تمريرات ناجحة']];
+  const statTypes = [['Total Shots', 'إجمالي التسديدات'], ['Shots on Goal', 'التسديدات على المرمى'], ['Shots off Goal', 'التسديدات خارج المرمى'],
+    ['Blocked Shots', 'التسديدات المصدودة'], ['Shots insidebox', 'التسديدات داخل المنطقة'], ['Corner Kicks', 'الركنيات'],
+    ['Offsides', 'التسلل'], ['Fouls', 'الأخطاء'], ['Yellow Cards', 'البطاقات الصفراء'], ['Red Cards', 'البطاقات الحمراء'],
+    ['Goalkeeper Saves', 'تصديات الحارس'], ['Total passes', 'إجمالي التمريرات'], ['Passes accurate', 'تمريرات ناجحة'],
+    ['Passes %', 'دقة التمرير'], ['expected_goals', 'الأهداف المتوقعة']];
   const statRows = statisticGroups.length === 2 ? statTypes.map(([type, label]) => {
     const values = [value(homeStats, type), value(awayStats, type)];
     if (values.every(v => v === '--')) return '';

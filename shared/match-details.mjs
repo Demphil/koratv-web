@@ -11,14 +11,15 @@ export function attachApiFootballDetails(row, apiRows) {
   const p = api.payload || {};
   const reverse = row.payload?.homeTeamId && p.homeTeamId
     ? String(row.payload.homeTeamId) !== String(p.homeTeamId)
-    : teamIdentity(row.home_team) !== teamIdentity(api.home_team);
+    : ![row.home_team, row.payload?.homeTeamEnglish, ...(row.payload?.homeTeamEnglishAliases || [])]
+      .some(name => name && teamIdentity(name, row) === teamIdentity(api.home_team, api));
   const orient = value => reverse && value && typeof value === 'object'
     ? { home: value.away, away: value.home } : value;
   const scoreParts = String(p.score || '').match(/^(\d+)\s*-\s*(\d+)$/);
   const score = scoreParts && reverse ? `${scoreParts[2]} - ${scoreParts[1]}` : p.score;
   return { ...row, payload: {
     ...row.payload,
-    ...Object.fromEntries(['events', 'lineups', 'venue', 'venueCity', 'referee', 'standings',
+    ...Object.fromEntries(['events', 'lineups', 'players', 'venue', 'venueCity', 'referee', 'standings',
       'knockout', 'knockoutUpdatedAt', 'leagueId', 'season', 'leagueType', 'leagueRound',
       'eventDetailsLoaded', 'detailsUpdatedAt', 'detailsCheckedAt', 'detailStates', 'apiCoverage', 'coverageUpdatedAt',
       'standingsUpdatedAt', 'standingsVersion', 'sourceFixtureId']
@@ -29,6 +30,8 @@ export function attachApiFootballDetails(row, apiRows) {
     goals: (p.goals || []).map(goal => ({ ...goal, team: reverse ? (goal.team === 'home' ? 'away' : goal.team === 'away' ? 'home' : goal.team) : goal.team })),
     homeTeamId: reverse ? p.awayTeamId : p.homeTeamId,
     awayTeamId: reverse ? p.homeTeamId : p.awayTeamId,
+    homeTeamEnglish: reverse ? api.away_team : api.home_team,
+    awayTeamEnglish: reverse ? api.home_team : api.away_team,
     dataSource: 'api-football', detailsState: p.detailsState || (p.eventDetailsLoaded ? 'ready' : 'pending'),
   } };
 }

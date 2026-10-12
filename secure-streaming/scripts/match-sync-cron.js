@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { syncMatchesFromSource } from "./sync-matches-from-source.js";
+import { syncMatchesFromSource, apiFootballUsage } from "./sync-matches-from-source.js";
 
 const schedule = process.env.MATCH_SYNC_CRON || "*/2 * * * *";
 const timezone = process.env.MATCH_SYNC_TIMEZONE || "Africa/Casablanca";
@@ -24,7 +24,7 @@ async function runSync(reason) {
   running = true;
   try {
     const result = await syncMatchesFromSource({ dryRunMode: false });
-    log("match_sync_finished", { reason, ...result });
+    log("match_sync_finished", { reason, ...result, apiFootball: apiFootballUsage() });
   } catch (error) {
     log("match_sync_failed", {
       reason,

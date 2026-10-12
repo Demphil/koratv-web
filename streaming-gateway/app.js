@@ -166,6 +166,7 @@ function normalizeMatch(row, config) {
     })) : [],
     events: normalizeMatchEvents(payload.events),
     lineups: normalizeLineups(payload.lineups),
+    players: normalizeFixturePlayers(payload.players),
     statistics: normalizeMatchStatistics(payload.statistics),
     venue: cleanText(payload.venue).slice(0, 120),
     venueCity: cleanText(payload.venueCity).slice(0, 90),
@@ -176,7 +177,7 @@ function normalizeMatch(row, config) {
     sourceFixtureId: payload.sourceFixtureId || payload.sourceMatchId || '',
     eventDetailsLoaded: payload.eventDetailsLoaded === true,
     detailsState: payload.detailsState || (payload.eventDetailsLoaded ? 'ready' : 'pending'),
-    detailStates: Object.fromEntries(['lineups', 'statistics', 'events'].map(feature => [feature,
+    detailStates: Object.fromEntries(['lineups', 'statistics', 'events', 'players'].map(feature => [feature,
       ['available', 'stale', 'pending', 'not_covered'].includes(payload.detailStates?.[feature]) ? payload.detailStates[feature] : 'pending'])),
     detailsUpdatedAt: payload.detailsUpdatedAt || null,
     updatedAt: row.updated_at
@@ -214,6 +215,21 @@ function normalizeLineups(value) {
       substitutes: normalizePlayers(lineup?.substitutes, 15)
     };
   });
+}
+
+function normalizeFixturePlayers(value) {
+  const numeric = (value, max = 10000) => value != null && value !== '' && Number.isFinite(Number(value))
+    && Number(value) >= 0 && Number(value) <= max ? Number(value) : null;
+  return (Array.isArray(value) ? value : []).slice(0, 2).map(team => ({
+    teamId: numeric(team?.team?.id), team: cleanText(team?.team?.name).slice(0, 90),
+    players: (Array.isArray(team?.players) ? team.players : []).slice(0, 30).map(player => ({
+      id: numeric(player?.id), name: cleanText(player?.name).slice(0, 90), photo: safePlayerPhoto(player?.photo),
+      minutes: numeric(player?.minutes, 150), number: numeric(player?.number, 999),
+      position: cleanText(player?.position).slice(0, 12), rating: numeric(player?.rating, 10),
+      ...Object.fromEntries(['goals', 'assists', 'saves', 'shots', 'shotsOnTarget', 'passes', 'keyPasses',
+        'tackles', 'interceptions', 'duels', 'duelsWon', 'yellowCards', 'redCards'].map(key => [key, numeric(player?.[key])])),
+    })).filter(player => player.id && player.name),
+  }));
 }
 
 function normalizeKnockout(value) {
@@ -821,6 +837,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const origin = originFromHeader(req.headers.origin) || originFromHeader(req.headers.referer);
       const matches = dedupeNormalizedMatches((await config.getMatchesForOrigin(origin))
         .map(normalizeRuntimeMatch)
+        .map(match => {
+          const { players, lineups, statistics, events, standings, knockout, venue, venueCity, referee,
+            detailStates, detailsState, eventDetailsLoaded, detailsUpdatedAt, ...summary } = match;
+          return summary;
+        })
         .filter((match) => match.homeTeam && match.awayTeam && match.scheduledAt)
         .filter((match) => normalizeMatchName(match.homeTeam) !== normalizeMatchName(match.awayTeam)));
       const day = req.query.day;
