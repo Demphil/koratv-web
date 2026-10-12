@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically check the Oracle gateway forward
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=koratv-oracle-tunnel-health.service
+
+[Install]
+WantedBy=timers.target
