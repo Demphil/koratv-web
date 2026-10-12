@@ -2,19 +2,37 @@ import { createNotice, renderNotice, startNotice, stopNotice, normalizeNoticeDes
 import { currentConsoleSelection } from './selection.js';
 (() => {
   const $ = id => document.getElementById(id);
-  let csrf = '', snapshot, selected = [], noticeItems = [], editing = false, polling, activeNotice = 0, importJob = '';
+  let csrf = '', snapshot, selected = [], noticeItems = [], editing = false, polling, activeNotice = 0, importJob = '', searchJob = '', refreshing;
   const previewStage = $('notice-preview-stage');
+  let channelSearchTimer, channelSearchVersion = 0, transportFailure = false, loggingIn = false;
+  function suggestChannels(value) {
+    clearTimeout(channelSearchTimer);
+    const version = ++channelSearchVersion;
+    if (value.trim().length < 2) return;
+    channelSearchTimer = setTimeout(async () => {
+      try {
+        const data = await api(`channels?query=${encodeURIComponent(value.trim())}`);
+        if (version !== channelSearchVersion) return;
+        $('channel-names').replaceChildren(...data.channels.map(channel => { const option = document.createElement('option'); option.value = channel.name; return option; }));
+      } catch { /* Keep the typed channel and existing suggestions on a transient failure. */ }
+    }, 350);
+  }
   const previewView = createNotice(previewStage, { onClose: () => { stopNotice(previewView); previewView.card.hidden = true; }, onImage: src => { $('preview-full-image').src = src; $('preview-viewer').hidden = false; } });
   const errors = { login_required: 'سجل الدخول أولاً.', invalid_login: 'بيانات الدخول غير صحيحة.', too_many_attempts: 'محاولات كثيرة. حاول بعد 15 دقيقة.', no_free_provider: 'هذه المباراة لا تملك مورداً مستقلاً ولا يوجد مورد فارغ. لم تتغير القناة.', channel_not_found: 'لم يعثر المورد على الاسم المحدد. لم تتغير القناة.', channel_probe_failed: 'فشل اختبار فيديو القناة الجديدة. أُعيدت القناة القديمة.', operation_in_progress: 'هناك عملية قيد التنفيذ.', operation_failed: 'تعذر إكمال العملية. راجع حالة الموارد قبل إعادة المحاولة.', invalid_image: 'الصورة غير صالحة أو كبيرة جداً.' };
   const phaseNames = { preparing: 'تحضير', discovering: 'بحث لدى المورد', testing_media: 'اختبار الفيديو', saving: 'حفظ القناة', assigning: 'توزيع وتجهيز الموارد', ready: 'اكتملت العملية' };
   Object.assign(errors, { invalid_notices: 'إعدادات الإشعارات غير صالحة. تحقق من عدد الدورات والمدة والفاصل وجهة العرض.', invalid_notice: 'محتوى أحد الإشعارات غير صالح. تحقق من العنوان والتعليق والصورة والمدة.', invalid_notice_design: 'أحد إعدادات تنسيق الإعلان خارج النطاق المسموح.' });
   Object.assign(errors, { invalid_team_names: 'أدخل اسمين مختلفين للفريقين، من حرفين إلى 80 حرفاً.', source_search_failed: 'تعذر الاتصال بـ Kooora. لم تُضف مباراة غير مؤكدة.', search_expired: 'انتهت صلاحية نتائج البحث. ابحث مجدداً.', match_not_found: 'لم تعد المباراة موجودة بالهوية نفسها في Kooora.', match_not_broadcastable: 'المباراة ملغاة أو مؤجلة؛ لا يمكن إضافتها.', search_rate_limited: 'بلغت حد البحث لهذه الساعة. حاول لاحقاً.' });
+  errors.login_in_progress = 'يجري التحقق من الدخول. انتظر لحظة ثم حاول مجدداً.';
   phaseNames.searching_match = 'تأكيد المباراة والقنوات من Kooora';
   errors.channel_not_found = 'لم يعثر المورد على قناة تطابق هذا الاسم. اختر قناة من قائمة Kooora الخاصة بالمباراة؛ أسماء المنصات مثل MBC Shahid ليست بديلاً عن اسم قناة محددة. لم تتغير القناة المعتمدة.';
   function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
   async function api(path, body) {
-    const response = await fetch(`/api/operator/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: body === undefined ? {} : { 'Content-Type': 'application/json', 'X-Operator-CSRF': csrf }, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
-    const data = await response.json();
+    let response;
+    try { response = await fetch(`/api/operator/${path}`, { method: body === undefined ? 'GET' : 'POST', headers: body === undefined ? {} : { 'Content-Type': 'application/json', 'X-Operator-CSRF': csrf }, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', signal: AbortSignal.timeout(25000) }); }
+    catch { transportFailure = true; throw new Error('انقطع الاتصال مؤقتاً. لم تُمسح اختياراتك. سنعيد متابعة الحالة تلقائياً.'); }
+    const data = await response.json().catch(() => null);
+    if (response.status >= 500) { transportFailure = true; throw new Error('الخادم غير متاح مؤقتاً. اختياراتك لم تتغير؛ سيُعاد الاتصال تلقائياً.'); }
+    if (!data || typeof data !== 'object') { transportFailure = true; throw new Error('لم تصل استجابة كاملة من الخادم. لم تتغير اختياراتك.'); }
     if (!response.ok) { if (response.status === 401) loggedOut(); throw new Error(errors[data.error] || data.error || 'تعذر الاتصال'); }
     if (data.csrf) csrf = data.csrf;
     return data;
@@ -35,6 +53,8 @@ import { currentConsoleSelection } from './selection.js';
     }));
   }
   function renderMatches() {
+    const channelDrafts = new Map([...document.querySelectorAll('.match-row')].map(row => [row.dataset.match, row.querySelector('input[list]')])
+      .filter(([, input]) => input?.dataset.dirty === 'true').map(([id, input]) => [id, input.value]));
     renderSelected();
     const query = $('search').value.trim().toLowerCase(), filter = $('status-filter').value;
     const matches = snapshot.matches.filter(row => `${row.homeTeam} ${row.awayTeam} ${row.league}`.toLowerCase().includes(query)
@@ -47,7 +67,8 @@ import { currentConsoleSelection } from './selection.js';
       const meta = document.createElement('small'); meta.textContent = `${match.league} · ${match.time || ''} · ${match.score}`; name.append(meta);
       const state = document.createElement('span'); state.className = `badge ${match.isLive ? 'live' : ''} ${match.sourceReady ? 'ready' : ''}`;
       state.textContent = `${match.isLive ? 'مباشر' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`;
-      const input = document.createElement('input'); input.setAttribute('list', 'channel-names'); input.value = match.channelName || ''; input.setAttribute('aria-label', 'القناة'); input.oninput = () => { input.dataset.dirty = 'true'; editing = true; };
+      const input = document.createElement('input'); input.setAttribute('list', 'channel-names'); input.value = match.channelName || ''; input.setAttribute('aria-label', 'القناة'); input.oninput = () => { input.dataset.dirty = 'true'; editing = true; suggestChannels(input.value); };
+      if (channelDrafts.has(match.matchId)) { input.value = channelDrafts.get(match.matchId); input.dataset.dirty = 'true'; }
       const channelEditor = document.createElement('div'); channelEditor.className = 'channel-editor';
       const broadcasts = document.createElement('select'); broadcasts.setAttribute('aria-label', 'قنوات Kooora الناقلة لهذه المباراة');
       const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'قنوات Kooora'; broadcasts.append(placeholder);
@@ -63,14 +84,33 @@ import { currentConsoleSelection } from './selection.js';
   }
   function renderJobs() {
     $('jobs').replaceChildren(...snapshot.jobs.slice().reverse().map(job => { const row = document.createElement('div'); row.className = `job ${job.state === 'failed' ? 'error' : ''}`; row.textContent = `${job.state === 'failed' ? errors[job.error] || 'تعذر الإكمال' : job.displayOnly && job.state === 'complete' ? 'أُضيفت المباراة للعرض في الموقع' : phaseNames[job.phase] || job.phase}${job.channel ? ` · ${job.channel}` : ''}`; return row; }));
-    const running = snapshot.jobs.some(job => job.state === 'running');
+    const running = snapshot.jobs.some(job => job.state === 'running' && job.kind !== 'match_search');
     $('save-selection').disabled = running;
     for (const button of document.querySelectorAll('.channel-save')) button.disabled = running;
     for (const button of document.querySelectorAll('.import-match-button')) button.disabled = running || button.dataset.unavailable === 'true';
     $('resource-count').textContent = `${snapshot.status.prewarm.warmed} روابط جاهزة / 8`;
   }
   async function refresh(render = true) {
-    snapshot = await api('state');
+    if (refreshing) return refreshing;
+    refreshing = refreshSnapshot(render).finally(() => { refreshing = null; });
+    return refreshing;
+  }
+  async function refreshSnapshot(render) {
+    const next = await api('state');
+    if (!Array.isArray(next.matches) || !Array.isArray(next.jobs) || !Array.isArray(next.channels) || !next.state?.selection || !next.status?.prewarm) throw new Error('لم تصل حالة كاملة من الخادم. بقيت اختياراتك محفوظة.');
+    snapshot = next;
+    if (transportFailure) { transportFailure = false; message('تم استعادة الاتصال.'); }
+    if (searchJob) {
+      const job = snapshot.jobs.find(job => job.id === searchJob);
+      if (job && job.state !== 'running') {
+        if (job.state === 'complete') renderImportResults(job.result);
+        else { $('import-search-status').textContent = errors[job.error] || 'تعذر البحث. حاول مجدداً.'; }
+        searchJob = ''; $('import-search').disabled = false;
+      } else if (!job) {
+        searchJob = ''; $('import-search').disabled = false;
+        $('import-search-status').textContent = 'أُعيد تشغيل الخدمة أثناء البحث. ابحث مجدداً؛ اختيارات البث لم تتغير.';
+      }
+    }
     const importedJob = snapshot.jobs.find(job => job.id === importJob);
     if (importedJob && importedJob.state !== 'running') {
       renderMatches();
@@ -169,8 +209,20 @@ import { currentConsoleSelection } from './selection.js';
       throw new Error(`${name.trim()} يجب أن يكون عدداً صحيحاً بين ${input.min} و${input.max}.`);
     }
   }
-  $('login').onsubmit = async event => { event.preventDefault(); try { await api('login', { username: $('username').value, password: $('password').value }); $('password').value = ''; await open(); } catch (error) { message(error.message, true); } };
-  async function open() { await refresh(); $('login').hidden = true; $('workspace').hidden = false; $('refresh').hidden = false; $('logout').hidden = false; message(''); clearInterval(polling); polling = setInterval(() => refresh(false).catch(error => message(error.message, true)), 3000); }
+  $('login').onsubmit = async event => {
+    event.preventDefault();
+    if (loggingIn) return;
+    loggingIn = true;
+    const submit = event.submitter;
+    if (submit) submit.disabled = true;
+    try { await api('login', { username: $('username').value, password: $('password').value }); $('password').value = ''; await open(); }
+    catch (error) { message(error.message, true); }
+    finally { loggingIn = false; if (submit) submit.disabled = false; }
+  };
+  function startPolling() { clearInterval(polling); polling = setInterval(() => refresh(!snapshot).then(() => {
+    $('login').hidden = true; $('workspace').hidden = false; $('refresh').hidden = false; $('logout').hidden = false;
+  }).catch(error => message(error.message, true)), 10000); }
+  async function open() { startPolling(); await refresh(); $('login').hidden = true; $('workspace').hidden = false; $('refresh').hidden = false; $('logout').hidden = false; message(''); }
   $('logout').onclick = async () => { await api('logout', {}); loggedOut(); };
   $('refresh').onclick = () => { if (!editing || confirm('توجد تغييرات غير محفوظة. تحديث القائمة؟')) refresh().catch(error => message(error.message, true)); };
   $('search').oninput = renderMatches; $('status-filter').onchange = renderMatches;
@@ -181,6 +233,12 @@ import { currentConsoleSelection } from './selection.js';
     $('import-search-status').textContent = 'جاري البحث في Kooora…';
     try {
       const result = await api('matches/search', { homeTeam: $('import-home').value, awayTeam: $('import-away').value });
+      if (result.job) { searchJob = result.job.id; await refresh(false); }
+      else renderImportResults(result);
+    } catch (error) { $('import-search-status').textContent = error.message; message(error.message, true); }
+    finally { if (!searchJob) $('import-search').disabled = false; }
+  };
+  function renderImportResults(result = { matches: [], day: '' }) {
       $('import-search-status').textContent = result.matches.length ? `${result.matches.length} مباراة · ${result.day}` : 'لم توجد مباراة بين الفريقين اليوم في Kooora.';
       $('import-results').replaceChildren(...result.matches.map(match => {
         const row = document.createElement('div'); row.className = 'import-result';
@@ -203,9 +261,7 @@ import { currentConsoleSelection } from './selection.js';
         row.append(name, channels, add); return row;
       }));
       renderJobs();
-    } catch (error) { $('import-search-status').textContent = error.message; message(error.message, true); }
-    finally { $('import-search').disabled = false; }
-  };
+  }
   $('manual-enabled').onchange = () => { editing = true; };
   document.querySelectorAll('.notice-settings input, .notice-settings select').forEach(input => { input.oninput = () => { editing = true; }; });
   $('save-selection').onclick = async () => { try { await api('selection', { enabled: $('manual-enabled').checked, matches: selected }); editing = false; message('بدأ تجهيز الاختيار في الخلفية المشتركة.'); await refresh(false); } catch (error) { message(error.message, true); } };
@@ -213,5 +269,5 @@ import { currentConsoleSelection } from './selection.js';
   $('publish-notices').onclick = async () => { const button = $('publish-notices'); try { validateNoticeInputs(); button.disabled = true; await api('notices', { enabled: true, items: noticeItems, repeats: Number($('notice-repeats').value), duration: Number($('notice-duration').value), interval: Number($('notice-interval').value), matchIds: $('notice-target').value === 'selected' ? selected : [] }); message('تم نشر الإشعارات إلى المشغلات المفتوحة والـ embed.'); editing = false; } catch (error) { message(error.message, true); } finally { button.disabled = false; } };
   $('stop-notices').onclick = async () => { try { await api('notices/stop', {}); message('تم إيقاف الإشعارات فوراً.'); } catch (error) { message(error.message, true); } };
   document.querySelectorAll('nav button').forEach(node => { node.onclick = () => { document.querySelectorAll('nav button').forEach(button => button.classList.toggle('active', button === node)); for (const id of ['matches-view', 'notices-view']) $(id).hidden = id !== node.dataset.view; if (node.dataset.view === 'notices-view') preview(noticeItems[activeNotice] || newNotice()); else stopNotice(previewView); }; });
-  open().catch(() => loggedOut());
+  open().catch(error => message(error.message, true));
 })();

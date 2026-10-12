@@ -43,13 +43,15 @@ test('display-only imports require authentication and CSRF without changing a fu
     providerChannels: () => ({ 'Fixture TV': { A: 'private-source' } }), providerAccounts: () => ({ A: { enabled: true } }), resolveOperatorChannel: name => name, refreshMatchSnapshots: async () => {} };
   const row = fixture();
   let imported = false, imports = 0, probes = 0;
+  let finishSearch;
+  const searchPending = new Promise(resolve => { finishSearch = resolve; });
   const calls = [];
   const before = { ...emptyOperatorState(), selection: { enabled: true, date: moroccoMatchDay(), matches: Array.from({ length: 8 }, (_, i) => `existing-${i}`), source: 'operator-console' }, overrides: { 'existing-0': { channel: 'Existing TV', enabled: true, expiresAt: new Date(Date.now() + 3600000).toISOString() } } };
   await writeOperatorState(config.operatorControlPath, before);
   const app = express(); app.use(express.json());
   registerOperatorConsole(app, { config, redis: redisFor(), clientIp: () => 'test', status: () => ({}),
     getMatches: async () => [...Array.from({ length: 8 }, (_, i) => ({ matchId: `existing-${i}`, broadcastRank: i + 1 })), ...(imported ? [{ matchId: row.match_id }] : [])],
-    matchWorker: async (mode, input) => { if (mode === 'search') return { matches: [row] }; assert.equal(input.sourceMatchId, 'fixture-id'); imported = true; imports++; return { match: row }; },
+    matchWorker: async (mode, input) => { if (mode === 'search') { await searchPending; return { matches: [row] }; } assert.equal(input.sourceMatchId, 'fixture-id'); imported = true; imports++; return { match: row }; },
     prepareChannel: async () => { probes++; throw new Error('Unexpected probe'); }, applyResources: async input => { calls.push(input); } });
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   t.after(() => { server.closeAllConnections(); server.close(); });
@@ -59,7 +61,19 @@ test('display-only imports require authentication and CSRF without changing a fu
   const login = await post('login', { username: 'admin', password });
   const headers = { Cookie: login.headers.get('set-cookie').split(';')[0], 'X-Operator-CSRF': (await login.json()).csrf };
   assert.equal((await post('matches/search', { homeTeam: 'Local Alpha', awayTeam: 'Local Beta' }, { Cookie: headers.Cookie })).status, 403);
-  const results = await (await post('matches/search', { homeTeam: 'Local Alpha', awayTeam: 'Local Beta' }, headers)).json();
+  const search = await post('matches/search', { homeTeam: 'Local Alpha', awayTeam: 'Local Beta' }, headers);
+  assert.equal(search.status, 202);
+  const searchJob = (await search.json()).job;
+  const pendingState = await (await fetch(config.api + '/api/operator/state', { headers })).json();
+  assert.equal(pendingState.jobs.find(job => job.id === searchJob.id).state, 'running');
+  assert.deepEqual(pendingState.state.selection, before.selection);
+  assert.equal(probes, 0);
+  assert.deepEqual(calls, []);
+  assert.equal((await post('matches/search', { homeTeam: 'Local Alpha', awayTeam: 'Local Beta' }, headers)).status, 409);
+  finishSearch();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const searchState = await (await fetch(config.api + '/api/operator/state', { headers })).json();
+  const results = searchState.jobs.find(job => job.id === searchJob.id).result;
   assert.equal(results.matches.length, 1);
   assert.equal(JSON.stringify(results).includes('private-source'), false);
   const invalid = await post('matches/import', { candidateId: 'untrusted-candidate' }, headers);

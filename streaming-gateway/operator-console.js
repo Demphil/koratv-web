@@ -74,15 +74,18 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
   });
   app.post('/api/operator/login', sameOrigin, async (req, res) => {
     if (!config.operatorPasswordHash) return res.status(503).json({ error: 'console_not_configured' });
-    if (authenticating) return res.status(429).json({ error: 'too_many_attempts' });
+    if (authenticating) return res.status(409).json({ error: 'login_in_progress' });
     authenticating = true;
     try {
       const key = `operator:login:${sessionDigest(clientIp(req))}`;
-      const attempts = await redis.incr(key);
-      if (attempts === 1) await redis.expire(key, 900);
-      if (attempts > 6) return res.status(429).json({ error: 'too_many_attempts' });
+      if (Number(await redis.get(key) || 0) >= 6) return res.status(429).json({ error: 'too_many_attempts' });
       const valid = await verifyOperatorPassword(req.body?.password, config.operatorPasswordHash);
-      if (req.body?.username !== 'admin' || !valid) return res.status(401).json({ error: 'invalid_login' });
+      if (req.body?.username !== 'admin' || !valid) {
+        const attempts = await redis.incr(key);
+        if (attempts === 1) await redis.expire(key, 900);
+        return res.status(401).json({ error: 'invalid_login' });
+      }
+      await redis.del(key);
       const token = randomBytes(32).toString('hex'), csrfToken = randomBytes(24).toString('hex');
       await redis.set(`operator:session:${sessionDigest(token)}`, JSON.stringify({ csrf: csrfToken, passwordVersion: sessionDigest(config.operatorPasswordHash) }), { EX: 7200 });
       res.set('Set-Cookie', cookie(token, 7200)).json({ csrf: csrfToken });
@@ -96,23 +99,34 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
   app.get('/api/operator/state', authorize, async (req, res) => {
     const matches = await getMatches();
     res.json({ csrf: req.operatorSession.csrf, day: new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Casablanca' }).format(new Date()), state: await read(), matches, status: status(),
-      channels: Object.entries(config.providerChannels?.() || {}).map(([name, entry]) => ({ name, sources: Object.entries(entry.sourceNames || {}).map(([provider, sourceName]) => ({ provider, name: sourceName })) })),
+      channels: [...new Set(matches.flatMap(match => [match.channelName, ...(match.broadcastChannels || [])]).filter(Boolean))].slice(0, 64).map(name => ({ name })),
       jobs: [...jobs.values()] });
   });
-  const runJob = (req, res, task) => {
-    if (operation) return res.status(409).json({ error: 'operation_in_progress' });
-    operation = true;
-    const job = { id: randomUUID(), state: 'running', phase: 'preparing', startedAt: new Date().toISOString() };
+  app.get('/api/operator/channels', authorize, (req, res) => {
+    const query = String(req.query.query || '').trim().toLowerCase();
+    if (query.length < 2 || query.length > 100) return res.status(400).json({ error: 'invalid_channel_query' });
+    const channels = [];
+    for (const name of Object.keys(config.providerChannels?.() || {})) {
+      if (name.toLowerCase().includes(query)) channels.push({ name });
+      if (channels.length === 32) break;
+    }
+    res.json({ channels });
+  });
+  const runJob = (req, res, task, { exclusive = true, kind } = {}) => {
+    if (exclusive && operation) return res.status(409).json({ error: 'operation_in_progress' });
+    if (exclusive) operation = true;
+    const job = { id: randomUUID(), state: 'running', phase: 'preparing', startedAt: new Date().toISOString(), ...(kind ? { kind } : {}) };
     if (jobs.size > 10) jobs.delete(jobs.keys().next().value);
     jobs.set(job.id, job);
     Promise.resolve().then(() => task(job)).then(() => { job.state = 'complete'; job.phase = 'ready'; })
       .catch(error => { job.state = 'failed'; job.error = ['no_free_provider', 'channel_not_found', 'channel_probe_failed', 'invalid_selection', 'invalid_match', 'invalid_channel', 'search_expired', 'match_not_found', 'match_not_broadcastable', 'capacity_full', 'source_search_failed'].includes(error.message) ? error.message : 'operation_failed'; })
-      .finally(() => { operation = false; });
+      .finally(() => { if (exclusive) operation = false; });
     res.status(202).json({ job });
   };
   app.post('/api/operator/matches/search', sameOrigin, authorize, csrf, async (req, res) => {
     if (searching) return res.status(409).json({ error: 'operation_in_progress' });
     searching = true;
+    let queued = false;
     try {
       const query = validateMatchSearch(req.body);
       const owner = sessionDigest(readOperatorCookie(req));
@@ -120,19 +134,25 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
       const attempts = await redis.incr(key);
       if (attempts === 1) await redis.expire(key, 3600);
       if (attempts > 30) return res.status(429).json({ error: 'search_rate_limited' });
-      const result = await matchWorker('search', query);
-      for (const [id, item] of searchResults) if (item.expiresAt <= Date.now()) searchResults.delete(id);
-      const matches = (result.matches || []).slice(0, 12).map(row => {
-        const candidateId = randomUUID();
-        searchResults.set(candidateId, { owner, query, matchId: row.match_id, sourceMatchId: row.payload?.sourceMatchId, expiresAt: Date.now() + 5 * 60000 });
-        return { candidateId, homeTeam: row.home_team, awayTeam: row.away_team, league: row.league, scheduledAt: row.kickoff_time,
-          status: row.payload?.status, score: row.payload?.score, channels: row.payload?.channels || [],
-          canImport: row.active !== false && sourceMatchState(row.payload) !== 'unavailable' };
-      });
-      while (searchResults.size > 120) searchResults.delete(searchResults.keys().next().value);
-      res.json({ matches, day: query.day });
+      queued = true;
+      return runJob(req, res, async job => {
+        job.phase = 'searching_match';
+        try {
+          const result = await matchWorker('search', query);
+          for (const [id, item] of searchResults) if (item.expiresAt <= Date.now()) searchResults.delete(id);
+          const matches = (result.matches || []).slice(0, 12).map(row => {
+            const candidateId = randomUUID();
+            searchResults.set(candidateId, { owner, query, matchId: row.match_id, sourceMatchId: row.payload?.sourceMatchId, expiresAt: Date.now() + 5 * 60000 });
+            return { candidateId, homeTeam: row.home_team, awayTeam: row.away_team, league: row.league, scheduledAt: row.kickoff_time,
+              status: row.payload?.status, score: row.payload?.score, channels: row.payload?.channels || [],
+              canImport: row.active !== false && sourceMatchState(row.payload) !== 'unavailable' };
+          });
+          while (searchResults.size > 120) searchResults.delete(searchResults.keys().next().value);
+          job.result = { matches, day: query.day };
+        } finally { searching = false; }
+      }, { exclusive: false, kind: 'match_search' });
     } catch (error) { res.status(400).json({ error: ['invalid_team_names', 'search_expired'].includes(error.message) ? error.message : 'source_search_failed' }); }
-    finally { searching = false; }
+    finally { if (!queued) searching = false; }
   });
   app.post('/api/operator/matches/import', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, async job => {
     const candidate = searchResults.get(req.body?.candidateId);

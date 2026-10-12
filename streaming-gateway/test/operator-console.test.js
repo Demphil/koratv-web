@@ -39,6 +39,32 @@ test('private console exposes only the exact fixture broadcasters, not channels 
   assert.equal((await fetch(config.api + '/api/operator/state')).status, 401);
 });
 
+test('periodic console state stays bounded with a large provider catalog and suggestions are authenticated', async t => {
+  const values = new Map();
+  const redis = { get: async key => values.get(key), set: async (key, value) => values.set(key, value), del: async key => values.delete(key),
+    incr: async key => { const next = Number(values.get(key) || 0) + 1; values.set(key, next); return next; }, expire: async () => {} };
+  const password = 'local-only-bounded-console-test-password';
+  const config = { api: '', operatorPasswordHash: await hashOperatorPassword(password),
+    providerChannels: () => Object.fromEntries(Array.from({ length: 48000 }, (_, i) => [`Sports Channel ${i}`, { A: 'https://private.example/credentials', sourceNames: { A: 'Private source name' } }])) };
+  const app = express(); app.use(express.json());
+  registerOperatorConsole(app, { config, redis, clientIp: () => 'bounded-test', getMatches: async () => [{ matchId: 'fixture', channelName: 'Fixture TV', broadcastChannels: ['Fixture TV'] }], status: () => ({}) });
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  config.api = `http://127.0.0.1:${server.address().port}`;
+  const login = await fetch(config.api + '/api/operator/login', { method: 'POST', headers: { Origin: config.api, 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password }) });
+  const headers = { Cookie: login.headers.get('set-cookie').split(';')[0] };
+  const body = await (await fetch(config.api + '/api/operator/state', { headers })).text();
+  assert.ok(body.length < 2000);
+  assert.deepEqual(JSON.parse(body).channels, [{ name: 'Fixture TV' }]);
+  assert.equal((await fetch(config.api + '/api/operator/channels?query=Sports')).status, 401);
+  assert.equal((await fetch(config.api + '/api/operator/channels?query=x', { headers })).status, 400);
+  const search = await (await fetch(config.api + '/api/operator/channels?query=Sports', { headers })).text();
+  assert.equal(JSON.parse(search).channels.length, 32);
+  assert.ok(search.length < 2000);
+  assert.equal(search.includes('private.example'), false);
+  assert.equal(search.includes('Private source name'), false);
+});
+
 test('operator origin is independent from a legacy player API origin', () => {
   const config = loadConfig({ JWT_SECRET: 'test-operator-jwt-secret-over-32-bytes', HMAC_SECRET: 'test-independent-hmac-secret-over-32-bytes', PUBLIC_API_ORIGIN: 'https://fabor.sbs', NEXT_PUBLIC_SUPABASE_URL: 'https://storage.example', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-only-key' });
   assert.equal(config.api, 'https://fabor.sbs');

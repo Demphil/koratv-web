@@ -97,6 +97,9 @@ jobs:
             find /var/www/koratv-player -type d -exec chmod 0755 {} +
             find /var/www/koratv-player -type f -exec chmod 0644 {} +
 
+            for file in ca.crt client.crt client.key; do
+              test -s "/etc/koratv/oracle-link/$file" || { echo 'Private Oracle TLS link is not provisioned; preserving the active proxy configuration.'; exit 1; }
+            done
             if [ -f "/etc/letsencrypt/live/$PLAYER_DOMAIN/fullchain.pem" ]; then
               install -m 0644 nginx.conf.example /etc/nginx/sites-available/koratv
             else
