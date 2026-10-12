@@ -25,10 +25,10 @@ const validOriginsList = (value) => {
   return requiredFrontendOrigins.every((origin) => origins.includes(origin)) && origins.every(validHttpsOrigin);
 };
 const publicValues = {
-  NEXT_PUBLIC_SUPABASE_URL: { value: 'https://vzgldruuinbwslrfwjkb.supabase.co', valid: validHttpsOrigin },
+  NEXT_PUBLIC_SUPABASE_URL: { value: 'https://amnguwuykrxvmwamlpjf.supabase.co', valid: validHttpsOrigin },
   NEXT_PUBLIC_SUPABASE_ANON_KEY: {
-    value: 'sb_publishable_UWDsCT0XpmEVvoy7CaMFNg_kN64Phlo',
-    valid: (value) => value === 'sb_publishable_UWDsCT0XpmEVvoy7CaMFNg_kN64Phlo'
+    value: 'sb_publishable_3_aw_Icj2lM3MMh9ma63mA_BUoodwPQ',
+    valid: (value) => value === 'sb_publishable_3_aw_Icj2lM3MMh9ma63mA_BUoodwPQ'
   }
 };
 async function configure(path, defaults, replacements) {

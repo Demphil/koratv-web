@@ -23,6 +23,7 @@ on:
       - "scripts/prerender-match-list.test.cjs"
       - "scripts/submit-indexnow.js"
       - "assets/js/matches.js"
+      - "assets/js/supabase-config.js"
       - "assets/js/news.js"
       - "assets/js/news-images.js"
       - "shared/match-lifecycle.mjs"
