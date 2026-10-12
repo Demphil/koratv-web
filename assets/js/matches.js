@@ -8,7 +8,7 @@ import {
   getMoroccoDay,
   getMoroccoDateKey,
   getNextMoroccoDayDelay
-} from './api.js?v=20261004-day-retention';
+} from './api.js?v=20261012-resilient-feed';
 import { frontendMatchState } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
 
 const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
@@ -439,14 +439,15 @@ function renderMatchCollections(rawTodayMatches, rawTomorrowMatches) {
 
 async function loadAndRenderMatches(options = {}) {
   const [rawTodayMatches, rawTomorrowMatches] = await Promise.all([
-    getTodayMatches(options),
-    getTomorrowMatches(options)
+    getTodayMatches({ ...options, throwOnError: true }),
+    getTomorrowMatches({ ...options, throwOnError: true })
   ]);
 
   renderMatchCollections(rawTodayMatches, rawTomorrowMatches);
 }
 
 function renderCachedMatchesImmediately() {
+  if (DOM.featuredContainer?.querySelector('[data-fixture-day], .match-card')) return false;
   const snapshot = getCachedMatchSnapshot();
   if (!snapshot.today.length && !snapshot.tomorrow.length) return false;
   renderMatchCollections(snapshot.today, snapshot.tomorrow);

@@ -37,6 +37,20 @@ const ended = { matchId: 'final', homeTeam: 'Real Madrid', awayTeam: 'Barcelona'
 const next = { ...ended, matchId: 'next', scheduledAt: '2026-10-05T14:00:00Z', status: 'FIXTURE', playbackState: 'upcoming', score: 'VS' };
 
 for (const path of ['../../assets/js/api.js', '../../../foottv6/assets/js/api.js']) {
+  test(`${path}: strict refresh reports network failure while ordinary readers retain cached results`, async () => {
+    const f = await fixture(path); f.setRows([ended]);
+    await f.api.getTodayMatches();
+    f.setRows(new Error('offline'));
+    await assert.rejects(f.api.getTodayMatches({ force: true, throwOnError: true }), /offline/);
+    await assert.rejects(f.api.getTomorrowMatches({ force: true, throwOnError: true }), /offline/);
+    assert.equal((await f.api.getTodayMatches({ force: true }))[0].matchId, 'final');
+  });
+  test(`${path}: blocked browser storage cannot prevent loading current live matches`, async () => {
+    const f = await fixture(path, '2026-10-04T18:00:00Z', true);
+    f.setRows([{ ...ended, status: 'LIVE', playbackState: 'live' }]);
+    assert.equal((await f.api.getTodayMatches({ throwOnError: true })).length, 1);
+    assert.equal(f.api.getCachedMatchSnapshot().today.length, 1);
+  });
   test(`${path}: completed results survive omitted refreshes and expire exactly at the Morocco day boundary`, async () => {
     const f = await fixture(path); f.setRows([ended, next]);
     assert.equal((await f.api.getTodayMatches())[0].matchId, 'final');

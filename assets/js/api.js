@@ -10,21 +10,29 @@ const MATCHES_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.
 const CACHE_KEY_TODAY = 'matches_cache_today_v2';
 
 const CACHE_KEY_TOMORROW = 'matches_cache_tomorrow_v2';
+const memoryCache = new Map();
+
+function removeCache(key) {
+  memoryCache.delete(key);
+  try { localStorage.removeItem(key); } catch {}
+}
 
 function setCache(key, data) {
+  const snapshot = { savedAt: Date.now(), data };
+  memoryCache.set(key, snapshot);
   try {
-    localStorage.setItem(key, JSON.stringify({
-      savedAt: Date.now(),
-      data
-    }));
+    localStorage.setItem(key, JSON.stringify(snapshot));
   } catch {}
 }
 
 function getCache(key) {
+  let parsed = memoryCache.get(key);
+  if (!parsed) {
+    try { parsed = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
+  }
   try {
-    const parsed = JSON.parse(localStorage.getItem(key) || 'null');
     if (!parsed || !Array.isArray(parsed.data)) {
-      localStorage.removeItem(key);
+      removeCache(key);
       return null;
     }
     const expired = Date.now() - Number(parsed.savedAt || 0) > SNAPSHOT_CACHE_TTL_MS;
@@ -32,19 +40,19 @@ function getCache(key) {
       const day = getMoroccoDay(match.scheduledAt);
       return ['today', 'tomorrow'].includes(day) && (!expired || (day === 'today' && completedMatch(match)));
     });
-    if (!data.length) { localStorage.removeItem(key); return null; }
+    if (!data.length) { removeCache(key); return null; }
     return data;
   } catch {
-    localStorage.removeItem(key);
+    removeCache(key);
     return null;
   }
 }
 
-for (const key of Object.keys(localStorage)) {
-  if (key.startsWith('matches_cache_') && ![CACHE_KEY_TODAY, CACHE_KEY_TOMORROW].includes(key)) {
-    localStorage.removeItem(key);
+try {
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith('matches_cache_') && ![CACHE_KEY_TODAY, CACHE_KEY_TOMORROW].includes(key)) removeCache(key);
   }
-}
+} catch {}
 
 
 
@@ -233,6 +241,7 @@ export async function getTodayMatches(options = {}) {
     return today;
   } catch (error) {
     console.error(`Today matches fetch failed: ${error.message}`);
+    if (options.throwOnError) throw error;
     return getCachedMatchSnapshot().today;
   }
 }
@@ -245,6 +254,7 @@ export async function getTomorrowMatches(options = {}) {
     return tomorrow;
   } catch (error) {
     console.error(`Tomorrow matches fetch failed: ${error.message}`);
+    if (options.throwOnError) throw error;
     return getCachedMatchSnapshot().tomorrow;
   }
 }
