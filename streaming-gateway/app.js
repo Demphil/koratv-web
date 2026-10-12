@@ -221,9 +221,9 @@ function normalizeFixturePlayers(value) {
   const numeric = (value, max = 10000) => value != null && value !== '' && Number.isFinite(Number(value))
     && Number(value) >= 0 && Number(value) <= max ? Number(value) : null;
   return (Array.isArray(value) ? value : []).slice(0, 2).map(team => ({
-    teamId: numeric(team?.team?.id), team: cleanText(team?.team?.name).slice(0, 90),
+    teamId: numeric(team?.team?.id, Number.MAX_SAFE_INTEGER), team: cleanText(team?.team?.name).slice(0, 90),
     players: (Array.isArray(team?.players) ? team.players : []).slice(0, 30).map(player => ({
-      id: numeric(player?.id), name: cleanText(player?.name).slice(0, 90), photo: safePlayerPhoto(player?.photo),
+      id: numeric(player?.id, Number.MAX_SAFE_INTEGER), name: cleanText(player?.name).slice(0, 90), photo: safePlayerPhoto(player?.photo),
       minutes: numeric(player?.minutes, 150), number: numeric(player?.number, 999),
       position: cleanText(player?.position).slice(0, 12), rating: numeric(player?.rating, 10),
       ...Object.fromEntries(['goals', 'assists', 'saves', 'shots', 'shotsOnTarget', 'passes', 'keyPasses',

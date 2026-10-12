@@ -48,8 +48,8 @@ test('a known channel is not advertised as ready until its resource is prepared'
 test('API-Football player details are delivered only to the player detail endpoint, not the site lists', async t => {
   const row = { id: 'football-details', match_id: 'football-details', home_team: 'Real Madrid', away_team: 'Barcelona',
     league: 'La Liga', kickoff_time: new Date().toISOString(), active: true,
-    payload: { status: 'LIVE', homeTeamId: 1, awayTeamId: 2, detailStates: { players: 'available' },
-      players: [{ team: { id: 1, name: 'Real Madrid' }, players: [{ id: 9, name: 'Forward', rating: 7.2, goals: 0, minutes: 60 }] }] } };
+    payload: { status: 'LIVE', homeTeamId: 20787, awayTeamId: 2, detailStates: { players: 'available' },
+      players: [{ team: { id: 20787, name: 'Real Madrid' }, players: [{ id: 377930, name: 'Forward', rating: 7.2, goals: 0, minutes: 60 }] }] } };
   const config = { secret: 'test-secret-longer-than-32-characters', hmacSecret: 'independent-hmac-longer-than-32-characters',
     frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example',
     frontendOrigins: new Set(['https://koratv.click', 'https://fraja.online']), upstreamOrigins: new Set(),
@@ -63,6 +63,8 @@ test('API-Football player details are delivered only to the player detail endpoi
   const detail = await (await fetch(base + '/api/match-info?matchId=football-details', { headers: { Origin: config.player } })).json();
   assert.equal(detail.match.players[0].players[0].goals, 0);
   assert.equal(detail.match.players[0].players[0].rating, 7.2);
+  assert.equal(detail.match.players[0].teamId, 20787);
+  assert.equal(detail.match.players[0].players[0].id, 377930);
   assert.equal(detail.match.detailStates.players, 'available');
 });
 
