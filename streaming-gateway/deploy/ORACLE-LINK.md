@@ -1,75 +1,40 @@
 # Oracle Gateway Link
 
-## Current Public Route
+## Active Route After Rollback
 
-`stream-api.koratv.click` and `stream-api.fraja.online` resolve directly to Oracle. Enable
-`oracle-public-gateway.conf` there after provisioning the managed
-`stream-api-oracle` certificate with Certbot's webroot `/var/www/certbot`.
-Install `reload-gateway-certificate.sh` as a Certbot deploy hook. The public route
-preserves all existing API authentication, client-IP binding, and CORS policies.
-KoraScore AI's virtual host and the static player on Njalla are unchanged.
+At the user's request on October 13, 2026, both `stream-api.koratv.click`
+and `stream-api.fraja.online` resolve to Njalla at `80.78.30.212`.
+The website root DNS records remain on GitHub Pages.
 
-Both API names share the same gateway and certificate. Include both names when
-issuing or expanding the certificate:
+The complete player API path is restored:
+browser -> Njalla HTTPS -> SSH forward on 127.0.0.1:3100 -> Oracle gateway.
+The player uses the standard HLS loader and one STREAM_API_ORIGIN.
+There is no separate PLAYER_MEDIA_ORIGIN or custom relay loader.
 
-```sh
-certbot certonly --webroot -w /var/www/certbot --cert-name stream-api-oracle \
-  -d stream-api.koratv.click -d stream-api.fraja.online --expand
-```
+The existing `koratv-oracle-tunnel.service` and its health timer are enabled.
+The Nginx upstream points to loopback, not the mutual-TLS connection introduced
+after the migration. Do not disable the tunnel or its health timer during deploys.
 
-The static sites may continue using `stream-api.koratv.click`; the Fraja alias
-does not require a frontend deployment or a change to either root domain's DNS.
+## Preserved Data And Features
 
-Control requests use the direct API route. The player separately builds with
-`PLAYER_MEDIA_ORIGIN=https://fabor.sbs`: sealed HLS requests use the authenticated
-Njalla-to-Oracle HTTPS proxy, while tickets, metadata, heartbeats and operator
-requests stay on the direct API. Do not remove the player's `/api/` proxy.
-The October 13 paired media audit found direct segment transfers timing out
-after 25 seconds while the same bytes through the player relay completed in
-about 1.2-1.9 seconds. This is transport evidence, not a blanket provider SLA.
+Supabase remains on `amnguwuykrxvmwamlpjf.supabase.co`, as explicitly requested.
+No database credentials, rows, manual match selections or notice settings were
+rolled back or deleted. Current UI, metadata and login fixes are retained.
 
-Keep the former DNS address documented
-in the deployment record for rollback. Check both authoritative nameservers and
-public resolvers, then verify actual video segments rather than health alone.
+Provider allocation and prewarm behavior are restored to the pre-migration
+logic from the parent of `c96068b`. The European youth competition exclusion
+remains. These changes do not increase any supplier's connection allowance.
 
-## Transitional Private Link
+## HTTPS And Verification
 
-The Njalla edge connects to Oracle on HTTPS, with a private CA and mutual
-TLS. Each request uses the Nginx upstream pool rather than a shared SSH tunnel.
-Oracle accepts the client certificate and the Njalla source IP only. The existing
-KoraScore AI virtual host is unchanged.
+Both public API names share Njalla's Certbot certificate:
+`/etc/letsencrypt/live/stream-api.koratv.click/`.
+The expanded certificate expires on January 11, 2027 and renews via Certbot.
+Nginx serves HTTP ACME challenges from `/var/www/certbot`.
 
-## Provisioning
+The direct Oracle public listener is retained for clients with old DNS caches.
+Do not switch the DNS back to Oracle without explicit user authorization.
 
-1. Run `provision-oracle-link.sh` on Oracle as root. Keep its output archive private.
-2. Install the CA and client certificate/key under `/etc/koratv/oracle-link` on
-   Njalla, with directory mode 0700 and private key mode 0600. Remove transfer archives.
-3. Enable `oracle-gateway-mtls.conf` on Oracle, validate with `nginx -t`, and reload.
-4. Validate the private health endpoint using the client certificate, trusted CA,
-   TLS name and Host `oracle-gateway.internal` before changing the public edge.
-5. Back up the active Njalla Nginx configuration, install the matching example,
-   validate, and reload. Preserve the public hostname in `X-Forwarded-Host`.
-6. Disable the legacy tunnel watchdog timer. Keep the stopped legacy configuration
-   available for rollback; it must not restart the production gateway.
-
-The certificates expire after 730 days. Inspect expiration with `openssl x509
--in client.crt -noout -enddate` during normal certificate maintenance and rotate
-both ends before expiry. Never commit keys or place them in the player build.
-
-## Verification And Rollback
-
-Check public HTTPS, authenticated console state, and an actual HLS segment.
-Loopback health alone does not prove public playback. Unauthenticated access to
-the private TLS endpoint must fail. Inspect logs only with token/query redaction.
-
-To roll back, restore the backed-up Njalla proxy configuration, validate/reload
-Nginx, and restore the SSH tunnel if that configuration needs it. Do not restore
-the restart watchdog until its effect on active viewers has been reviewed.
-
-## Console Payload
-
-Periodic state includes only current match broadcasters, not the entire provider
-catalog. Authenticated channel suggestions return at most 32 names. Match search
-returns a background job immediately. Disconnecting the browser neither disables
-the saved selection nor cancels the search worker. A gateway restart can interrupt
-in-memory jobs; the UI unlocks the search and keeps saved selection and drafts.
+Verify both DNS names, HTTPS certificates, authenticated playlists and complete
+segments. A successful health request alone is not a playback test. Back up
+the exact assets and proxy configuration before any future rollback.

@@ -1,4 +1,4 @@
-/* global Hls, Plyr, STREAM_API_ORIGIN, STREAM_API_ORIGINS, STREAM_MEDIA_ORIGIN */
+/* global Hls, Plyr, STREAM_API_ORIGIN, STREAM_API_ORIGINS */
 const video = document.getElementById('video');
 const status = document.getElementById('status');
 const playerContainer = document.getElementById('player-container');
@@ -707,27 +707,8 @@ function isAllowedStreamApiUrl(url) {
   return target.origin === pageOrigin && target.pathname === '/api/resource';
 }
 
-function mediaRequestUrl(value) {
-  const source = new URL(value, STREAM_API_ORIGIN);
-  if (!isAllowedStreamApiUrl(source.href)) throw new Error('Unexpected media origin');
-  const target = typeof STREAM_MEDIA_ORIGIN === 'undefined' ? STREAM_API_ORIGIN : STREAM_MEDIA_ORIGIN;
-  if (!isAllowedStreamApiUrl(target)) throw new Error('Unexpected media relay');
-  if (!['/api/resource', '/api/stream.m3u8'].includes(source.pathname)) throw new Error('Unexpected media path');
-  return new URL(source.pathname + source.search, target).href;
-}
-
-function mediaLoader() {
-  // Keep session issuance on the API while sealed video requests use the measured relay path.
-  return class extends Hls.DefaultConfig.loader {
-    load(context, config, callbacks) {
-      return super.load({ ...context, url: mediaRequestUrl(context.url) }, config, callbacks);
-    }
-  };
-}
-
 function hlsOptions() {
   return {
-    loader: mediaLoader(),
     enableWorker: true,
     lowLatencyMode: false,
     startLevel: -1,

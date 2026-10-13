@@ -14,9 +14,7 @@ const api = new URL(process.env.PLAYER_API_ORIGIN || process.env.PUBLIC_API_ORIG
 if (api.protocol !== 'https:') throw new Error('HTTPS required');
 const resourceApi = new URL(process.env.PUBLIC_API_ORIGIN || api.origin);
 if (resourceApi.protocol !== 'https:') throw new Error('HTTPS required');
-const mediaApi = new URL(process.env.PLAYER_MEDIA_ORIGIN || api.origin);
-if (mediaApi.protocol !== 'https:') throw new Error('HTTPS media relay required');
-const apiOrigins = [...new Set([api.origin, resourceApi.origin, mediaApi.origin])];
+const apiOrigins = [...new Set([api.origin, resourceApi.origin])];
 await rm('dist', { recursive: true, force: true });
 await mkdir('dist', { recursive: true });
 await cp('player', 'dist', { recursive: true,
@@ -34,7 +32,7 @@ await mkdir('dist/icons', { recursive: true });
 for (const icon of ['mail', 'trophy', 'scale', 'landmark', 'tv']) {
   await cp(join(dirname(require.resolve('lucide-static/package.json')), 'icons', `${icon}.svg`), `dist/icons/${icon}.svg`);
 }
-await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\nconst STREAM_MEDIA_ORIGIN = ${JSON.stringify(mediaApi.origin)};\nconst STREAM_API_ORIGINS = new Set(${JSON.stringify(apiOrigins)});\n`);
+await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\nconst STREAM_API_ORIGINS = new Set(${JSON.stringify(apiOrigins)});\n`);
 for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.js', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'multiview.js',
   'hls.min.js', 'plyr.js', 'three.module.min.js', 'three.core.min.js']) {
   const result = await minify(await readFile(`dist/${asset}`, 'utf8'), {

@@ -8,7 +8,7 @@ map $uri $koratv_cache_control {
 }
 
 upstream koratv_gateway {
-    server 51.170.48.95:443;
+    server 127.0.0.1:3100;
     keepalive 64;
     keepalive_requests 1000;
     keepalive_timeout 60s;
@@ -24,31 +24,13 @@ server {
     listen 443 ssl http2;
     server_name stream-api.koratv.click;
 
-    keepalive_timeout 15s;
-    keepalive_requests 20;
-    keepalive_time 1m;
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types application/json application/javascript text/css;
-
-    proxy_ssl_server_name on;
-    proxy_ssl_name oracle-gateway.internal;
-    proxy_ssl_verify on;
-    proxy_ssl_verify_depth 2;
-    proxy_ssl_trusted_certificate /etc/koratv/oracle-link/ca.crt;
-    proxy_ssl_certificate /etc/koratv/oracle-link/client.crt;
-    proxy_ssl_certificate_key /etc/koratv/oracle-link/client.key;
-    proxy_connect_timeout 8s;
-
     ssl_certificate /etc/letsencrypt/live/stream-api.koratv.click/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/stream-api.koratv.click/privkey.pem;
     access_log off;
 
     location = /healthz {
-        proxy_pass https://koratv_gateway;
-        proxy_set_header Host oracle-gateway.internal;
-        proxy_set_header X-Forwarded-Host $host;
+        proxy_pass http://127.0.0.1:3100;
+        proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
@@ -56,11 +38,10 @@ server {
     }
 
     location /api/ {
-        proxy_pass https://koratv_gateway;
+        proxy_pass http://koratv_gateway;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
-        proxy_set_header Host oracle-gateway.internal;
-        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
@@ -80,14 +61,6 @@ server {
 server {
     listen 80;
     server_name fabor.sbs www.fabor.sbs;
-    proxy_ssl_server_name on;
-    proxy_ssl_name oracle-gateway.internal;
-    proxy_ssl_verify on;
-    proxy_ssl_verify_depth 2;
-    proxy_ssl_trusted_certificate /etc/koratv/oracle-link/ca.crt;
-    proxy_ssl_certificate /etc/koratv/oracle-link/client.crt;
-    proxy_ssl_certificate_key /etc/koratv/oracle-link/client.key;
-    proxy_connect_timeout 8s;
     root /var/www/koratv-player;
     access_log off;
     gzip on;
@@ -115,10 +88,9 @@ add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'unsaf
     }
 
     location = /739184.html {
-        proxy_pass https://koratv_gateway;
+        proxy_pass http://127.0.0.1:3100;
         proxy_http_version 1.1;
-        proxy_set_header Host oracle-gateway.internal;
-        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto http;
@@ -126,10 +98,9 @@ add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'unsaf
     }
 
     location = /watch.html {
-        proxy_pass https://koratv_gateway;
+        proxy_pass http://127.0.0.1:3100;
         proxy_http_version 1.1;
-        proxy_set_header Host oracle-gateway.internal;
-        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto http;
@@ -137,11 +108,10 @@ add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'unsaf
     }
 
     location /api/ {
-        proxy_pass https://koratv_gateway;
+        proxy_pass http://koratv_gateway;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
-        proxy_set_header Host oracle-gateway.internal;
-        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Host $host;
         proxy_set_header Origin $http_origin;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
@@ -155,10 +125,9 @@ add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'unsaf
     }
 
     location ~ "^/[A-Za-z0-9]{10,24}$" {
-        proxy_pass https://koratv_gateway;
+        proxy_pass http://127.0.0.1:3100;
         proxy_http_version 1.1;
-        proxy_set_header Host oracle-gateway.internal;
-        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto http;

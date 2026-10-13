@@ -283,7 +283,6 @@ jobs:
         env:
           PLAYER_API_ORIGIN: https://stream-api.koratv.click
           PUBLIC_API_ORIGIN: https://stream-api.koratv.click
-          PLAYER_MEDIA_ORIGIN: https://fabor.sbs
         run: |
           set -euo pipefail
           npm ci --omit=dev --no-audit --fund=false

@@ -90,16 +90,15 @@ jobs:
             fi
             npm test
             npm run check:supabase
-            PLAYER_API_ORIGIN=https://stream-api.koratv.click PUBLIC_API_ORIGIN=https://stream-api.koratv.click PLAYER_MEDIA_ORIGIN=https://fabor.sbs npm run build:player
+            PLAYER_API_ORIGIN=https://stream-api.koratv.click PUBLIC_API_ORIGIN=https://stream-api.koratv.click npm run build:player
 
             install -d -m 0755 /var/www/koratv-player /var/www/certbot
             cp -a dist/. /var/www/koratv-player/
             find /var/www/koratv-player -type d -exec chmod 0755 {} +
             find /var/www/koratv-player -type f -exec chmod 0644 {} +
 
-            for file in ca.crt client.crt client.key; do
-              test -s "/etc/koratv/oracle-link/$file" || { echo 'Private Oracle TLS link is not provisioned; preserving the active proxy configuration.'; exit 1; }
-            done
+            systemctl is-active --quiet koratv-oracle-tunnel.service
+            curl --fail --silent --max-time 10 http://127.0.0.1:3100/healthz >/dev/null
             if [ -f "/etc/letsencrypt/live/$PLAYER_DOMAIN/fullchain.pem" ]; then
               install -m 0644 nginx.conf.example /etc/nginx/sites-available/koratv
             else

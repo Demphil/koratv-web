@@ -526,7 +526,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     return { ok: false, error: 'playlist_depth' };
   };
 
-  const prewarmAssignedResources = async (reason = 'interval', { fresh = false, matchId = '' } = {}) => {
+  const prewarmAssignedResources = async (reason = 'interval', { fresh = false } = {}) => {
     if (!prewarmState.enabled || prewarmState.running) return prewarmState;
     prewarmState.running = true;
     prewarmState.lastRunAt = new Date().toISOString();
@@ -537,8 +537,6 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const assignments = (config.providerAssignments?.().assignments || [])
         .filter((assignment) => assignment?.matchId && assignment?.providerId)
         .slice(0, config.prewarmMaxResources || 8);
-      const targets = matchId ? assignments.filter(item => item.matchId === matchId || item.aliases?.includes(matchId)) : assignments;
-      const targetViewers = new Set(targets.map(item => `prewarm:${item.matchId}`));
       const scheduledViewers = new Set(assignments.map(item => `prewarm:${item.matchId}`));
       for (const id of preparedMatches.keys()) {
         if (!scheduledViewers.has(`prewarm:${id}`)) preparedMatches.delete(id);
@@ -547,16 +545,13 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         if (!scheduledViewers.has(viewerId)) {
           providerPool.releaseViewer(key, viewerId);
           prewarmKeepalive.delete(key);
-        } else if (matchId && !targetViewers.has(viewerId)) {
-          currentKeys.add(key);
         }
       }
-      for (const assignment of targets) {
+      for (const assignment of assignments) {
         const result = {
           matchId: assignment.matchId,
           channel: assignment.resolvedChannel || null,
-          provider: assignment.providerId || null,
-          checkedAt: new Date().toISOString()
+          provider: assignment.providerId || null
         };
         try {
           let playback = await config.getPlaybackForSource('', assignment.matchId, { fresh });
@@ -597,11 +592,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           results.push({ ...result, ok: false, error: error instanceof PoolError ? error.code : (error?.message || 'prewarm_failed') });
         }
       }
-      const previous = new Map(prewarmState.results.map(item => [item.matchId, item]));
-      for (const result of results) previous.set(result.matchId, result);
-      prewarmState.results = assignments.map(item => previous.get(item.matchId)).filter(Boolean);
-      prewarmState.warmed = prewarmState.results.filter((item) => item.ok).length;
-      prewarmState.failed = prewarmState.results.length - prewarmState.warmed;
+      prewarmState.results = results.slice(-(config.prewarmMaxResources || 8));
+      prewarmState.warmed = results.filter((item) => item.ok).length;
+      prewarmState.failed = results.length - prewarmState.warmed;
       for (const key of [...prewarmKeepalive.keys()]) {
         if (!currentKeys.has(key)) {
           providerPool.releaseViewer(key, prewarmKeepalive.get(key));
@@ -644,11 +637,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         }
       }
       while (prewarmState.running) await new Promise(resolve => setTimeout(resolve, 100));
-      let result = await prewarmAssignedResources('operator-change', { fresh: true, matchId });
+      let result = await prewarmAssignedResources('operator-change', { fresh: true });
       if (matchId && !result.results.some(row => row.matchId === matchId && row.ok)) {
         await new Promise(resolve => setTimeout(resolve, 31000));
         while (prewarmState.running) await new Promise(resolve => setTimeout(resolve, 100));
-        result = await prewarmAssignedResources('operator-retry', { matchId });
+        result = await prewarmAssignedResources('operator-retry');
         if (!result.results.some(row => row.matchId === matchId && row.ok)) throw new Error('channel_probe_failed');
       }
     }

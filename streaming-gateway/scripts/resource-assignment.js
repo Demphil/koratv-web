@@ -176,16 +176,11 @@ export function buildProjectAssignmentPlan({
   maxResources = DEFAULT_MAX_RESOURCES,
   manualMatchIds = [],
   previousAssignments = [],
-  runtimeHealth = {},
   now = new Date(),
   options = {},
 } = {}) {
   const generatedAt = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
   const nowMs = new Date(now).getTime();
-  const healthAge = nowMs - Date.parse(runtimeHealth.updated_at || '');
-  const healthRows = Number.isFinite(healthAge) && healthAge >= 0 && healthAge < 90000
-    && Array.isArray(runtimeHealth.accounts) ? runtimeHealth.accounts : [];
-  const healthById = new Map(healthRows.map(account => [account.provider, account]));
   const opensBeforeMinutes = Math.max(0, Number(options.opensBeforeMinutes ?? 20));
   const manualRank = new Map(manualMatchIds
     .map((id) => String(id || '').trim())
@@ -194,12 +189,6 @@ export function buildProjectAssignmentPlan({
     .map((id, index) => [id, index]));
   const enabledProviders = Object.entries(providerCatalog.providers || {})
     .filter(([, provider]) => provider?.enabled !== false)
-    .filter(([id]) => {
-      const account = healthById.get(id);
-      if (!account) return true;
-      if (/^STOPPED|^UNAVAILABLE/.test(account.status || '')) return false;
-      return !/^(?:COOLDOWN|STALLED)/.test(account.status || '') || Date.parse(account.cooldown_until || '') <= nowMs;
-    })
     .map(([id]) => id);
 
   const deferred = [];
@@ -210,20 +199,14 @@ export function buildProjectAssignmentPlan({
       const state = routeStates[matchId];
       if (!matchId || !state || state.status !== 'RESOLVED' || !state.resolvedChannel) return null;
       const previous = previousAssignments.find(item => item.matchId === matchId || item.aliases?.includes(matchId));
-      const poolKey = `${String(match.kickoff_time).slice(0, 10)}:${match.payload?.broadcast?.sourceMatchId || match.payload?.sourceMatchId || matchId}:${state.resolvedChannel}`;
-      const liveAccount = healthRows.find(account => account.status === 'BUSY_STREAMING'
-        && (account.current_match === matchId || account.current_match === poolKey || previous?.aliases?.includes(account.current_match))
-        && account.current_channel === state.resolvedChannel);
-      const preferredProvider = liveAccount?.provider || previous?.providerId;
       const providerIds = (state.providerIds || []).filter((id) => enabledProviders.includes(id))
-        .sort((a, b) => Number(b === preferredProvider) - Number(a === preferredProvider));
+        .sort((a, b) => Number(b === previous?.providerId) - Number(a === previous?.providerId));
       if (!providerIds.length) return null;
       const row = {
         matchId,
         match,
         state,
         providerIds,
-        liveProvider: (!manualRank.size || manualRank.has(matchId)) && providerIds.includes(liveAccount?.provider) ? liveAccount.provider : null,
         manualRank: manualRank.has(matchId) ? manualRank.get(matchId) : null,
         priorityScore: scoreProjectMatch(match, state.resolvedChannel, options),
       };
@@ -270,20 +253,13 @@ export function buildProjectAssignmentPlan({
   }
   const providerOwners = new Map();
   const providerFor = new Map();
-  for (const row of uniqueRows) {
-    if (!row.liveProvider || providerOwners.has(row.liveProvider)) continue;
-    providerOwners.set(row.liveProvider, row);
-    providerFor.set(row, row.liveProvider);
-  }
   // Rehome a flexible event instead of stranding one that has only one provider.
   const reserveProvider = (row, visited = new Set()) => {
-    if (row.liveProvider) return providerFor.get(row) === row.liveProvider;
     const candidates = [...row.providerIds].sort((a,b) => Number(providerOwners.has(a)) - Number(providerOwners.has(b)));
     for (const id of candidates) {
       if (visited.has(id)) continue;
       visited.add(id);
       const owner = providerOwners.get(id);
-      if (owner?.liveProvider) continue;
       if (!owner || reserveProvider(owner, visited)) {
         providerOwners.set(id, row);
         providerFor.set(row, id);
@@ -550,15 +526,13 @@ export async function assignProjectMatchResources(env = process.env) {
   const routeStatePath = env.DIRECT_MATCH_ROUTE_STATE_PATH || `${dir}/direct-match-route-state.json`;
   const outputPath = env.MATCH_RESOURCE_ASSIGNMENT_PATH || `${dir}/match-resource-assignments.json`;
   const manualSelectionPath = env.MANUAL_MATCH_SELECTION_PATH || `${dir}/manual-match-selection.json`;
-  const runtimeHealthPath = env.ACCOUNTS_STATUS_PATH || `${dir}/accounts-status.json`;
   const supabase = createSupabaseClient(env);
-  const [matches, providerCatalog, routeState, manualSelection, previous, runtimeHealth] = await Promise.all([
+  const [matches, providerCatalog, routeState, manualSelection, previous] = await Promise.all([
     readProjectMatches(supabase, env, dateKey, timezone),
     readJson(providerCatalogPath, { providers: {}, channels: {} }),
     readJson(routeStatePath, { matches: {} }),
     readJson(manualSelectionPath, { enabled: false }),
     readJson(outputPath, { assignments: [] }),
-    readJson(runtimeHealthPath, {}),
   ]);
   const operator = await readOperatorState(operatorPath(env));
   const manualMatchIds = parseManualMatchSelection(operator.selection?.date === dateKey ? operator.selection : manualSelection, { dateKey });
@@ -569,7 +543,6 @@ export async function assignProjectMatchResources(env = process.env) {
     maxResources: Number(env.MAX_EVENT_RESOURCES || DEFAULT_MAX_RESOURCES),
     manualMatchIds,
     previousAssignments: previous.assignments || [],
-    runtimeHealth,
     options: {
       opensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || 20),
       vipTeams: parseList(env.VIP_TEAMS || 'Real Madrid,Barcelona,Manchester City,Liverpool,Arsenal,Bayern Munich,Paris Saint-Germain,Raja Casablanca,Wydad AC,FAR Rabat,Renaissance Berkane'),
