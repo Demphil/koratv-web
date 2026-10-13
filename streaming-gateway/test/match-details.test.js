@@ -110,6 +110,25 @@ test('team switching reuses the positioned panel renderer for pointer and keyboa
   assert.doesNotMatch(source, /detail.innerHTML = renderLineups/);
 });
 
+test('lineup groups field, bench and coach for responsive placement', () => {
+  const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
+  const start = source.indexOf('function renderLineups(');
+  const end = source.indexOf('function renderFixturePlayers(', start);
+  const lineup = { startXI: [{ name: 'Starter', grid: '1:1' }],
+    substitutes: [{ name: 'Substitute', number: 12 }], coach: 'Coach' };
+  const context = { lineup, selectedLineupSide: 'home',
+    lineupForSide: () => lineup, positionLineup: players => players,
+    renderPlayerCard: () => '<span>Starter</span>', arabicTeamLabel: () => '',
+    escapeHtml: value => String(value ?? ''), teamInitials: () => 'S',
+    renderFixturePlayers: () => '', normalizeTeamNameForUi: value => value };
+  const render = vm.runInNewContext(`${source.slice(start, end)}; renderLineups`, context);
+  const html = render({ homeTeam: 'Home', awayTeam: 'Away' });
+  assert.match(html, /lineup-layout has-bench/);
+  assert.match(html, /lineup-field[\s\S]*<\/div>\s*<section class="lineup-bench"[\s\S]*<section class="lineup-coach"/);
+  lineup.substitutes = [];
+  assert.doesNotMatch(render({ homeTeam: 'Home', awayTeam: 'Away' }), /has-bench|lineup-bench/);
+});
+
 test('standings retain zero points and zero goal difference', () => {
   const source = readFileSync(new URL('../player/player.js', import.meta.url), 'utf8');
   const start = source.indexOf('function escapeHtml(');

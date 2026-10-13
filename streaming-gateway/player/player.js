@@ -1,4 +1,4 @@
-/* global Hls, Plyr, STREAM_API_ORIGIN, STREAM_API_ORIGINS */
+/* global Hls, Plyr, STREAM_API_ORIGIN, STREAM_API_ORIGINS, STREAM_MEDIA_ORIGIN */
 const video = document.getElementById('video');
 const status = document.getElementById('status');
 const playerContainer = document.getElementById('player-container');
@@ -382,10 +382,14 @@ function renderLineups(match) {
     return `<div class="bench-player"><span class="bench-portrait">${photo}<b>${escapeHtml(player.number ?? '')}</b></span><span><strong>${escapeHtml(player.name)}</strong>${substitution ? `<small>بدل ${escapeHtml(substitution.player)}</small>` : ''}</span>${substitution ? `<time>${escapeHtml(formatEventMinute(substitution))} ↑</time>` : ''}</div>`;
   }).join('');
   return `${teamButtons}
-    ${pitch}
-    ${unplaced.length ? `<div class="lineup-gallery">${unplaced.map(renderPlayerCard).join('')}</div>` : ''}
-    ${bench ? `<section class="lineup-bench"><h4>مقاعد البدلاء <small>${lineup.substitutes.length} بدلاء</small></h4>${bench}</section>` : ''}
-    ${lineup.coach ? `<section class="lineup-coach">${lineup.coachPhoto ? `<img src="${escapeHtml(lineup.coachPhoto)}" alt="" loading="lazy">` : ''}<span><small>المدرب</small><strong>${escapeHtml(lineup.coach)}</strong></span></section>` : ''}${renderFixturePlayers(match)}`;
+    <div class="lineup-layout-scroll"><div class="lineup-layout${bench ? ' has-bench' : ''}">
+      <div class="lineup-field">
+        ${pitch}
+        ${unplaced.length ? `<div class="lineup-gallery">${unplaced.map(renderPlayerCard).join('')}</div>` : ''}
+      </div>
+      ${bench ? `<section class="lineup-bench"><h4>مقاعد البدلاء <small>${lineup.substitutes.length} بدلاء</small></h4>${bench}</section>` : ''}
+      ${lineup.coach ? `<section class="lineup-coach">${lineup.coachPhoto ? `<img src="${escapeHtml(lineup.coachPhoto)}" alt="" loading="lazy">` : ''}<span><small>المدرب</small><strong>${escapeHtml(lineup.coach)}</strong></span></section>` : ''}
+    </div></div>${renderFixturePlayers(match)}`;
 }
 
 function renderFixturePlayers(match) {
@@ -703,8 +707,27 @@ function isAllowedStreamApiUrl(url) {
   return target.origin === pageOrigin && target.pathname === '/api/resource';
 }
 
+function mediaRequestUrl(value) {
+  const source = new URL(value, STREAM_API_ORIGIN);
+  if (!isAllowedStreamApiUrl(source.href)) throw new Error('Unexpected media origin');
+  const target = typeof STREAM_MEDIA_ORIGIN === 'undefined' ? STREAM_API_ORIGIN : STREAM_MEDIA_ORIGIN;
+  if (!isAllowedStreamApiUrl(target)) throw new Error('Unexpected media relay');
+  if (!['/api/resource', '/api/stream.m3u8'].includes(source.pathname)) throw new Error('Unexpected media path');
+  return new URL(source.pathname + source.search, target).href;
+}
+
+function mediaLoader() {
+  // Keep session issuance on the API while sealed video requests use the measured relay path.
+  return class extends Hls.DefaultConfig.loader {
+    load(context, config, callbacks) {
+      return super.load({ ...context, url: mediaRequestUrl(context.url) }, config, callbacks);
+    }
+  };
+}
+
 function hlsOptions() {
   return {
+    loader: mediaLoader(),
     enableWorker: true,
     lowLatencyMode: false,
     startLevel: -1,

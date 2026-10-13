@@ -90,7 +90,7 @@ jobs:
             fi
             npm test
             npm run check:supabase
-            npm run build:player
+            PLAYER_API_ORIGIN=https://stream-api.koratv.click PUBLIC_API_ORIGIN=https://stream-api.koratv.click PLAYER_MEDIA_ORIGIN=https://fabor.sbs npm run build:player
 
             install -d -m 0755 /var/www/koratv-player /var/www/certbot
             cp -a dist/. /var/www/koratv-player/

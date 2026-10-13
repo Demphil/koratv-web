@@ -69,6 +69,13 @@ html.embedded-view #page-depth { display: none; }
 .lineup-team-switch button { display: flex; align-items: center; justify-content: center; gap: 5px; flex: 1; min-width: 0; padding: 8px 4px; border: 0; border-radius: 6px; color: #bfd4f5; font: inherit; font-size: 10px; font-weight: 700; background: transparent; cursor: pointer; }
 .lineup-team-switch button[aria-pressed="true"] { background: #225942; color: #fff; box-shadow: 0 0 8px #65d6a222; }
 .lineup-team-switch img { width: 15px; height: 15px; object-fit: contain; }
+.lineup-layout-scroll { max-width: 100%; overflow-x: auto; direction: ltr; }
+.lineup-layout { display: grid; width: 100%; max-width: 416px; margin-inline: auto; gap: 12px; align-items: start; direction: ltr; }
+.lineup-layout.has-bench { max-width: 668px; min-width: 540px; grid-template-columns: minmax(0,416px) minmax(180px,240px); }
+.lineup-field { min-width: 0; direction: rtl; }
+.lineup-layout > .lineup-bench { width: 100%; min-width: 0; margin: 0; direction: rtl; }
+.lineup-layout > .lineup-coach { grid-column: 1; width: 100%; margin: 0; direction: rtl; }
+.lineup-field .lineup-pitch { margin-bottom: 0; }
 .lineup-pitch { position: relative; width: min(100%,416px); aspect-ratio: 1 / 1; height: auto; min-height: 0; margin: 0 auto 12px; border: 10px solid #1a3b2e; border-radius: 8px; background: repeating-linear-gradient(180deg,#214a3b 0%,#214a3b 20%,#1e4436 20%,#1e4436 40%); overflow: hidden; }
 .pitch-lines { position: absolute; inset: 0; border: 1px solid #89a79a; pointer-events: none; }
 .pitch-lines::after { content: ''; position: absolute; top: 50%; left: 0; right: 0; border-top: 1px solid #89a79a; }
@@ -129,6 +136,7 @@ html.embedded-view #page-depth { display: none; }
 .player-contact a { color: #fff; padding: 8px 12px; border: 1px solid #65d6a255; border-radius: 6px; background: #174233; text-decoration: none; font-weight: 700; overflow-wrap: anywhere; }
 html.embedded-view .player-contact { display: none; }
 @media (max-width: 620px) {
+  .lineup-layout.has-bench { max-width: 416px; min-width: 0; grid-template-columns: minmax(0,1fr); }
   .match-panel-teams { padding: 9px; gap: 8px; }
   .match-panel-team { font-size: 10px; gap: 3px 5px; }
   .match-panel-score { padding-inline: 8px; min-width: 65px; }

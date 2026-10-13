@@ -2,16 +2,33 @@
 
 ## Current Public Route
 
-`stream-api.koratv.click` resolves directly to Oracle. Enable
+`stream-api.koratv.click` and `stream-api.fraja.online` resolve directly to Oracle. Enable
 `oracle-public-gateway.conf` there after provisioning the managed
 `stream-api-oracle` certificate with Certbot's webroot `/var/www/certbot`.
 Install `reload-gateway-certificate.sh` as a Certbot deploy hook. The public route
 preserves all existing API authentication, client-IP binding, and CORS policies.
 KoraScore AI's virtual host and the static player on Njalla are unchanged.
 
-The direct route avoids the measured packet loss between the two hosts. The
-Njalla proxy remains available for clients whose DNS caches have not expired;
-do not remove it during the transition. Keep the former DNS address documented
+Both API names share the same gateway and certificate. Include both names when
+issuing or expanding the certificate:
+
+```sh
+certbot certonly --webroot -w /var/www/certbot --cert-name stream-api-oracle \
+  -d stream-api.koratv.click -d stream-api.fraja.online --expand
+```
+
+The static sites may continue using `stream-api.koratv.click`; the Fraja alias
+does not require a frontend deployment or a change to either root domain's DNS.
+
+Control requests use the direct API route. The player separately builds with
+`PLAYER_MEDIA_ORIGIN=https://fabor.sbs`: sealed HLS requests use the authenticated
+Njalla-to-Oracle HTTPS proxy, while tickets, metadata, heartbeats and operator
+requests stay on the direct API. Do not remove the player's `/api/` proxy.
+The October 13 paired media audit found direct segment transfers timing out
+after 25 seconds while the same bytes through the player relay completed in
+about 1.2-1.9 seconds. This is transport evidence, not a blanket provider SLA.
+
+Keep the former DNS address documented
 in the deployment record for rollback. Check both authoritative nameservers and
 public resolvers, then verify actual video segments rather than health alone.
 

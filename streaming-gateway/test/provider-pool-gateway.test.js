@@ -241,6 +241,57 @@ test('provider prewarm leases assigned resources before the first viewer', async
   assert.deepEqual(app.locals.providerPool.snapshot().map(item => [item.provider, item.channel]), [['A','beIN SPORTS HD 2']]);
 });
 
+test('changing one operator channel only refreshes its match and preserves other live leases', async t => {
+  const resolved = [];
+  let revision = 'old';
+  const assignments = [
+    { matchId: 'edited', providerId: 'A', resolvedChannel: 'channel-1' },
+    { matchId: 'untouched', providerId: 'B', resolvedChannel: 'channel-2' }
+  ];
+  const config = {
+    providerPoolEnabled: true, prewarmAssignedResources: true, enableAntiBot: false,
+    prewarmIntervalMs: 60000, prewarmMaxResources: 8,
+    secret: 'test-pool-secret-longer-than-32-characters', hmacSecret: 'test-pool-hmac-independent-longer-than-32',
+    frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example',
+    frontendOrigins: new Set(['https://koratv.click']), upstreamOrigins: new Set(), trustedProxies: [],
+    sessionTtl: 300, sourceForOrigin: () => 'kooora', upstreamUserAgent: 'test',
+    providerAssignments: () => ({ assignments, ignored: [] }),
+    getPlaybackForSource: async (_, id, options) => {
+      resolved.push({ id, fresh: options?.fresh });
+      const assignment = assignments.find(item => item.matchId === id);
+      const source = `https://${assignment.providerId.toLowerCase()}.example/${revision}/main.m3u8`;
+      return { is_streaming_active: true, match_id: id, pool_key: id, channel_id: assignment.resolvedChannel,
+        provider_sources: { [assignment.providerId]: source }, priority_score: 100, stream_url: source };
+    }
+  };
+  const redis = { ping: async () => 'PONG', incr: async () => 1, expire: async () => 1, set: async () => 'OK', get: async () => null };
+  const app = createApp({ config, redis, fetchImpl: async url => {
+    const manifest = url.pathname.endsWith('.m3u8');
+    const response = new Response(manifest ? '#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:7\n#EXTINF:6,\nseg7.ts\n' : new Uint8Array([71, 0, 1]),
+      { headers: { 'Content-Type': manifest ? 'application/vnd.apple.mpegurl' : 'video/mp2t' } });
+    Object.defineProperty(response, 'url', { value: url.href });
+    return response;
+  } });
+  clearInterval(app.locals.providerPrewarmTimer);
+  clearInterval(app.locals.providerPrewarmHeartbeatTimer);
+  clearTimeout(app.locals.providerPrewarmStartupTimer);
+  t.after(() => app.locals.providerPool.close());
+  await app.locals.prewarmAssignedResources('initial');
+  const otherLease = app.locals.providerPool.leases.get('B');
+  const otherId = otherLease.id;
+  const previous = app.locals.providerPrewarm.results.find(item => item.matchId === 'untouched');
+  resolved.length = 0;
+  revision = 'new';
+  const result = await app.locals.prewarmAssignedResources('operator-change', { fresh: true, matchId: 'edited' });
+  assert.deepEqual(resolved, [{ id: 'edited', fresh: true }]);
+  assert.equal(app.locals.providerPool.leases.get('B'), otherLease);
+  assert.equal(otherLease.id, otherId);
+  assert.equal(otherLease.controller.signal.aborted, false);
+  assert.ok(app.locals.providerPool.demands.get('untouched').viewers.has('prewarm:untouched'));
+  assert.equal(result.results.find(item => item.matchId === 'untouched'), previous);
+  assert.equal(result.warmed, 2);
+});
+
 for (const failure of ['manifest-509', 'segment-503', 'all-failed']) {
   test(`background preparation validates media and recovers ${failure} before a visitor`, async t => {
     const calls = [];
