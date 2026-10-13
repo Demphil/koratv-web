@@ -124,7 +124,7 @@ import { currentConsoleSelection } from './selection.js';
       const actual = row.querySelector('.provider-actual');
       const checked = snapshot.state.providers?.[match.matchId]?.verifiedAt || account?.last_checked_at;
       const date = checked && new Date(checked);
-      actual.textContent = `${match.assignedProvider ? `الفعلي: ${match.assignedProvider}` : 'لا يوجد مورد نشط'}${match.boundProvider ? ` · محجوز: ${match.boundProvider}` : ''}${date && !Number.isNaN(date.getTime()) ? ` · فحص ${date.toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' })}` : ''}`;
+      actual.textContent = `${match.assignedProvider ? `الفعلي: ${match.assignedProvider}` : 'لا يوجد مورد نشط'}${match.boundProvider ? ` · محجوز: ${match.boundProvider}` : ''}${date && !Number.isNaN(date.getTime()) ? ` · فحص ${date.toLocaleTimeString('ar', { timeZone: 'Africa/Casablanca', hour: '2-digit', minute: '2-digit' })}` : ''}`;
       const select = row.querySelector('.provider-select');
       if (select.dataset.dirty !== 'true') select.value = match.boundProvider || '';
       for (const option of select.options) {
