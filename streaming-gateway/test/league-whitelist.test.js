@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isAllowedMatch, normalizeTeamName } from '../../shared/league-whitelist.mjs';
+import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs';
+
+test('European youth league aliases are excluded without affecting adult Champions League', () => {
+  for (const league of ['دوري أبطال أوروبا للشباب', 'دوري ابطال اوروبا للناشئين', 'دوري الشباب الأوروبي', 'UEFA Youth League', 'UEFA Champions League U19', 'Champions League - Youth']) {
+    assert.equal(isEuropeanYouthLeague(league), true, league);
+    assert.equal(isAllowedMatch({ league, homeTeam: 'Real Madrid', awayTeam: 'Barcelona' }), false, league);
+  }
+  for (const league of ['دوري أبطال أوروبا', 'UEFA Champions League']) {
+    assert.equal(isEuropeanYouthLeague(league), false, league);
+    assert.equal(isAllowedMatch({ league, homeTeam: 'Real Madrid', awayTeam: 'Barcelona' }), true, league);
+  }
+});
 
 test('Kooora Arabic international friendlies include Morocco and Argentina without admitting club or youth friendlies', () => {
   for (const [homeTeam, awayTeam] of [['المغرب', 'مالي'], ['الأرجنتين', 'بوركينا فاسو']]) {

@@ -1,4 +1,5 @@
 import { sourceMatchState, nextMoroccoMidnight } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
+import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs?v=20261013-youth-exclusion';
 
 // --- 1. Cache Configuration ---
 
@@ -37,6 +38,7 @@ function getCache(key) {
     }
     const expired = Date.now() - Number(parsed.savedAt || 0) > SNAPSHOT_CACHE_TTL_MS;
     const data = parsed.data.filter(match => {
+      if (isEuropeanYouthLeague(match.league)) return false;
       const day = getMoroccoDay(match.scheduledAt);
       return ['today', 'tomorrow'].includes(day) && (!expired || (day === 'today' && completedMatch(match)));
     });
@@ -156,6 +158,7 @@ let stagingMatchesPending = false;
 let stagingMatchesDay = '';
 
 function normalizeStagingMatch(match) {
+  if (isEuropeanYouthLeague(match.league)) return null;
   const homeName = typeof match.homeTeam === 'object' ? match.homeTeam.name : match.homeTeam;
   const awayName = typeof match.awayTeam === 'object' ? match.awayTeam.name : match.awayTeam;
   const scheduledAt = match.scheduledAt || '';

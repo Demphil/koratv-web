@@ -1,3 +1,5 @@
+import { isEuropeanYouthLeague } from './match-visibility.mjs';
+
 const ALLOWED_LEAGUE_PATTERNS = [
   /دوري ابطال اوروبا|uefa champions league|champions league/i,
   /الدوري الانجليزي الممتاز|^(?:english )?premier league$/i,
@@ -47,7 +49,7 @@ const ALLOWED_YOUTH_COMPETITION = /^(?:afc u(?:17|20|23)|afc asian cup u(?:17|20
 
 function isOutOfScopeLeague(value) {
   const normalized = normalizeLeagueName(value);
-  if (!normalized || OUT_OF_SCOPE_LEAGUE_PATTERNS.some((pattern) => pattern.test(normalized))) return true;
+  if (!normalized || isEuropeanYouthLeague(normalized) || OUT_OF_SCOPE_LEAGUE_PATTERNS.some((pattern) => pattern.test(normalized))) return true;
   return YOUTH_MARKER.test(normalized) && !ALLOWED_YOUTH_COMPETITION.test(normalized);
 }
 
@@ -133,6 +135,7 @@ export function isAllowedNationalTeamException(value) {
 }
 
 export function isAllowedMatch({ league = '', country = '', leagueCountry = '', homeTeam = '', awayTeam = '' } = {}) {
+  if (isEuropeanYouthLeague(league)) return false;
   const normalizedLeague = normalizeLeagueName(league);
   if ([league, homeTeam, awayTeam].some((value) => WOMEN_MARKERS.test(normalizeLeagueName(value)))) return false;
   if ([homeTeam, awayTeam].some((team) => YOUTH_MARKER.test(normalizeTeamName(team)))

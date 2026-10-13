@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { sourceMatchState, nextMoroccoMidnight, matchListCacheControl } from '../../shared/match-lifecycle.mjs';
+import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs';
 
 async function fixture(path, time = '2026-10-04T22:58:00Z', storageBlocked = false) {
   let now = Date.parse(time), response = [], calls = 0;
@@ -10,7 +11,7 @@ async function fixture(path, time = '2026-10-04T22:58:00Z', storageBlocked = fal
   class Clock extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
   const check = () => { if (storageBlocked) throw new Error('Storage unavailable'); };
   const localStorage = { getItem: key => { check(); return storage.get(key) ?? null; }, setItem: (key, value) => { check(); return storage.set(key, value); }, removeItem: key => { check(); return storage.delete(key); } };
-  const context = vm.createContext({ window: {}, localStorage, Date: Clock, Intl, sourceMatchState, nextMoroccoMidnight, AbortSignal,
+  const context = vm.createContext({ window: {}, localStorage, Date: Clock, Intl, sourceMatchState, nextMoroccoMidnight, isEuropeanYouthLeague, AbortSignal,
     console: { error() {} }, fetch: async () => { calls++; if (typeof response === 'function') return response(); if (response instanceof Error) throw response; return { ok: true, json: async () => ({ matches: response }) }; } });
   const source = (await readFile(new URL(path, import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   vm.runInContext(source + '\nthis.api = {getTodayMatches,getTomorrowMatches,getCachedMatchSnapshot,getMoroccoDateKey,getNextMoroccoDayDelay};', context);
@@ -37,6 +38,17 @@ const ended = { matchId: 'final', homeTeam: 'Real Madrid', awayTeam: 'Barcelona'
 const next = { ...ended, matchId: 'next', scheduledAt: '2026-10-05T14:00:00Z', status: 'FIXTURE', playbackState: 'upcoming', score: 'VS' };
 
 for (const path of ['../../assets/js/api.js', '../../../foottv6/assets/js/api.js']) {
+  test(`${path}: European youth fixtures disappear from fresh responses and retained result caches`, async () => {
+    const f = await fixture(path);
+    const youth = { ...ended, matchId: 'youth', league: 'دوري أبطال أوروبا للشباب' };
+    const adult = { ...ended, league: 'دوري أبطال أوروبا' };
+    f.storage.set('matches_cache_today_v2', JSON.stringify({ savedAt: Date.now(), data: [youth, adult] }));
+    assert.deepEqual(Array.from(f.api.getCachedMatchSnapshot().today, match => match.matchId), ['final']);
+    f.setRows([youth, adult]);
+    assert.deepEqual(Array.from(await f.api.getTodayMatches(), match => match.matchId), ['final']);
+    f.setRows(new Error('offline'));
+    assert.deepEqual(Array.from(await f.api.getTodayMatches({ force: true }), match => match.matchId), ['final']);
+  });
   test(`${path}: strict refresh reports network failure while ordinary readers retain cached results`, async () => {
     const f = await fixture(path); f.setRows([ended]);
     await f.api.getTodayMatches();

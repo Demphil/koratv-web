@@ -29,6 +29,8 @@ on:
       - "assets/js/news.js"
       - "assets/js/news-images.js"
       - "shared/match-lifecycle.mjs"
+      - "shared/match-visibility.mjs"
+      - "shared/league-whitelist.mjs"
       - "assets/css/matches.css"
       - "assets/css/fonts.css"
       - "assets/css/icons.css"

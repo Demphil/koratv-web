@@ -6,6 +6,7 @@ import { basePriority } from '../priority.js';
 import { sameFixture, teamIdentity } from '../../shared/match-broadcasts.mjs';
 import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
 import { isAllowedMatch, isGulfCupLeague } from '../../shared/league-whitelist.mjs';
+import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs';
 import { operatorPath, readOperatorState } from '../operator-state.js';
 import { isOperatorImportedMatch } from '../../shared/operator-imported-match.mjs';
 
@@ -480,8 +481,8 @@ export async function assignEventResources({
 }
 
 export function publicAssignmentMatches(matches) {
-  const allowed = matches.filter(row => isOperatorImportedMatch(row) || isAllowedMatch({league:row.league,
-    leagueCountry:row.payload?.leagueCountry, homeTeam:row.home_team, awayTeam:row.away_team}));
+  const allowed = matches.filter(row => !isEuropeanYouthLeague(row.league) && (isOperatorImportedMatch(row) || isAllowedMatch({league:row.league,
+    leagueCountry:row.payload?.leagueCountry, homeTeam:row.home_team, awayTeam:row.away_team})));
   const kooora = allowed.filter(row => String(row.source || '').startsWith('kooora'));
   return [...kooora, ...allowed.filter(row => row.source === 'api-football'
     && isGulfCupLeague(row.league) && !kooora.some(other => sameFixture(other,row)))];

@@ -72,9 +72,10 @@ async function buildPublicSite({ root = process.cwd(), output = join(root, '_sit
       await cp(join(root, entry.name), join(output, entry.name));
     }
   }
-  // Only this shared module is imported by the public frontend.
+  // Copy the shared modules used by the public frontend.
   await mkdir(join(output, 'shared'), { recursive: true });
   await cp(join(root, 'shared/match-lifecycle.mjs'), join(output, 'shared/match-lifecycle.mjs'));
+  await cp(join(root, 'shared/match-visibility.mjs'), join(output, 'shared/match-visibility.mjs'));
   await minifyScripts(output);
   // Keep first-paint styles in the document, without extra network round trips.
   const homepage = join(output, 'index.html');

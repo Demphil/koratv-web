@@ -13,6 +13,7 @@ import { HlsProgressMonitor } from './hls-progress.js';
 import { singleQualityManifest } from './single-quality.js';
 import { diagnosticPlayback, registerMultiview } from './multiview.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
+import { isEuropeanYouthLeague } from '../shared/match-visibility.mjs';
 import { matchPlaybackState as providerPlaybackState, sourceMatchState, matchListCacheControl } from '../shared/match-lifecycle.mjs';
 import { resolvePublicMatchId } from '../shared/public-match-id.mjs';
 import { broadcastChannelCandidates } from '../shared/match-broadcasts.mjs';
@@ -311,6 +312,7 @@ function dedupeNormalizedMatches(matches) {
 }
 
 function allowedMatch(match) {
+  if (isEuropeanYouthLeague(match.league)) return false;
   if (sourceMatchState(match) === 'unavailable') return false;
   return match.operatorImported === true || isOperatorImportedMatch(match) || isAllowedMatch({
     league: match.league,
@@ -609,7 +611,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   registerOperatorConsole(app, {
     config, redis, clientIp,
     getMatches: async () => (await config.getMatchesForOrigin(config.frontend))
-      .filter(row => (isOperatorImportedMatch(row) || isAllowedMatch({ league: row.league, leagueCountry: row.payload?.leagueCountry, homeTeam: row.home_team, awayTeam: row.away_team })) && sourceMatchState(row.payload || row) !== 'unavailable')
+      .filter(row => !isEuropeanYouthLeague(row.league) && (isOperatorImportedMatch(row) || isAllowedMatch({ league: row.league, leagueCountry: row.payload?.leagueCountry, homeTeam: row.home_team, awayTeam: row.away_team })) && sourceMatchState(row.payload || row) !== 'unavailable')
       .map(row => ({ ...normalizeRuntimeMatch(row), broadcastChannels: broadcastChannelCandidates(row) }))
       .filter(row => moroccoPart(row.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === moroccoPart(new Date(), { year: 'numeric', month: '2-digit', day: '2-digit' }))
       .map(({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected }) => ({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected }))
