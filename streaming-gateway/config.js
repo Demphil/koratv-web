@@ -67,7 +67,7 @@ export function loadConfig(env = process.env) {
   const getApiFootballMatches = createSnapshotReader(createMatchesReader(env, apiFootballSources, catalog));
   const cachedResolver = resolver => {
     const cache = new Map();
-    return (matchId, { fresh = false } = {}) => {
+    const resolve = (matchId, { fresh = false } = {}) => {
       const entry = cache.get(matchId);
       if (entry && ((!fresh && entry.until > Date.now()) || (fresh && entry.fresh && entry.until === Infinity))) return entry.promise;
       if (cache.size >= 500) cache.delete(cache.keys().next().value);
@@ -80,6 +80,8 @@ export function loadConfig(env = process.env) {
       cache.set(matchId, item);
       return promise;
     };
+    resolve.invalidate = matchId => matchId ? cache.delete(matchId) : cache.clear();
+    return resolve;
   };
   const getKoooraPlayback = cachedResolver(createPlaybackResolver(env, koooraSources, catalog, liveResolver));
   const getApiFootballPlayback = cachedResolver(createPlaybackResolver(env, apiFootballSources, catalog, liveResolver));
@@ -95,6 +97,7 @@ export function loadConfig(env = process.env) {
     providerAssignments: catalog ? () => catalog.assignments() : null,
     primeMatchSnapshots: () => Promise.all([getKoooraMatches(), getApiFootballMatches()]),
     refreshProviderCatalog: catalog ? () => catalog.refreshNow() : null,
+    invalidatePlayback: matchId => { getKoooraPlayback.invalidate(matchId); getApiFootballPlayback.invalidate(matchId); },
     refreshMatchSnapshots: () => Promise.all([getKoooraMatches.refresh(), getApiFootballMatches.refresh()]),
     discoverOperatorChannel: liveResolver ? (name, providerIds, verifySource, preferredSourceName) => liveResolver.resolve([name], { fresh: true, providerIds, verifySource, preferredSourceName }) : null,
     operatorPasswordHash: env.BROADCAST_ADMIN_PASSWORD_HASH || '',

@@ -1,0 +1,62 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import express from 'express';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { registerOperatorConsole } from '../operator-console.js';
+import { hashOperatorPassword } from '../operator-auth.js';
+import { emptyOperatorState, writeOperatorState } from '../operator-state.js';
+import { moroccoMatchDay } from '../../shared/operator-imported-match.mjs';
+
+test('operator jobs serialize, deduplicate, reserve providers and renew only their target', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'operator-resources-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const values = new Map(), applied = [], calls = [];
+  const redis = { get: async k => values.get(k), set: async (k, v) => values.set(k, v), del: async k => values.delete(k), incr: async k => { const n = Number(values.get(k) || 0) + 1; values.set(k, n); return n; }, expire: async () => {} };
+  const password = 'only-used-in-local-test';
+  const config = { api: '', operatorControlPath: join(dir, 'state.json'), operatorPasswordHash: await hashOperatorPassword(password), providerAccounts: () => ({ A: { enabled: true }, B: { enabled: true } }) };
+  await writeOperatorState(config.operatorControlPath, { ...emptyOperatorState(), channels: { peer: 'unchanged' } });
+  let release, concurrent = 0, maximum = 0;
+  const gate = new Promise(resolve => { release = resolve; });
+  const app = express(); app.use(express.json());
+  registerOperatorConsole(app, { config, redis, clientIp: () => 'test', status: () => ({}),
+    getMatches: async () => ['first', 'second', 'peer'].map(matchId => ({ matchId, channelName: `Channel ${matchId}` })),
+    prepareChannel: async (channel, phase, match, options) => {
+      concurrent++; maximum = Math.max(maximum, concurrent); calls.push({ channel, id: match.matchId, options });
+      try { if (calls.length === 1) await gate; if (match.matchId === 'peer') throw new Error('channel_probe_failed'); return { name: channel, providerId: options.providerId || (match.matchId === 'first' ? 'A' : 'B') }; }
+      finally { concurrent--; }
+    }, applyResources: async options => { applied.push(options); } });
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => { release(); server.closeAllConnections(); server.close(); });
+  config.api = `http://127.0.0.1:${server.address().port}`;
+  const post = (path, body, headers = {}) => fetch(`${config.api}/api/operator/${path}`, { method: 'POST', headers: { Origin: config.api, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  const login = await post('login', { username: 'admin', password });
+  const headers = { Cookie: login.headers.get('set-cookie').split(';')[0], 'X-Operator-CSRF': (await login.json()).csrf };
+  const state = async () => (await fetch(`${config.api}/api/operator/state`, { headers })).json();
+  const waitJob = async id => { for (let i = 0; i < 100; i++) { const data = await state(); const job = data.jobs.find(j => j.id === id); if (['complete', 'failed'].includes(job.state)) return { data, job }; await new Promise(resolve => setTimeout(resolve, 10)); } throw new Error('test job timeout'); };
+  const requestId = randomUUID();
+  const first = (await (await post('provider', { matchId: 'first', providerId: 'A', requestId }, headers)).json()).job;
+  const duplicate = (await (await post('provider', { matchId: 'first', providerId: 'A', requestId }, headers)).json()).job;
+  assert.equal(first.id, duplicate.id);
+  const second = (await (await post('channel', { matchId: 'second', channel: 'New second' }, headers)).json()).job;
+  assert.equal(second.state, 'queued'); assert.equal(calls.length, 1);
+  assert.equal((await post('notices/stop', {}, headers)).status, 200);
+  release();
+  await waitJob(first.id); const after = await waitJob(second.id);
+  assert.equal(maximum, 1); assert.equal(after.data.state.channels.peer, 'unchanged');
+  assert.equal(after.data.state.providers.first.manual, true);
+  assert.equal(after.data.state.providers.first.day, moroccoMatchDay());
+  assert.deepEqual(applied, [{ matchId: 'first' }, { matchId: 'second' }]);
+  const reserved = (await (await post('provider', { matchId: 'second', providerId: 'A' }, headers)).json()).job;
+  assert.equal((await waitJob(reserved.id)).job.error, 'provider_reserved');
+  assert.equal(calls.length, 2);
+  const renewed = (await (await post('refresh-links', { matchIds: ['first', 'peer'] }, headers)).json()).job;
+  const result = await waitJob(renewed.id);
+  assert.equal(result.job.state, 'complete');
+  assert.deepEqual(result.job.results.map(row => row.ok), [true, false]);
+  assert.equal(result.data.state.channels.peer, 'unchanged');
+  assert.equal(calls[2].options.providerId, 'A');
+  assert.equal(JSON.stringify(await (await fetch(`${config.api}/api/broadcast-control`)).json()).includes('providers'), false);
+});

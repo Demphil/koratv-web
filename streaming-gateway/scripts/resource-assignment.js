@@ -176,6 +176,7 @@ export function buildProjectAssignmentPlan({
   maxResources = DEFAULT_MAX_RESOURCES,
   manualMatchIds = [],
   previousAssignments = [],
+  providerBindings = {},
   now = new Date(),
   options = {},
 } = {}) {
@@ -190,6 +191,14 @@ export function buildProjectAssignmentPlan({
   const enabledProviders = Object.entries(providerCatalog.providers || {})
     .filter(([, provider]) => provider?.enabled !== false)
     .map(([id]) => id);
+  const day = dateKeyFor(now);
+  const bindingMatches = new Map(matches.map(match => [match.match_id || match.id, match]));
+  const bindings = Object.fromEntries(Object.entries(providerBindings).filter(([id, binding]) => {
+    const match = bindingMatches.get(id);
+    return binding?.day === day && enabledProviders.includes(binding.providerId) && match?.active !== false
+      && match && !['ended', 'unavailable'].includes(sourceMatchState(match.payload || match));
+  }));
+  const reserved = new Map(Object.entries(bindings).filter(([, binding]) => binding.manual !== false).map(([id, binding]) => [binding.providerId, id]));
 
   const deferred = [];
 
@@ -199,14 +208,19 @@ export function buildProjectAssignmentPlan({
       const state = routeStates[matchId];
       if (!matchId || !state || state.status !== 'RESOLVED' || !state.resolvedChannel) return null;
       const previous = previousAssignments.find(item => item.matchId === matchId || item.aliases?.includes(matchId));
-      const providerIds = (state.providerIds || []).filter((id) => enabledProviders.includes(id))
-        .sort((a, b) => Number(b === previous?.providerId) - Number(a === previous?.providerId));
+      const binding = bindings[matchId] || Object.entries(bindings).find(([id]) => sameFixture(bindingMatches.get(id), match))?.[1];
+      const providerIds = (state.providerIds || []).filter(id => enabledProviders.includes(id)
+        && (!reserved.has(id) || reserved.get(id) === matchId || sameFixture(bindingMatches.get(reserved.get(id)), match))
+        && (!binding || binding.manual === false || id === binding.providerId))
+        .sort((a, b) => Number(b === (binding?.providerId || previous?.providerId)) - Number(a === (binding?.providerId || previous?.providerId)));
       if (!providerIds.length) return null;
       const row = {
         matchId,
         match,
         state,
         providerIds,
+        lockedProvider: providerIds.includes(binding?.providerId || previous?.providerId) && (binding || previous?.resolvedChannel === state.resolvedChannel)
+          ? binding?.providerId || previous.providerId : null,
         manualRank: manualRank.has(matchId) ? manualRank.get(matchId) : null,
         priorityScore: scoreProjectMatch(match, state.resolvedChannel, options),
       };
@@ -253,13 +267,20 @@ export function buildProjectAssignmentPlan({
   }
   const providerOwners = new Map();
   const providerFor = new Map();
+  for (const row of uniqueRows.slice(0, maxResources)) {
+    if (!row.lockedProvider || providerOwners.has(row.lockedProvider)) continue;
+    providerOwners.set(row.lockedProvider, row);
+    providerFor.set(row, row.lockedProvider);
+  }
   // Rehome a flexible event instead of stranding one that has only one provider.
   const reserveProvider = (row, visited = new Set()) => {
+    if (row.lockedProvider && providerFor.get(row) === row.lockedProvider) return true;
     const candidates = [...row.providerIds].sort((a,b) => Number(providerOwners.has(a)) - Number(providerOwners.has(b)));
     for (const id of candidates) {
       if (visited.has(id)) continue;
       visited.add(id);
       const owner = providerOwners.get(id);
+      if (owner?.lockedProvider) continue;
       if (!owner || reserveProvider(owner, visited)) {
         providerOwners.set(id, row);
         providerFor.set(row, id);
@@ -543,6 +564,7 @@ export async function assignProjectMatchResources(env = process.env) {
     maxResources: Number(env.MAX_EVENT_RESOURCES || DEFAULT_MAX_RESOURCES),
     manualMatchIds,
     previousAssignments: previous.assignments || [],
+    providerBindings: operator.providers || {},
     options: {
       opensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || 20),
       vipTeams: parseList(env.VIP_TEAMS || 'Real Madrid,Barcelona,Manchester City,Liverpool,Arsenal,Bayern Munich,Paris Saint-Germain,Raja Casablanca,Wydad AC,FAR Rabat,Renaissance Berkane'),

@@ -11,6 +11,8 @@ input[type=color] { background: #eaf3ee; }
 .primary { background: #19704e; color: #fff; border-color: #388767; }
 .danger { background: #ab2943; color: #fff; border-color: #cc5068; }
 .login, .server, .match-row { background: #172c29c7; }
+.match-row { background: #172c29ed; }
+#operator-depth { opacity: .6; }
 .login { backdrop-filter: blur(6px); }
 .server.bad { color: #ff9dae; border-color: #c65269; }
 .selected-item { background: #244d3b; border-color: #5a9b79; }

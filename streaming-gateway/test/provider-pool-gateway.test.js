@@ -239,6 +239,21 @@ test('provider prewarm leases assigned resources before the first viewer', async
   const next = await app.locals.prewarmAssignedResources('rotation');
   assert.equal(next.warmed, 1);
   assert.deepEqual(app.locals.providerPool.snapshot().map(item => [item.provider, item.channel]), [['A','beIN SPORTS HD 2']]);
+  let targetProvider = 'A';
+  config.providerAssignments = () => ({ assignments: [{ matchId: 'new-live', providerId: targetProvider, resolvedChannel: 'beIN SPORTS HD 2' }, { matchId: 'peer', providerId: 'B', resolvedChannel: 'Peer TV' }] });
+  config.getPlaybackForSource = async (_, id) => ({ is_streaming_active: true, match_id: id, channel_id: id === 'peer' ? 'Peer TV' : 'beIN SPORTS HD 2',
+    preferred_provider: id === 'peer' ? 'B' : targetProvider, provider_sources: id === 'peer' ? { B: 'https://b.example/peer/main.m3u8' } : { [targetProvider]: `https://${targetProvider.toLowerCase()}.example/new-live/main.m3u8` } });
+  await app.locals.prewarmAssignedResources('test');
+  const peer = app.locals.providerPool.leases.get('B'), peerId = peer.id;
+  targetProvider = 'D'; calls.length = 0;
+  const scoped = await app.locals.prewarmAssignedResources('operator-change', { matchId: 'new-live' });
+  assert.equal(scoped.warmed, 2);
+  assert.equal(app.locals.providerPool.leases.get('B'), peer);
+  assert.equal(peer.id, peerId);
+  assert.equal(peer.controller.signal.aborted, false);
+  assert.ok(app.locals.providerPool.leases.get('D'));
+  assert.equal(app.locals.providerPool.leases.has('A'), false);
+  assert.equal(calls.some(url => url.includes('b.example')), false);
 });
 
 for (const failure of ['manifest-509', 'segment-503', 'all-failed']) {

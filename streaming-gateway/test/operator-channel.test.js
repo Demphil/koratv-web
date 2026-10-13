@@ -53,7 +53,7 @@ test('the operator can replace its match when all eight resources have viewers a
     },
     warm: async (_, lease) => pool.run(lease, async () => ({ ok: lease.url.includes('working') })),
     install: async result => installs.push(result), refresh: () => {} });
-  assert.deepEqual(await prepare('New A', () => {}, { matchId: 'A' }), { name: 'New A' });
+  assert.deepEqual(await prepare('New A', () => {}, { matchId: 'A' }), { name: 'New A', providerId: 'A' });
   assert.equal(installs.length, 1);
   for (const peer of leases.slice(1)) assert.equal(pool.valid(peer), true);
 });

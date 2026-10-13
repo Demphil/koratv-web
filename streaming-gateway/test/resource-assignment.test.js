@@ -115,6 +115,25 @@ test('manual match selection can pin the top resources across both sites', () =>
   assert.equal(JSON.stringify(plan).includes('https://'), false);
 });
 
+test('provider reservations honor aliases, preserve peer assignments and expire after the match', () => {
+  const now = new Date('2026-10-03T16:10:00Z');
+  const matches = [
+    { match_id: 'api', home_team: 'Croatia', away_team: 'England', kickoff_time: '2026-10-03T16:00:00Z', payload: { status: 'LIVE' } },
+    { match_id: 'kooora', source: 'kooora', home_team: 'كرواتيا', away_team: 'إنجلترا', kickoff_time: '2026-10-03T16:00:00Z', payload: { status: 'LIVE' } },
+    { match_id: 'peer', home_team: 'Iceland', away_team: 'Bulgaria', kickoff_time: '2026-10-03T16:00:00Z', payload: { status: 'LIVE' } },
+  ];
+  const input = { now, matches, routeStates: Object.fromEntries(matches.map(row => [row.match_id, { status: 'RESOLVED', resolvedChannel: row.match_id === 'peer' ? 'Peer TV' : 'Match TV', providerIds: ['A', 'B'] }])),
+    providerCatalog: { providers: { A: { enabled: true }, B: { enabled: true } } }, previousAssignments: [{ matchId: 'peer', providerId: 'A', resolvedChannel: 'Peer TV' }],
+    providerBindings: { kooora: { day: '2026-10-03', manual: true, providerId: 'B' } } };
+  const plan = buildProjectAssignmentPlan(input);
+  assert.equal(plan.assignments.find(row => row.matchId === 'kooora').providerId, 'B');
+  assert.equal(plan.assignments.find(row => row.matchId === 'peer').providerId, 'A');
+  assert.equal(plan.assignments.length, 2);
+  assert.equal(buildProjectAssignmentPlan({ ...input, providerBindings: { kooora: { day: '2026-10-02', manual: true, providerId: 'A' } } }).assignments.length, 2);
+  matches[0].payload.status = matches[1].payload.status = 'RESULT';
+  assert.equal(buildProjectAssignmentPlan(input).assignments[0].providerId, 'A');
+});
+
 test('manual match selection is ignored when disabled or for another date', () => {
   assert.deepEqual(parseManualMatchSelection({ enabled: false, matches: ['a'] }, { dateKey: '2026-10-02' }), []);
   assert.deepEqual(parseManualMatchSelection({ enabled: true, date: '2026-10-03', matches: ['a'] }, { dateKey: '2026-10-02' }), []);

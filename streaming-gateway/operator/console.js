@@ -5,6 +5,16 @@ import { currentConsoleSelection } from './selection.js';
   let csrf = '', snapshot, selected = [], noticeItems = [], editing = false, polling, activeNotice = 0, importJob = '', searchJob = '', refreshing;
   const previewStage = $('notice-preview-stage');
   let channelSearchTimer, channelSearchVersion = 0, transportFailure = false, loggingIn = false;
+  const pendingRequests = new Map(), rowJobs = new Map();
+  const active = job => ['queued', 'running'].includes(job.state);
+  const matchLabel = id => { const row = snapshot.matches.find(item => item.matchId === id); return row ? `${row.homeTeam} - ${row.awayTeam}` : id; };
+  async function submitJob(path, body) {
+    const key = `${path}:${JSON.stringify(body)}`;
+    if (!pendingRequests.has(key)) pendingRequests.set(key, crypto.randomUUID());
+    const result = await api(path, { ...body, requestId: pendingRequests.get(key) });
+    pendingRequests.delete(key);
+    return result;
+  }
   function suggestChannels(value) {
     clearTimeout(channelSearchTimer);
     const version = ++channelSearchVersion;
@@ -24,6 +34,8 @@ import { currentConsoleSelection } from './selection.js';
   Object.assign(errors, { invalid_team_names: 'أدخل اسمين مختلفين للفريقين، من حرفين إلى 80 حرفاً.', source_search_failed: 'تعذر الاتصال بـ Kooora. لم تُضف مباراة غير مؤكدة.', search_expired: 'انتهت صلاحية نتائج البحث. ابحث مجدداً.', match_not_found: 'لم تعد المباراة موجودة بالهوية نفسها في Kooora.', match_not_broadcastable: 'المباراة ملغاة أو مؤجلة؛ لا يمكن إضافتها.', search_rate_limited: 'بلغت حد البحث لهذه الساعة. حاول لاحقاً.' });
   errors.login_in_progress = 'يجري التحقق من الدخول. انتظر لحظة ثم حاول مجدداً.';
   phaseNames.searching_match = 'تأكيد المباراة والقنوات من Kooora';
+  phaseNames.queued = 'في طابور التنفيذ';
+  Object.assign(errors, { provider_busy: 'المورد مشغول بمباراة أخرى. لم يتغير بثها.', provider_reserved: 'المورد محجوز لمباراة أخرى. اختر مورداً آخر.', provider_unavailable: 'المورد قيد اختبار آخر. حاول لاحقاً.', invalid_provider: 'اختر مورداً مفعلاً من القائمة.', queue_full: 'طابور العمليات ممتلئ. انتظر اكتمال العمليات الحالية.', invalid_channel: 'حدد اسم قناة صالحاً أولاً.' });
   errors.channel_not_found = 'لم يعثر المورد على قناة تطابق هذا الاسم. اختر قناة من قائمة Kooora الخاصة بالمباراة؛ أسماء المنصات مثل MBC Shahid ليست بديلاً عن اسم قناة محددة. لم تتغير القناة المعتمدة.';
   function message(text, error = false) { $('message').textContent = text; $('message').classList.toggle('error', error); }
   async function api(path, body) {
@@ -44,6 +56,7 @@ import { currentConsoleSelection } from './selection.js';
   function loggedOut() { $('login').hidden = false; $('workspace').hidden = true; $('refresh').hidden = true; $('logout').hidden = true; clearInterval(polling); }
   function renderSelected() {
     $('selected-count').textContent = `${selected.length} / 8`;
+    $('renew-selected').disabled = !selected.length || snapshot.jobs.some(job => active(job) && job.kind !== 'match_search');
     $('selected-list').replaceChildren(...selected.map((id, index) => {
       const match = snapshot.matches.find(row => row.matchId === id);
       const row = document.createElement('div'); row.className = 'selected-item';
@@ -53,6 +66,7 @@ import { currentConsoleSelection } from './selection.js';
     }));
   }
   function renderMatches() {
+    const providerDrafts = new Map([...document.querySelectorAll('.provider-select')].filter(input => input.dataset.dirty === 'true').map(input => [input.closest('.match-row').dataset.match, input.value]));
     const channelDrafts = new Map([...document.querySelectorAll('.match-row')].map(row => [row.dataset.match, row.querySelector('input[list]')])
       .filter(([, input]) => input?.dataset.dirty === 'true').map(([id, input]) => [id, input.value]));
     renderSelected();
@@ -77,16 +91,65 @@ import { currentConsoleSelection } from './selection.js';
       broadcasts.hidden = !(match.broadcastChannels || []).length;
       broadcasts.onchange = () => { if (!broadcasts.value) return; input.value = broadcasts.value; input.dataset.dirty = 'true'; editing = true; };
       channelEditor.append(broadcasts, input);
-      const save = button('radio', 'اختبار واعتماد القناة', async () => { save.disabled = true; try { const result = await api('channel', { matchId: match.matchId, channel: input.value }); row.dataset.job = result.job.id; message('بدأ البحث والاختبار. عند امتلاء الموارد قد يتوقف بث هذه المباراة مؤقتاً أثناء اختبار القناة؛ بقية المباريات لا تتأثر.'); await refresh(false); } catch (error) { message(error.message, true); save.disabled = false; } });
+      const supplier = document.createElement('div'); supplier.className = 'provider-editor';
+      const provider = document.createElement('select'); provider.className = 'provider-select'; provider.setAttribute('aria-label', 'المورد المحجوز');
+      const automatic = document.createElement('option'); automatic.value = ''; automatic.textContent = 'تلقائي'; provider.append(automatic);
+      for (const { id } of snapshot.providers || []) { const option = document.createElement('option'); option.value = id; option.textContent = `المورد ${id}`; provider.append(option); }
+      provider.value = providerDrafts.get(match.matchId) ?? match.boundProvider ?? '';
+      if (providerDrafts.has(match.matchId)) provider.dataset.dirty = 'true';
+      provider.onchange = () => { provider.dataset.dirty = 'true'; editing = true; };
+      const actual = document.createElement('small'); actual.className = 'provider-actual'; supplier.append(provider, actual);
+      async function action(path, body, control) {
+        control.disabled = true;
+        try { const result = await submitJob(path, body); rowJobs.set(match.matchId, result.job.id); message('تمت إضافة العملية إلى الطابور. يجري اختبار الرابط قبل اعتماده.'); await refresh(false); }
+        catch (error) { message(error.message, true); control.disabled = false; }
+      }
+      const save = button('radio', 'اختبار واعتماد القناة', () => action('channel', { matchId: match.matchId, channel: input.value }, save));
       save.className = 'channel-save'; save.append(document.createTextNode('اختبار واعتماد'));
-      row.append(check, name, state, channelEditor, save); return row;
+      const pin = button('pin', 'حجز أو تغيير المورد', () => action('provider', { matchId: match.matchId, providerId: provider.value }, pin)); pin.append(document.createTextNode('حجز المورد'));
+      const renew = button('refresh-cw', 'تجديد الرابط من المورد واختبار الفيديو', () => action('refresh-links', { matchId: match.matchId }, renew)); renew.append(document.createTextNode('تجديد الرابط'));
+      const controls = document.createElement('div'); controls.className = 'match-actions'; controls.append(save, pin, renew);
+      row.append(check, name, state, channelEditor, supplier, controls); return row;
     }));
+    updateProviderStatus();
+  }
+  function updateProviderStatus() {
+    $('servers').replaceChildren(...snapshot.status.accounts.map(account => { const node = document.createElement('span'); node.className = `server ${/STOPPED|UNAVAILABLE|COOLDOWN|STALLED/.test(account.status) ? 'bad' : ''}`; node.textContent = `${account.provider} · ${account.status}${account.current_channel ? ` · ${account.current_channel}` : ''}`; return node; }));
+    for (const row of document.querySelectorAll('.match-row')) {
+      const match = snapshot.matches.find(item => item.matchId === row.dataset.match); if (!match) continue;
+      const account = snapshot.status.accounts.find(item => item.provider === match.assignedProvider);
+      const actual = row.querySelector('.provider-actual');
+      const checked = snapshot.state.providers?.[match.matchId]?.verifiedAt || account?.last_checked_at;
+      const date = checked && new Date(checked);
+      actual.textContent = `${match.assignedProvider ? `الفعلي: ${match.assignedProvider}` : 'لا يوجد مورد نشط'}${match.boundProvider ? ` · محجوز: ${match.boundProvider}` : ''}${date && !Number.isNaN(date.getTime()) ? ` · فحص ${date.toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' })}` : ''}`;
+      const select = row.querySelector('.provider-select');
+      if (select.dataset.dirty !== 'true') select.value = match.boundProvider || '';
+      for (const option of select.options) {
+        if (!option.value) continue;
+        const reserved = snapshot.matches.find(item => item.matchId !== match.matchId && item.boundProvider === option.value);
+        const used = snapshot.status.accounts.find(item => item.provider === option.value)?.matchIds?.some(id => id !== match.matchId);
+        option.disabled = Boolean(reserved || used);
+        option.textContent = `المورد ${option.value}${reserved || used ? ' · مشغول' : ''}`;
+      }
+    }
   }
   function renderJobs() {
-    $('jobs').replaceChildren(...snapshot.jobs.slice().reverse().map(job => { const row = document.createElement('div'); row.className = `job ${job.state === 'failed' ? 'error' : ''}`; row.textContent = `${job.state === 'failed' ? errors[job.error] || 'تعذر الإكمال' : job.displayOnly && job.state === 'complete' ? 'أُضيفت المباراة للعرض في الموقع' : phaseNames[job.phase] || job.phase}${job.channel ? ` · ${job.channel}` : ''}`; return row; }));
-    const running = snapshot.jobs.some(job => job.state === 'running' && job.kind !== 'match_search');
+    $('jobs').replaceChildren(...snapshot.jobs.slice().reverse().map(job => {
+      const row = document.createElement('div'); row.className = `job ${job.state === 'failed' ? 'error' : ''}`;
+      row.textContent = `${job.matchId ? `${matchLabel(job.matchId)} · ` : ''}${job.state === 'failed' ? errors[job.error] || 'تعذر الإكمال' : job.displayOnly && job.state === 'complete' ? 'أُضيفت المباراة للعرض في الموقع' : phaseNames[job.phase] || job.phase}${job.channel ? ` · ${job.channel}` : ''}${job.total ? ` · ${job.completed || 0}/${job.total}` : ''}`;
+      for (const item of job.results || []) { const result = document.createElement('div'); result.className = item.ok ? 'job-result' : 'job-result error'; result.textContent = `${matchLabel(item.matchId)}: ${item.ok ? `تم التجديد · ${item.provider || ''}` : errors[item.error] || 'تعذر التجديد'}`; row.append(result); }
+      return row;
+    }));
+    const running = snapshot.jobs.some(job => active(job) && job.kind !== 'match_search');
     $('save-selection').disabled = running;
-    for (const button of document.querySelectorAll('.channel-save')) button.disabled = running;
+    $('renew-selected').disabled = running || !selected.length;
+    for (const row of document.querySelectorAll('.match-row')) {
+      const currentJob = snapshot.jobs.find(job => active(job) && (job.kind === 'selection' || job.matchId === row.dataset.match || job.matchIds?.includes(row.dataset.match)));
+      const busy = Boolean(currentJob);
+      for (const control of row.querySelectorAll('.match-actions button')) control.disabled = busy;
+      row.classList.toggle('busy', busy);
+      if (currentJob) row.querySelector('.badge').textContent = phaseNames[currentJob.phase] || 'قيد التنفيذ';
+    }
     for (const button of document.querySelectorAll('.import-match-button')) button.disabled = running || button.dataset.unavailable === 'true';
     $('resource-count').textContent = `${snapshot.status.prewarm.warmed} روابط جاهزة / 8`;
   }
@@ -100,9 +163,10 @@ import { currentConsoleSelection } from './selection.js';
     if (!Array.isArray(next.matches) || !Array.isArray(next.jobs) || !Array.isArray(next.channels) || !next.state?.selection || !next.status?.prewarm) throw new Error('لم تصل حالة كاملة من الخادم. بقيت اختياراتك محفوظة.');
     snapshot = next;
     if (transportFailure) { transportFailure = false; message('تم استعادة الاتصال.'); }
+    const previousIds = [...document.querySelectorAll('.match-row')].map(row => row.dataset.match);
     if (searchJob) {
       const job = snapshot.jobs.find(job => job.id === searchJob);
-      if (job && job.state !== 'running') {
+      if (job && !active(job)) {
         if (job.state === 'complete') renderImportResults(job.result);
         else { $('import-search-status').textContent = errors[job.error] || 'تعذر البحث. حاول مجدداً.'; }
         searchJob = ''; $('import-search').disabled = false;
@@ -112,7 +176,7 @@ import { currentConsoleSelection } from './selection.js';
       }
     }
     const importedJob = snapshot.jobs.find(job => job.id === importJob);
-    if (importedJob && importedJob.state !== 'running') {
+    if (importedJob && !active(importedJob)) {
       renderMatches();
       importJob = '';
     }
@@ -121,13 +185,13 @@ import { currentConsoleSelection } from './selection.js';
       selected = selection.matches;
       $('manual-enabled').checked = selection.enabled;
       $('channel-names').replaceChildren(...snapshot.channels.map(channel => { const option = document.createElement('option'); option.value = channel.name; return option; }));
-      $('servers').replaceChildren(...snapshot.status.accounts.map(account => { const node = document.createElement('span'); node.className = `server ${/STOPPED|UNAVAILABLE|COOLDOWN|STALLED/.test(account.status) ? 'bad' : ''}`; node.textContent = `${account.provider} · ${account.status}${account.current_channel ? ` · ${account.current_channel}` : ''}`; return node; }));
       noticeItems = (snapshot.state.notices.items || []).map(item => ({ title: item.title || '', text: item.text, image: item.image, duration: item.duration ?? null, design: normalizeNoticeDesign(item.design) }));
       if (!noticeItems.length) noticeItems = [newNotice()];
       for (const key of ['repeats', 'duration', 'interval']) $(`notice-${key}`).value = snapshot.state.notices[key];
       $('notice-target').value = snapshot.state.notices.matchIds.length ? 'selected' : 'all';
       renderMatches(); renderNotices(); editing = false;
     }
+    if (!render && !$('search').value && $('status-filter').value === 'all' && previousIds.join('|') !== snapshot.matches.map(row => row.matchId).join('|') && !document.activeElement?.closest('.match-row')) renderMatches();
     const available = new Set(snapshot.matches.map(match => match.matchId));
     const current = selected.filter(id => available.has(id));
     if (current.length !== selected.length) { selected = current; renderSelected(); }
@@ -136,11 +200,12 @@ import { currentConsoleSelection } from './selection.js';
       if (match) {
         const badge = row.querySelector('.badge'); badge.textContent = `${match.isLive ? 'مباشر' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`; badge.classList.toggle('ready', match.sourceReady);
         const input = row.querySelector('input[list]'), broadcasts = row.querySelector('.channel-editor select');
-        const job = snapshot.jobs.find(job => job.id === row.dataset.job);
-        if (job?.state === 'complete') { delete input.dataset.dirty; delete row.dataset.job; }
+        const job = snapshot.jobs.find(job => job.id === rowJobs.get(match.matchId));
+        if (job?.state === 'complete') { if (job.kind === 'channel') delete input.dataset.dirty; if (job.kind === 'provider') delete row.querySelector('.provider-select').dataset.dirty; rowJobs.delete(match.matchId); }
         if (input.dataset.dirty !== 'true') { input.value = match.channelName || ''; broadcasts.value = (match.broadcastChannels || []).includes(input.value) ? input.value : ''; }
       }
     }
+    updateProviderStatus();
     renderJobs();
   }
   function newNotice() { return { title: '', text: '', image: '', duration: null, design: normalizeNoticeDesign() }; }
@@ -264,7 +329,8 @@ import { currentConsoleSelection } from './selection.js';
   }
   $('manual-enabled').onchange = () => { editing = true; };
   document.querySelectorAll('.notice-settings input, .notice-settings select').forEach(input => { input.oninput = () => { editing = true; }; });
-  $('save-selection').onclick = async () => { try { await api('selection', { enabled: $('manual-enabled').checked, matches: selected }); editing = false; message('بدأ تجهيز الاختيار في الخلفية المشتركة.'); await refresh(false); } catch (error) { message(error.message, true); } };
+  $('save-selection').onclick = async () => { try { await submitJob('selection', { enabled: $('manual-enabled').checked, matches: selected }); editing = false; message('بدأ تجهيز الاختيار في الخلفية المشتركة.'); await refresh(false); } catch (error) { message(error.message, true); } };
+  $('renew-selected').onclick = async () => { const control = $('renew-selected'); control.disabled = true; try { await submitJob('refresh-links', { matchIds: selected }); message('بدأ تجديد الروابط المحددة بالتتابع.'); await refresh(false); } catch (error) { message(error.message, true); } finally { renderJobs(); } };
   $('add-notice').onclick = () => { if (noticeItems.length < 10) { noticeItems.push(newNotice()); activeNotice = noticeItems.length - 1; editing = true; } renderNotices(); };
   $('publish-notices').onclick = async () => { const button = $('publish-notices'); try { validateNoticeInputs(); button.disabled = true; await api('notices', { enabled: true, items: noticeItems, repeats: Number($('notice-repeats').value), duration: Number($('notice-duration').value), interval: Number($('notice-interval').value), matchIds: $('notice-target').value === 'selected' ? selected : [] }); message('تم نشر الإشعارات إلى المشغلات المفتوحة والـ embed.'); editing = false; } catch (error) { message(error.message, true); } finally { button.disabled = false; } };
   $('stop-notices').onclick = async () => { try { await api('notices/stop', {}); message('تم إيقاف الإشعارات فوراً.'); } catch (error) { message(error.message, true); } };

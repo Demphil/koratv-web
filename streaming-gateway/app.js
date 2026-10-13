@@ -465,6 +465,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   };
   const prewarmKeepalive = new Map();
   const preparedMatches = new Map();
+  let operatorPreparing = false;
   const normalizeRuntimeMatch = row => {
     if (!prewarmState.enabled || row.resource_status !== 'ASSIGNED') return normalizeMatch(row, config);
     const prepared = preparedMatches.get(row.match_id || row.id);
@@ -526,8 +527,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     return { ok: false, error: 'playlist_depth' };
   };
 
-  const prewarmAssignedResources = async (reason = 'interval', { fresh = false } = {}) => {
-    if (!prewarmState.enabled || prewarmState.running) return prewarmState;
+  const prewarmAssignedResources = async (reason = 'interval', { fresh = false, matchId = '' } = {}) => {
+    if (!prewarmState.enabled || prewarmState.running || (operatorPreparing && !reason.startsWith('operator-'))) return prewarmState;
     prewarmState.running = true;
     prewarmState.lastRunAt = new Date().toISOString();
     prewarmState.lastReason = reason;
@@ -537,6 +538,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const assignments = (config.providerAssignments?.().assignments || [])
         .filter((assignment) => assignment?.matchId && assignment?.providerId)
         .slice(0, config.prewarmMaxResources || 8);
+      const targets = matchId ? assignments.filter(item => item.matchId === matchId || item.aliases?.includes(matchId)) : assignments;
+      const targetViewers = new Set(targets.map(item => `prewarm:${item.matchId}`));
       const scheduledViewers = new Set(assignments.map(item => `prewarm:${item.matchId}`));
       for (const id of preparedMatches.keys()) {
         if (!scheduledViewers.has(`prewarm:${id}`)) preparedMatches.delete(id);
@@ -545,13 +548,16 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         if (!scheduledViewers.has(viewerId)) {
           providerPool.releaseViewer(key, viewerId);
           prewarmKeepalive.delete(key);
+        } else if (matchId && !targetViewers.has(viewerId)) {
+          currentKeys.add(key);
         }
       }
-      for (const assignment of assignments) {
+      for (const assignment of targets) {
         const result = {
           matchId: assignment.matchId,
           channel: assignment.resolvedChannel || null,
-          provider: assignment.providerId || null
+          provider: assignment.providerId || null,
+          checkedAt: new Date().toISOString()
         };
         try {
           let playback = await config.getPlaybackForSource('', assignment.matchId, { fresh });
@@ -561,6 +567,18 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
             continue;
           }
           const viewerId = `prewarm:${assignment.matchId}`;
+          if (matchId) {
+            const current = [...providerPool.leases.values()].find(lease => providerPool.demands.get(lease.key)?.viewers.has(viewerId));
+            if (current && current.provider !== assignment.providerId) {
+              const viewers = providerPool.demands.get(current.key).viewers;
+              if ([...viewers.keys()].some(id => id.startsWith('prewarm:') && id !== viewerId)) throw new Error('provider_busy');
+              const occupied = providerPool.leases.get(assignment.providerId);
+              if (occupied && occupied.key !== current.key) throw new Error('provider_busy');
+              if (!playback.provider_sources[assignment.providerId]) throw new Error('source_unavailable');
+              // Move only this match after verification; protected peer leases remain held.
+              providerPool.revoke(current.provider);
+            }
+          }
           const tried = new Set();
           let lease;
           let warmed = { ok: false, error: 'source_unavailable' };
@@ -592,9 +610,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           results.push({ ...result, ok: false, error: error instanceof PoolError ? error.code : (error?.message || 'prewarm_failed') });
         }
       }
-      prewarmState.results = results.slice(-(config.prewarmMaxResources || 8));
-      prewarmState.warmed = results.filter((item) => item.ok).length;
-      prewarmState.failed = results.length - prewarmState.warmed;
+      const previous = new Map(prewarmState.results.map(item => [item.matchId, item]));
+      for (const result of results) previous.set(result.matchId, result);
+      prewarmState.results = assignments.map(item => previous.get(item.matchId)).filter(Boolean);
+      prewarmState.warmed = prewarmState.results.filter(item => item.ok).length;
+      prewarmState.failed = prewarmState.results.length - prewarmState.warmed;
       for (const key of [...prewarmKeepalive.keys()]) {
         if (!currentKeys.has(key)) {
           providerPool.releaseViewer(key, prewarmKeepalive.get(key));
@@ -610,22 +630,32 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
 
   registerOperatorConsole(app, {
     config, redis, clientIp,
+    beginOperation: async () => { operatorPreparing = true; while (prewarmState.running) await wait(100); },
+    endOperation: () => { operatorPreparing = false; },
     getMatches: async () => (await config.getMatchesForOrigin(config.frontend))
       .filter(row => !isEuropeanYouthLeague(row.league) && (isOperatorImportedMatch(row) || isAllowedMatch({ league: row.league, leagueCountry: row.payload?.leagueCountry, homeTeam: row.home_team, awayTeam: row.away_team })) && sourceMatchState(row.payload || row) !== 'unavailable')
       .map(row => ({ ...normalizeRuntimeMatch(row), broadcastChannels: broadcastChannelCandidates(row) }))
       .filter(row => moroccoPart(row.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === moroccoPart(new Date(), { year: 'numeric', month: '2-digit', day: '2-digit' }))
       .map(({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected }) => ({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected }))
       .sort((a, b) => Number(b.isLive) - Number(a.isLive) || (a.isLive ? Date.parse(b.scheduledAt) - Date.parse(a.scheduledAt) : Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))),
-    status: () => ({ accounts: (accountHealth?.snapshot() || []).map(({ provider, status, current_channel, last_http_code, cooldown_until }) => ({ provider, status, current_channel, last_http_code, cooldown_until })), prewarm: prewarmState, gateway: 'Oracle', player: 'Njalla', maxResources: 8 }),
+    status: () => ({ accounts: (accountHealth?.snapshot() || []).map(({ provider, status, current_channel, last_http_code, cooldown_until, last_checked_at }) => {
+      const lease = providerPool?.leases.get(provider);
+      const matchIds = [...(providerPool?.demands.get(lease?.key)?.viewers.keys() || [])].filter(id => id.startsWith('prewarm:')).map(id => id.slice(8));
+      return { provider, status, current_channel, last_http_code, cooldown_until, last_checked_at, matchIds };
+    }), prewarm: prewarmState, gateway: 'Oracle', player: 'Njalla', maxResources: 8 }),
     prepareChannel: createOperatorChannelPreparer({
       pool: providerPool, accounts: config.providerAccounts,
       resolveChannel: config.resolveOperatorChannel, discover: config.discoverOperatorChannel,
       warm: warmPlaybackManifest, install: installPreparedOperatorChannel,
       refresh: () => config.refreshProviderCatalog()
     }),
-    applyResources: async ({ matchId } = {}) => {
+    applyResources: async ({ matchId, allowDeferred = false } = {}) => {
+      const before = config.providerAssignments?.().assignments || [];
       await refreshOperatorResources();
       config.refreshProviderCatalog?.();
+      const targetAssignment = config.providerAssignments?.().assignments?.find(item => item.matchId === matchId || item.aliases?.includes(matchId));
+      if (matchId) for (const id of new Set([matchId, targetAssignment?.matchId, ...(targetAssignment?.aliases || [])].filter(Boolean))) config.invalidatePlayback?.(id);
+      else config.invalidatePlayback?.();
       await config.refreshMatchSnapshots?.();
       if (providerPool) {
         const wanted = new Set((config.providerAssignments?.().assignments || []).map(item => item.resolvedChannel));
@@ -637,13 +667,19 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         }
       }
       while (prewarmState.running) await new Promise(resolve => setTimeout(resolve, 100));
-      let result = await prewarmAssignedResources('operator-change', { fresh: true });
-      if (matchId && !result.results.some(row => row.matchId === matchId && row.ok)) {
+      let result = await prewarmAssignedResources('operator-change', { matchId });
+      const targetReady = state => state.results.some(row => row.matchId === (targetAssignment?.matchId || matchId) && row.ok);
+      const deferred = allowDeferred && !targetAssignment && config.providerAssignments?.().ignored?.some(item => (item.matchId === matchId || item.aliases?.includes(matchId)) && ['not_due', 'manual_selection_required'].includes(item.reason));
+      if (matchId && !targetReady(result) && !deferred) {
         await new Promise(resolve => setTimeout(resolve, 31000));
         while (prewarmState.running) await new Promise(resolve => setTimeout(resolve, 100));
-        result = await prewarmAssignedResources('operator-retry');
-        if (!result.results.some(row => row.matchId === matchId && row.ok)) throw new Error('channel_probe_failed');
+        result = await prewarmAssignedResources('operator-retry', { matchId });
+        if (!targetReady(result)) throw new Error('channel_probe_failed');
       }
+      const after = config.providerAssignments?.().assignments || [];
+      const identity = row => `${row?.providerId || ''}:${row?.resolvedChannel || ''}`;
+      return { changedMatchIds: [...new Set([...before, ...after].filter(row => identity(before.find(item => item.matchId === row.matchId))
+        !== identity(after.find(item => item.matchId === row.matchId))).flatMap(row => [row.matchId, ...(row.aliases || [])]))] };
     }
   });
 

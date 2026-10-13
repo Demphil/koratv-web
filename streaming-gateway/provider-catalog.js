@@ -3,6 +3,7 @@ import { findChannelNameMatch, createChannelNameMatcher } from '../shared/channe
 import { normalizeName, beinRegion, isProviderChannelCompatible, isCatalogChannelSourceVerified } from '../shared/provider-channel-match.mjs';
 import { PROVIDER_IDS } from './provider-pool.js';
 import { activeOperatorOverride, operatorPath } from './operator-state.js';
+import { moroccoMatchDay } from '../shared/operator-imported-match.mjs';
 
 export function selectProviderChannel(match) {
   const qualityRank = candidate => /\b(?:4k|uhd|fhd|1080p)\b/i.test(candidate.source_name) ? 1 : /\b(?:hd|720p)\b/i.test(candidate.source_name) ? 0 : 2;
@@ -132,6 +133,10 @@ export function createProviderCatalog(env = process.env) {
       refresh();
       const assignment = assignmentFor(matchId);
       if (assignment?.status !== 'ASSIGNED') return [];
+      const raw = (assignments.assignments || []).find(item => item.matchId === matchId || item.aliases?.includes(matchId));
+      const binding = operator.providers?.[matchId] || operator.providers?.[raw?.matchId]
+        || raw?.aliases?.map(id => operator.providers?.[id]).find(Boolean);
+      if (binding?.day === moroccoMatchDay() && binding.manual !== false) return [binding.providerId];
       const reserved = new Set((assignments.assignments || [])
         .filter(item => String(item.matchId) !== String(matchId) && !item.aliases?.includes(String(matchId)))
         .map(item => item.providerId));

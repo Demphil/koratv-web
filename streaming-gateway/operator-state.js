@@ -5,7 +5,7 @@ import { publicMatchId } from '../shared/public-match-id.mjs';
 import { normalizeNoticeDesign } from './player/broadcast-notice.js';
 
 export const operatorPath = (env = process.env) => env.OPERATOR_CONTROL_PATH || `${env.PROVIDER_POOL_DIR || '/etc/koratv'}/operator-control.json`;
-export const emptyOperatorState = () => ({ revision: 0, selection: null, overrides: {}, channels: {}, notices: { enabled: false, campaign: '', items: [], repeats: 1, duration: 10, interval: 300, matchIds: [] } });
+export const emptyOperatorState = () => ({ revision: 0, selection: null, overrides: {}, providers: {}, channels: {}, notices: { enabled: false, campaign: '', items: [], repeats: 1, duration: 10, interval: 300, matchIds: [] } });
 export async function readOperatorState(path) {
   try { return { ...emptyOperatorState(), ...JSON.parse(await readFile(path, 'utf8')) }; }
   catch (error) { if (error.code !== 'ENOENT') throw error; return emptyOperatorState(); }

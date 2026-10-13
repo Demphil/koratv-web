@@ -86,11 +86,9 @@ test('player CSP allows only the direct ad script hosts requested by the page', 
   }
 });
 
-test('player redeploy applies nginx headers with the published files', () => {
+test('routine data refresh cannot redeploy the player, restart streaming or overwrite nginx', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/sync-data.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /streaming-gateway\/nginx\.conf\.example/);
-  assert.match(workflow, /streaming-gateway\/nginx\.http-player\.conf\.example/);
-  assert.match(workflow, /install -m 0644 "\$ROOT\/nginx\.conf\.example" \/etc\/nginx\/sites-available\/koratv/);
-  assert.match(workflow, /nginx -t/);
-  assert.match(workflow, /systemctl reload nginx/);
+  assert.match(workflow, /needs: metadata/);
+  assert.match(workflow, /prune:matches/);
+  assert.doesNotMatch(workflow, /pm2|nginx\.conf|deploy-player|rsync|scp-action|ssh-action/);
 });

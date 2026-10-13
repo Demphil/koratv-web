@@ -18,7 +18,7 @@ const execute = promisify(execFile);
 const cwd = fileURLToPath(new URL('.', import.meta.url));
 const require = createRequire(import.meta.url);
 const cookie = (token, age) => `${operatorCookie}=${token}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}`;
-export function registerOperatorConsole(app, { config, redis, clientIp, getMatches, prepareChannel, applyResources, status, matchWorker = runOperatorMatchWorker }) {
+export function registerOperatorConsole(app, { config, redis, clientIp, getMatches, prepareChannel, applyResources, status, beginOperation, endOperation, matchWorker = runOperatorMatchWorker }) {
   const path = config.operatorControlPath || '/etc/koratv/operator-control.json';
   const mediaPath = config.operatorMediaPath || '/etc/koratv/operator-media';
   const clients = new Set();
@@ -26,7 +26,8 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
   const jobs = new Map();
   const searchResults = new Map();
   let searching = false;
-  let mutation = Promise.resolve(), operation = false, authenticating = false;
+  let mutation = Promise.resolve(), operationQueue = Promise.resolve(), pendingOperations = 0, authenticating = false;
+  const requests = new Map();
   const read = () => readOperatorState(path);
   const update = change => {
     const work = mutation.catch(() => {}).then(async () => {
@@ -67,7 +68,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
   for (const asset of ['three.module.min.js', 'three.core.min.js']) app.get(`/api/operator/ui/${asset}`, async (req, res) => res.type('js').send(await readFile(join(dirname(require.resolve('three')), asset), 'utf8')));
   app.get('/api/operator/ui/broadcast-notice.css', async (req, res) => res.type('css').send(await readFile(new URL('./player/broadcast-notice.css', import.meta.url), 'utf8')));
   app.get('/api/operator/ui/broadcast-notice.js', async (req, res) => res.type('js').send(await readFile(new URL('./player/broadcast-notice.js', import.meta.url), 'utf8')));
-  const icons = new Set(['refresh-cw', 'log-out', 'save', 'square', 'plus', 'send', 'arrow-up', 'arrow-down', 'x', 'radio', 'trash-2', 'play', 'eye', 'search']);
+  const icons = new Set(['refresh-cw', 'log-out', 'save', 'square', 'plus', 'send', 'arrow-up', 'arrow-down', 'x', 'radio', 'trash-2', 'play', 'eye', 'search', 'pin']);
   app.get('/api/operator/ui/icons/:name', async (req, res) => {
     if (!icons.has(req.params.name)) return res.sendStatus(404);
     res.type('svg').send(await readFile(join(dirname(require.resolve('lucide-static/package.json')), 'icons', `${req.params.name}.svg`), 'utf8'));
@@ -97,8 +98,12 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     res.set('Set-Cookie', cookie('', 0)).json({ ok: true });
   });
   app.get('/api/operator/state', authorize, async (req, res) => {
-    const matches = await getMatches();
-    res.json({ csrf: req.operatorSession.csrf, day: new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Casablanca' }).format(new Date()), state: await read(), matches, status: status(),
+    const matches = await getMatches(), state = await read();
+    const assignments = config.providerAssignments?.().assignments || [];
+    res.json({ csrf: req.operatorSession.csrf, day: moroccoMatchDay(), state, matches: matches.map(match => {
+      const assignment = assignments.find(item => item.matchId === match.matchId || item.aliases?.includes(match.matchId));
+      return { ...match, assignedProvider: assignment?.providerId || '', boundProvider: sourceMatchState(match) !== 'ended' && state.providers?.[match.matchId]?.day === moroccoMatchDay() && state.providers[match.matchId].manual !== false ? state.providers[match.matchId].providerId : '' };
+    }), status: status(), providers: Object.entries(config.providerAccounts?.() || {}).filter(([, account]) => account.enabled).map(([id]) => ({ id })),
       channels: [...new Set(matches.flatMap(match => [match.channelName, ...(match.broadcastChannels || [])]).filter(Boolean))].slice(0, 64).map(name => ({ name })),
       jobs: [...jobs.values()] });
   });
@@ -113,17 +118,33 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     res.json({ channels });
   });
   const runJob = (req, res, task, { exclusive = true, kind } = {}) => {
-    if (exclusive && operation) return res.status(409).json({ error: 'operation_in_progress' });
-    if (exclusive) operation = true;
-    const job = { id: randomUUID(), state: 'running', phase: 'preparing', startedAt: new Date().toISOString(), ...(kind ? { kind } : {}) };
-    if (jobs.size > 10) jobs.delete(jobs.keys().next().value);
+    const requestId = req.body?.requestId;
+    if (requestId !== undefined && !/^[a-f0-9-]{36}$/i.test(requestId)) return res.status(400).json({ error: 'invalid_request' });
+    const requestKey = requestId && `${sessionDigest(readOperatorCookie(req))}:${requestId}`;
+    const existing = requestKey && jobs.get(requests.get(requestKey));
+    if (existing) return res.status(202).json({ job: existing });
+    if (exclusive && pendingOperations >= 8) return res.status(429).json({ error: 'queue_full' });
+    if (exclusive) pendingOperations++;
+    const job = { id: randomUUID(), state: exclusive ? 'queued' : 'running', phase: exclusive ? 'queued' : 'preparing', startedAt: new Date().toISOString(), matchId: req.body?.matchId,
+      ...(Array.isArray(req.body?.matchIds) ? { matchIds: req.body.matchIds.filter(id => typeof id === 'string').slice(0, 8) } : {}), ...(kind ? { kind } : {}) };
+    if (jobs.size >= 32) {
+      const removable = [...jobs.values()].find(item => ['complete', 'failed'].includes(item.state));
+      if (removable) { jobs.delete(removable.id); for (const [key, id] of requests) if (id === removable.id) requests.delete(key); }
+    }
     jobs.set(job.id, job);
-    Promise.resolve().then(() => task(job)).then(() => { job.state = 'complete'; job.phase = 'ready'; })
-      .catch(error => { job.state = 'failed'; job.error = ['no_free_provider', 'channel_not_found', 'channel_probe_failed', 'invalid_selection', 'invalid_match', 'invalid_channel', 'search_expired', 'match_not_found', 'match_not_broadcastable', 'capacity_full', 'source_search_failed'].includes(error.message) ? error.message : 'operation_failed'; })
-      .finally(() => { if (exclusive) operation = false; });
+    if (requestKey) requests.set(requestKey, job.id);
+    const executeJob = async () => {
+      job.state = 'running'; job.phase = 'preparing';
+      try { if (exclusive) await beginOperation?.(); await task(job); job.state = 'complete'; job.phase = 'ready'; }
+      catch (error) { job.state = 'failed'; job.error = ['no_free_provider', 'channel_not_found', 'channel_probe_failed', 'invalid_selection', 'invalid_match', 'invalid_channel', 'search_expired', 'match_not_found', 'match_not_broadcastable', 'capacity_full', 'source_search_failed', 'invalid_provider', 'provider_busy', 'provider_reserved', 'provider_unavailable'].includes(error.message) ? error.message : 'operation_failed'; }
+      finally { job.finishedAt = new Date().toISOString(); if (exclusive) { pendingOperations--; await endOperation?.(); } }
+    };
+    if (exclusive) operationQueue = operationQueue.catch(() => {}).then(executeJob);
+    else Promise.resolve().then(executeJob);
     res.status(202).json({ job });
   };
   app.post('/api/operator/matches/search', sameOrigin, authorize, csrf, async (req, res) => {
+    if (req.body?.requestId !== undefined) return res.status(400).json({ error: 'invalid_request' });
     if (searching) return res.status(409).json({ error: 'operation_in_progress' });
     searching = true;
     let queued = false;
@@ -173,37 +194,66 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     const previous = (await read()).selection;
     await update(state => ({ ...state, selection }));
     job.phase = 'assigning';
-    try { await applyResources(); }
+    let applied;
+    try { applied = await applyResources(); }
     catch (error) {
       await update(state => ({ ...state, selection: previous }));
       await applyResources().catch(() => {});
       throw error;
     }
-    await update(state => ({ ...state, channels: Object.fromEntries(matches.map(match => [match.matchId, randomUUID()])) }));
+    const affected = applied?.changedMatchIds || [...new Set([...(previous?.matches || []), ...selection.matches])].filter(id => previous?.matches?.includes(id) !== selection.matches.includes(id));
+    await update(state => ({ ...state, channels: { ...state.channels, ...Object.fromEntries(affected.map(id => [id, randomUUID()])) } }));
     publish(await read());
-  }));
-  app.post('/api/operator/channel', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, async job => {
+  }, { kind: 'selection' }));
+  const changeChannel = async (req, job, { refreshOnly = false, providerChange = false } = {}) => {
     const matches = await getMatches(), match = matches.find(item => item.matchId === req.body.matchId);
     if (!match) throw new Error('invalid_match');
-    const channel = String(req.body.channel || '').trim();
+    if (['ended', 'unavailable'].includes(sourceMatchState(match))) throw new Error('invalid_match');
+    const currentState = await read();
+    const binding = currentState.providers?.[match.matchId];
+    const requested = req.body.providerId ?? (binding?.day === moroccoMatchDay() && binding.manual !== false ? binding.providerId : '');
+    if (typeof requested !== 'string' || requested && (!/^[A-J]$/.test(requested) || !config.providerAccounts?.()[requested]?.enabled)) throw new Error('invalid_provider');
+    const reservable = new Set(matches.filter(item => !['ended', 'unavailable'].includes(sourceMatchState(item))).map(item => item.matchId));
+    if (requested && Object.entries(currentState.providers || {}).some(([id, row]) => id !== match.matchId && reservable.has(id) && row.day === moroccoMatchDay() && row.manual !== false && row.providerId === requested)) throw new Error('provider_reserved');
+    const channel = String(refreshOnly || providerChange ? match.channelName || currentState.overrides[match.matchId]?.channel : req.body.channel || '').trim();
     if (!channel || channel.length > 100 || /https?:|[/\\\r\n]/i.test(channel)) throw new Error('invalid_channel');
     job.matchId = match.matchId;
-    const prepared = await prepareChannel(channel, phase => { job.phase = phase; }, match);
+    const prepared = await prepareChannel(channel, phase => { job.phase = phase; }, match, { providerId: requested });
     // Persist only after a media segment has passed the bounded probe.
     job.phase = 'saving';
-    const previous = (await read()).overrides[match.matchId];
-    await update(state => ({ ...state, overrides: { ...state.overrides, [match.matchId]: { channel: prepared.name, expiresAt: new Date(Date.now() + 24 * 3600000).toISOString(), enabled: true } } }));
+    const previous = (await read()).overrides[match.matchId], previousProvider = currentState.providers?.[match.matchId];
+    await update(state => ({ ...state, providers: { ...state.providers, ...(prepared.providerId ? { [match.matchId]: { providerId: prepared.providerId, day: moroccoMatchDay(), manual: Boolean(requested), verifiedAt: new Date().toISOString() } } : {}) },
+      overrides: { ...state.overrides, [match.matchId]: { channel: prepared.name, expiresAt: new Date(Date.now() + 24 * 3600000).toISOString(), enabled: true } } }));
     job.phase = 'assigning';
-    try { await applyResources({ matchId: match.matchId }); }
+    const scope = { matchId: match.matchId, ...(sourceMatchState(match) === 'upcoming' && !match.isLive ? { allowDeferred: true } : {}) };
+    try { await applyResources(scope); }
     catch (error) {
-      await update(state => { const overrides = { ...state.overrides }; if (previous) overrides[match.matchId] = previous; else delete overrides[match.matchId]; return { ...state, overrides }; });
-      await applyResources().catch(() => {});
+      await update(state => { const overrides = { ...state.overrides }, providers = { ...state.providers }; if (previous) overrides[match.matchId] = previous; else delete overrides[match.matchId];
+        if (previousProvider) providers[match.matchId] = previousProvider; else delete providers[match.matchId]; return { ...state, overrides, providers }; });
+      await applyResources(scope).catch(() => {});
       throw error;
     }
     await update(state => ({ ...state, channels: { ...state.channels, [match.matchId]: randomUUID() } }));
     publish(await read());
     job.channel = prepared.name;
-  }));
+    job.provider = prepared.providerId;
+  };
+  app.post('/api/operator/channel', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, job => changeChannel(req, job), { kind: 'channel' }));
+  app.post('/api/operator/provider', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, job => changeChannel(req, job, { providerChange: true }), { kind: 'provider' }));
+  app.post('/api/operator/refresh-links', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, async job => {
+    const ids = req.body.matchId ? [req.body.matchId] : req.body.matchIds;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 8 || new Set(ids).size !== ids.length) throw new Error('invalid_selection');
+    job.results = [];
+    job.matchIds = ids;
+    job.total = ids.length;
+    for (const matchId of ids) {
+      job.matchId = matchId;
+      try { const item = { set phase(value) { job.phase = value; } }; await changeChannel({ body: { matchId } }, item, { refreshOnly: true }); job.results.push({ matchId, ok: true, provider: item.provider }); }
+      catch (error) { job.results.push({ matchId, ok: false, error: ['provider_busy','provider_reserved','provider_unavailable','no_free_provider','channel_not_found','channel_probe_failed','invalid_match','invalid_channel'].includes(error.message) ? error.message : 'operation_failed' }); }
+      job.completed = job.results.length;
+    }
+    if (job.results.every(item => !item.ok)) throw new Error('channel_probe_failed');
+  }, { kind: 'refresh' }));
   app.post('/api/operator/notices', sameOrigin, authorize, csrf, async (req, res) => {
     try {
       const notices = validateNotices(req.body);
