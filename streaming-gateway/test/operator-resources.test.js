@@ -45,6 +45,7 @@ test('operator jobs serialize, deduplicate, reserve providers and renew only the
   assert.equal((await post('notices/stop', {}, headers)).status, 200);
   release();
   await waitJob(first.id); const after = await waitJob(second.id);
+  assert.equal(after.job.state, 'complete', after.job.error);
   assert.equal(maximum, 1); assert.equal(after.data.state.channels.peer, 'unchanged');
   assert.equal(after.data.state.providers.first.manual, true);
   assert.equal(after.data.state.providers.first.day, moroccoMatchDay());

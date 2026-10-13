@@ -7,6 +7,9 @@ import { currentConsoleSelection } from './selection.js';
   let channelSearchTimer, channelSearchVersion = 0, transportFailure = false, loggingIn = false;
   const pendingRequests = new Map(), rowJobs = new Map();
   const active = job => ['queued', 'running'].includes(job.state);
+  const ended = match => /^(RESULT|FINISHED|ENDED|FT|AET|PEN|انتهت)$/i.test(match.status || '');
+  const renewableIds = () => selected.filter(id => snapshot.matches.some(match => match.matchId === id && !ended(match) && match.channelName));
+  const badgeText = match => ended(match) ? 'انتهت' : `${match.isLive ? 'مباشر' : /^(FIXTURE|NS|TBD)$/i.test(match.status || '') ? 'لم تبدأ' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`;
   const matchLabel = id => { const row = snapshot.matches.find(item => item.matchId === id); return row ? `${row.homeTeam} - ${row.awayTeam}` : id; };
   async function submitJob(path, body) {
     const key = `${path}:${JSON.stringify(body)}`;
@@ -56,7 +59,7 @@ import { currentConsoleSelection } from './selection.js';
   function loggedOut() { $('login').hidden = false; $('workspace').hidden = true; $('refresh').hidden = true; $('logout').hidden = true; clearInterval(polling); }
   function renderSelected() {
     $('selected-count').textContent = `${selected.length} / 8`;
-    $('renew-selected').disabled = !selected.length || snapshot.jobs.some(job => active(job) && job.kind !== 'match_search');
+    $('renew-selected').disabled = !renewableIds().length || snapshot.jobs.some(job => active(job) && job.kind !== 'match_search');
     $('selected-list').replaceChildren(...selected.map((id, index) => {
       const match = snapshot.matches.find(row => row.matchId === id);
       const row = document.createElement('div'); row.className = 'selected-item';
@@ -80,7 +83,7 @@ import { currentConsoleSelection } from './selection.js';
       const name = document.createElement('div'); name.className = 'match-name'; name.textContent = `${match.homeTeam} - ${match.awayTeam}`;
       const meta = document.createElement('small'); meta.textContent = `${match.league} · ${match.time || ''} · ${match.score}`; name.append(meta);
       const state = document.createElement('span'); state.className = `badge ${match.isLive ? 'live' : ''} ${match.sourceReady ? 'ready' : ''}`;
-      state.textContent = `${match.isLive ? 'مباشر' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`;
+      state.textContent = badgeText(match);
       const input = document.createElement('input'); input.setAttribute('list', 'channel-names'); input.value = match.channelName || ''; input.setAttribute('aria-label', 'القناة'); input.oninput = () => { input.dataset.dirty = 'true'; editing = true; suggestChannels(input.value); };
       if (channelDrafts.has(match.matchId)) { input.value = channelDrafts.get(match.matchId); input.dataset.dirty = 'true'; }
       const channelEditor = document.createElement('div'); channelEditor.className = 'channel-editor';
@@ -142,11 +145,12 @@ import { currentConsoleSelection } from './selection.js';
     }));
     const running = snapshot.jobs.some(job => active(job) && job.kind !== 'match_search');
     $('save-selection').disabled = running;
-    $('renew-selected').disabled = running || !selected.length;
+    $('renew-selected').disabled = running || !renewableIds().length;
     for (const row of document.querySelectorAll('.match-row')) {
       const currentJob = snapshot.jobs.find(job => active(job) && (job.kind === 'selection' || job.matchId === row.dataset.match || job.matchIds?.includes(row.dataset.match)));
       const busy = Boolean(currentJob);
-      for (const control of row.querySelectorAll('.match-actions button')) control.disabled = busy;
+      const match = snapshot.matches.find(item => item.matchId === row.dataset.match);
+      for (const control of row.querySelectorAll('.match-actions button')) control.disabled = busy || match && ended(match);
       row.classList.toggle('busy', busy);
       if (currentJob) row.querySelector('.badge').textContent = phaseNames[currentJob.phase] || 'قيد التنفيذ';
     }
@@ -198,7 +202,7 @@ import { currentConsoleSelection } from './selection.js';
     for (const row of document.querySelectorAll('.match-row')) {
       const match = snapshot.matches.find(match => match.matchId === row.dataset.match);
       if (match) {
-        const badge = row.querySelector('.badge'); badge.textContent = `${match.isLive ? 'مباشر' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`; badge.classList.toggle('ready', match.sourceReady);
+        const badge = row.querySelector('.badge'); badge.textContent = badgeText(match); badge.classList.toggle('ready', match.sourceReady);
         const input = row.querySelector('input[list]'), broadcasts = row.querySelector('.channel-editor select');
         const job = snapshot.jobs.find(job => job.id === rowJobs.get(match.matchId));
         if (job?.state === 'complete') { if (job.kind === 'channel') delete input.dataset.dirty; if (job.kind === 'provider') delete row.querySelector('.provider-select').dataset.dirty; rowJobs.delete(match.matchId); }
@@ -330,7 +334,7 @@ import { currentConsoleSelection } from './selection.js';
   $('manual-enabled').onchange = () => { editing = true; };
   document.querySelectorAll('.notice-settings input, .notice-settings select').forEach(input => { input.oninput = () => { editing = true; }; });
   $('save-selection').onclick = async () => { try { await submitJob('selection', { enabled: $('manual-enabled').checked, matches: selected }); editing = false; message('بدأ تجهيز الاختيار في الخلفية المشتركة.'); await refresh(false); } catch (error) { message(error.message, true); } };
-  $('renew-selected').onclick = async () => { const control = $('renew-selected'); control.disabled = true; try { await submitJob('refresh-links', { matchIds: selected }); message('بدأ تجديد الروابط المحددة بالتتابع.'); await refresh(false); } catch (error) { message(error.message, true); } finally { renderJobs(); } };
+  $('renew-selected').onclick = async () => { const control = $('renew-selected'); control.disabled = true; try { await submitJob('refresh-links', { matchIds: renewableIds() }); message('بدأ تجديد الروابط المحددة بالتتابع.'); await refresh(false); } catch (error) { message(error.message, true); } finally { renderJobs(); } };
   $('add-notice').onclick = () => { if (noticeItems.length < 10) { noticeItems.push(newNotice()); activeNotice = noticeItems.length - 1; editing = true; } renderNotices(); };
   $('publish-notices').onclick = async () => { const button = $('publish-notices'); try { validateNoticeInputs(); button.disabled = true; await api('notices', { enabled: true, items: noticeItems, repeats: Number($('notice-repeats').value), duration: Number($('notice-duration').value), interval: Number($('notice-interval').value), matchIds: $('notice-target').value === 'selected' ? selected : [] }); message('تم نشر الإشعارات إلى المشغلات المفتوحة والـ embed.'); editing = false; } catch (error) { message(error.message, true); } finally { button.disabled = false; } };
   $('stop-notices').onclick = async () => { try { await api('notices/stop', {}); message('تم إيقاف الإشعارات فوراً.'); } catch (error) { message(error.message, true); } };

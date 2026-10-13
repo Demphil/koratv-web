@@ -34,4 +34,9 @@ Retained foottv6: indexnow, publish-site. Static publishing now has a four-hour 
 - Gateway suite: 231 passing tests, including queue deduplication, partial renewal, provider exclusivity, bilingual reservation aliases and scoped supplier switching with an untouched peer lease.
 - Parsed all ten retained workflow definitions and checked job dependency references.
 - Local fixture UI checked at 1366x900 and 390x844; no horizontal control overflow. Supplier change and renewal controls were exercised without contacting real suppliers.
-- Production deployment and GitHub run results are recorded separately after verification.
+- Deployed only eleven gateway/control/UI files; retained a backup at /opt/koratv/backups/operator-control-20261013-1791926610. One controlled gateway reload was required. The final UI-only adjustment required no reload.
+- Both stream-api HTTPS health endpoints returned 200. Public JS/CSS hashes matched local files; unauthenticated operator state returned 401.
+- The authenticated live console displayed the user-selected supplier B for FUS Rabat vs Raja, a successful completed job, the reservation and its verification time. No real match or supplier was changed by the agent for this verification.
+- Seven removed workflow definitions were disabled before removal and no longer appeared in the active workflow inventory after push.
+- GitHub runs succeeded: koratv-web Unified Data Refresh 38470577822, foottv6 static publication 38470589795, Oracle account inspection 38470616330.
+- The frontend excludes completed fixtures from batch renewal and disables their resource-changing actions without removing their result cards.
