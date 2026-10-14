@@ -30,4 +30,6 @@ The one-off refresh persisted 29 current/tomorrow snapshots. Two leftover youth 
 - The gateway regression run hit the pre-existing intermittent Windows operator-resource fixture failure (operation_failed during a queued mock job). This test also failed intermittently before this ingestion change; no gateway files were modified or reloaded in this deployment. The gateway suite is not claimed as fully passing for this run.
 - A following scheduled cycle refreshed the nine senior fixtures with their correct source IDs and preserved the repair.
 - Both public today APIs returned nine senior Champions League fixtures and zero European youth fixtures.
+- GitHub static publication succeeded for koratv-web run 38490075830 and foottv6 run 38490086133. Parsed public HTML contained nine senior Champions League cards in each site's today section.
+- Browser DOM checks confirmed the three restored fixtures in both live tables after client refresh.
 - The eight-supplier limit applies to simultaneous broadcast preparation, not schedule visibility.
