@@ -1,14 +1,15 @@
 import { fileURLToPath } from 'node:url';
-import { fetchHtml, parseKoooraMatches, enrichKoooraRowsWithScheduleChannels, enrichKoooraRowsWithDetailChannels, upsertMatchRows } from './sync-matches-from-source.js';
+import { fetchHtml, parseKoooraMatches, koooraTodayUrl, enrichKoooraRowsWithScheduleChannels, enrichKoooraRowsWithDetailChannels, upsertMatchRows } from './sync-matches-from-source.js';
 import { validateMatchSearch, findRequestedMatches } from '../../shared/operator-match-search.mjs';
 import { reconcileBroadcasts } from '../../shared/match-broadcasts.mjs';
 import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
+import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs';
 
 export async function runOperatorMatchImport(mode, input, dependencies = {}) {
   const query = validateMatchSearch(input);
   if (input.day && input.day !== query.day) throw new Error('search_expired');
-  const load = dependencies.load || (async () => parseKoooraMatches(await fetchHtml('https://www.kooora.com/كرة-القدم/مباريات-اليوم'), { includeAll: true }));
-  const rows = findRequestedMatches(await load(), query);
+  const load = dependencies.load || (async () => parseKoooraMatches(await fetchHtml(koooraTodayUrl(query.day)), { includeAll: true, expectedDate: query.day }));
+  const rows = findRequestedMatches((await load()).filter(row => !isEuropeanYouthLeague(row.league)), query);
   if (mode === 'search') return { query, matches: rows.slice(0, 12) };
   if (mode !== 'import') throw new Error('invalid_match');
   const selected = rows.find(row => row.match_id === input.matchId && row.payload?.sourceMatchId === input.sourceMatchId);

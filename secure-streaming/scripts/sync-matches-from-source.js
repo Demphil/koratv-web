@@ -1,6 +1,7 @@
 import "../src/lib/loadEnv.js";
 import * as cheerio from "cheerio";
 import { fileURLToPath } from "node:url";
+import { createHash } from 'node:crypto';
 import { getSupabaseAdmin } from "../src/lib/supabaseAdmin.js";
 import { isAllowedMatch, isGulfCupLeague, normalizeTeamName } from "../../shared/league-whitelist.mjs";
 import { reconcileBroadcasts, mergeRefreshedMatch, sameFixture, preferredBroadcastChannels } from "../../shared/match-broadcasts.mjs";
@@ -10,8 +11,9 @@ import { normalizeKnockoutFixtures } from '../../shared/knockout.mjs';
 import { createApiFootballClient } from './api-football-client.mjs';
 import { attachApiFootballDetails } from '../../shared/match-details.mjs';
 import { isOperatorImportedMatch } from '../../shared/operator-imported-match.mjs';
+import { moroccoMatchDay } from '../../shared/operator-imported-match.mjs';
+import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs';
 
-const BASE_SITE_URL = process.env.MATCH_SOURCE_URL || "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA-%D8%A7%D9%84%D9%8A%D9%88%D9%85";
 const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
 const TV_SCHEDULE_SITE_URL = process.env.KOOORA_TV_SCHEDULE_URL || "https://www.kooora.com/%D8%A3%D8%AD%D8%AF%D8%A7%D8%AB-%D8%B1%D9%8A%D8%A7%D8%B6%D9%8A%D8%A9/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85";
 const matchesTable = process.env.SUPABASE_MATCHES_TABLE || "matches";
@@ -96,6 +98,10 @@ function matchSlug(homeTeam, awayTeam) {
 
 function fixturesUrlForDate(date) {
   return process.env.MATCH_SOURCE_TOMORROW_URL || `${FIXTURES_SITE_URL}/${date}`;
+}
+
+export function koooraTodayUrl(date = moroccoDateParts(0), env = process.env) {
+  return env.MATCH_SOURCE_URL || `${FIXTURES_SITE_URL}/${date}`;
 }
 
 function apiFootballEnabled() {
@@ -783,7 +789,7 @@ function matchMinute(match = {}) {
 }
 
 
-export function parseKoooraMatches(html, { includeAll = false, includeMatchIds = new Set(), importedSourceIds = new Map() } = {}) {
+export function parseKoooraMatches(html, { includeAll = false, includeMatchIds = new Set(), importedSourceIds = new Map(), expectedDate = '' } = {}) {
   const $ = cheerio.load(html);
   const raw = $('#__NEXT_DATA__').text();
   if (!raw) throw new Error('Kooora __NEXT_DATA__ payload is missing.');
@@ -793,12 +799,15 @@ export function parseKoooraMatches(html, { includeAll = false, includeMatchIds =
 
   for (const group of groups) {
     const league = group?.competition?.name || '';
+    const youth = isEuropeanYouthLeague(league);
+    if (youth && !includeAll) continue;
 
     for (const match of group.matches || []) {
       const homeTeam = match?.teamA?.name?.trim();
       const awayTeam = match?.teamB?.name?.trim();
       const kickoff = match?.startDate;
       if (!homeTeam || !awayTeam || !kickoff) continue;
+      if (expectedDate && moroccoMatchDay(kickoff) !== expectedDate) continue;
 
       const status = String(match.status || 'FIXTURE').toUpperCase();
       const homeScore = scorePart(match.score, 'teamA');
@@ -812,7 +821,9 @@ export function parseKoooraMatches(html, { includeAll = false, includeMatchIds =
       );
       const date = String(kickoff).slice(0, 10);
       const baseMatchId = matchSlug(homeTeam, awayTeam);
-      const matchId = `kooora_${date}_${baseMatchId}`;
+      // Kooora sometimes uses identical names for the senior and U19 teams.
+      const category = youth ? `_youth_${createHash('sha256').update(String(match.id || `${league}:${kickoff}`)).digest('hex').slice(0, 16)}` : '';
+      const matchId = `kooora_${date}_${baseMatchId}${category}`;
       if (importedSourceIds.has(matchId) && importedSourceIds.get(matchId) !== String(match.id || '')) continue;
       if (!includeAll && !includeMatchIds.has(matchId) && !isAllowedMatch({ league, homeTeam, awayTeam })) continue;
       const events = normalizeMatchEvents(match);
@@ -916,6 +927,7 @@ async function mergeExistingChannels(supabase, rows) {
 }
 
 export async function persistMatchSnapshots(supabase, rows, versions) {
+  rows = rows.filter(row => !isEuropeanYouthLeague(row.league));
   const inserts = rows.filter((row) => !versions.has(row.match_id));
   let written = 0;
   if (inserts.length) {
@@ -1193,7 +1205,7 @@ export async function collectMatchRowsFromSource() {
 
   const tomorrowDate = moroccoDateParts(1);
   const pages = [
-    { url: BASE_SITE_URL, dayOffset: 0 },
+    { url: koooraTodayUrl(), dayOffset: 0 },
     { url: fixturesUrlForDate(tomorrowDate), dayOffset: 1 },
   ];
   let koooraRows = [];
@@ -1203,7 +1215,7 @@ export async function collectMatchRowsFromSource() {
   for (const page of pages) {
     try {
       const html = await fetchHtml(page.url);
-      koooraRows.push(...parseMatches(html, page.dayOffset, { includeMatchIds, importedSourceIds }));
+      koooraRows.push(...parseMatches(html, page.dayOffset, { includeMatchIds, importedSourceIds, expectedDate: moroccoDateParts(page.dayOffset) }));
     } catch (error) {
       failedDates.push(moroccoDateParts(page.dayOffset));
       console.error(`Failed source ${page.url}: ${error.message}`);

@@ -1,5 +1,7 @@
 import cron from "node-cron";
 import { syncMatchesFromSource, apiFootballUsage } from "./sync-matches-from-source.js";
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 const schedule = process.env.MATCH_SYNC_CRON || "*/2 * * * *";
 const timezone = process.env.MATCH_SYNC_TIMEZONE || "Africa/Casablanca";
@@ -44,7 +46,9 @@ cron.schedule(schedule, () => {
   void runSync("schedule");
 }, { timezone });
 
-log("match_sync_cron_started", { schedule, timezone, runOnStart });
+const codeVersion = createHash('sha256');
+for (const path of ['./sync-matches-from-source.js', '../../shared/league-whitelist.mjs', '../../shared/match-visibility.mjs']) codeVersion.update(readFileSync(new URL(path, import.meta.url)));
+log("match_sync_cron_started", { schedule, timezone, runOnStart, codeVersion: codeVersion.digest('hex').slice(0, 16) });
 
 if (runOnStart) {
   void runSync("startup");
