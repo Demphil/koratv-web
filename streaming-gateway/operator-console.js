@@ -146,7 +146,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     const executeJob = async () => {
       job.state = 'running'; job.phase = 'preparing';
       try { if (exclusive) await beginOperation?.(); await task(job); job.state = 'complete'; job.phase = 'ready'; }
-      catch (error) { job.state = 'failed'; job.error = ['no_free_provider', 'channel_not_found', 'channel_probe_failed', 'invalid_selection', 'invalid_match', 'invalid_channel', 'search_expired', 'match_not_found', 'match_not_broadcastable', 'capacity_full', 'source_search_failed', 'invalid_provider', 'provider_busy', 'provider_reserved', 'provider_unavailable', 'provider_owner_changed'].includes(error.message) ? error.message : 'operation_failed'; console.warn('[operator-job]', { kind: job.kind, phase: job.phase, error: job.error, code: error.code || null }); }
+      catch (error) { job.state = 'failed'; job.error = ['no_free_provider', 'channel_not_found', 'channel_probe_failed', 'invalid_selection', 'invalid_match', 'invalid_channel', 'search_expired', 'match_not_found', 'match_not_broadcastable', 'capacity_full', 'source_search_failed', 'invalid_provider', 'provider_busy', 'provider_reserved', 'provider_unavailable', 'provider_owner_changed', 'operator_paused'].includes(error.message) ? error.message : 'operation_failed'; console.warn('[operator-job]', { kind: job.kind, phase: job.phase, error: job.error, code: error.code || null }); }
       finally { job.finishedAt = new Date().toISOString(); if (exclusive) { pendingOperations--; await endOperation?.(); } }
     };
     if (exclusive) operationQueue = operationQueue.catch(() => {}).then(executeJob);
@@ -227,11 +227,30 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     publish(await update(state => ({ ...state, metadataRefreshedAt: new Date().toISOString(), channels: { ...state.channels, ...Object.fromEntries(endedIds.map(id => [id, randomUUID()])) } })));
     job.result = result;
   }, { kind: 'metadata_refresh' }));
+  app.post('/api/operator/matches/stop', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, async job => {
+    const match = (await getMatches()).find(row => row.matchId === req.body.matchId);
+    if (!match || ['ended', 'unavailable'].includes(sourceMatchState(match))) throw new Error('invalid_match');
+    const state = await read();
+    const assignment = config.providerAssignments?.().assignments?.find(row => row.matchId === match.matchId || row.aliases?.includes(match.matchId));
+    const ids = [...new Set([match.matchId, assignment?.matchId, ...(assignment?.aliases || []), ...(state.pauses?.[match.matchId]?.aliases || [])].filter(Boolean))];
+    job.phase = 'stopping';
+    publish(await update(current => {
+      const pauses = { ...current.pauses }, providers = { ...current.providers }, channels = { ...current.channels };
+      for (const id of ids) { pauses[id] = { day: moroccoMatchDay(), reason: 'manual_stop', aliases: ids, at: new Date().toISOString() }; delete providers[id]; channels[id] = randomUUID(); }
+      return { ...current, pauses, providers, channels };
+    }));
+    config.refreshProviderCatalog?.();
+    for (const id of ids) config.invalidatePlayback?.(id);
+    try { await applyResources({ stopMatchIds: ids, metadataOnly: true }); }
+    catch { job.warning = 'resource_reconciliation_pending'; }
+    job.stopped = true;
+  }, { kind: 'stop' }));
   const changeChannel = async (req, job, { refreshOnly = false, providerChange = false } = {}) => {
     const matches = await getMatches(), match = matches.find(item => item.matchId === req.body.matchId);
     if (!match) throw new Error('invalid_match');
     if (['ended', 'unavailable'].includes(sourceMatchState(match))) throw new Error('invalid_match');
     const currentState = await read();
+    if (operatorMatchPaused(currentState, match.matchId) && (refreshOnly || currentState.pauses[match.matchId].reason === 'manual_stop' && req.body.resume !== true)) throw new Error('operator_paused');
     const binding = currentState.providers?.[match.matchId];
     const requested = req.body.providerId ?? (binding?.day === moroccoMatchDay() && binding.manual !== false ? binding.providerId : '');
     if (typeof requested !== 'string' || requested && (!/^[A-J]$/.test(requested) || !config.providerAccounts?.()[requested]?.enabled)) throw new Error('invalid_provider');
@@ -277,6 +296,8 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
   };
   app.post('/api/operator/channel', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, job => changeChannel(req, job), { kind: 'channel' }));
   app.post('/api/operator/provider', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, job => changeChannel(req, job, { providerChange: true }), { kind: 'provider' }));
+  app.post('/api/operator/matches/resume', sameOrigin, authorize, csrf, (req, res) => runJob(req, res,
+    job => changeChannel({ body: { ...req.body, resume: true } }, job, { providerChange: true }), { kind: 'resume' }));
   app.post('/api/operator/refresh-links', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, async job => {
     const ids = req.body.matchId ? [req.body.matchId] : req.body.matchIds;
     if (!Array.isArray(ids) || !ids.length || ids.length > 8 || new Set(ids).size !== ids.length) throw new Error('invalid_selection');
@@ -286,7 +307,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     for (const matchId of ids) {
       job.matchId = matchId;
       try { const item = { set phase(value) { job.phase = value; } }; await changeChannel({ body: { matchId } }, item, { refreshOnly: true }); job.results.push({ matchId, ok: true, provider: item.provider }); }
-      catch (error) { job.results.push({ matchId, ok: false, error: ['provider_busy','provider_reserved','provider_unavailable','no_free_provider','channel_not_found','channel_probe_failed','invalid_match','invalid_channel'].includes(error.message) ? error.message : 'operation_failed' }); }
+      catch (error) { job.results.push({ matchId, ok: false, error: ['provider_busy','provider_reserved','provider_unavailable','no_free_provider','channel_not_found','channel_probe_failed','invalid_match','invalid_channel','operator_paused'].includes(error.message) ? error.message : 'operation_failed' }); }
       job.completed = job.results.length;
     }
     if (job.results.every(item => !item.ok)) throw new Error('channel_probe_failed');

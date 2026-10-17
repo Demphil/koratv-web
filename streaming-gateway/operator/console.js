@@ -8,7 +8,7 @@ import { currentConsoleSelection } from './selection.js';
   const pendingRequests = new Map(), rowJobs = new Map();
   const active = job => ['queued', 'running'].includes(job.state);
   const ended = match => /^(RESULT|FINISHED|ENDED|FT|AET|PEN|انتهت)$/i.test(match.status || '');
-  const renewableIds = () => selected.filter(id => snapshot.matches.some(match => match.matchId === id && !ended(match) && match.channelName));
+  const renewableIds = () => selected.filter(id => snapshot.matches.some(match => match.matchId === id && !ended(match) && !match.paused && match.channelName));
   const badgeText = match => ended(match) ? 'انتهت · البث مغلق' : match.paused ? 'متوقف بقرار الإدارة' : `${match.isLive ? 'مباشر' : /^(FIXTURE|NS|TBD)$/i.test(match.status || '') ? 'لم تبدأ' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`;
   const matchLabel = id => { const row = snapshot.matches.find(item => item.matchId === id); return row ? `${row.homeTeam} - ${row.awayTeam}` : id; };
   async function submitJob(path, body) {
@@ -39,6 +39,8 @@ import { currentConsoleSelection } from './selection.js';
   phaseNames.searching_match = 'تأكيد المباراة والقنوات من Kooora';
   phaseNames.queued = 'في طابور التنفيذ';
   phaseNames.refreshing_metadata = 'تحديث المباريات والنتائج من Kooora';
+  phaseNames.stopping = 'إيقاف بث المباراة وتحرير المورد';
+  errors.operator_paused = 'بث المباراة متوقف بقرار الإدارة. استخدم زر استئناف البث أولاً.';
   errors.provider_owner_changed = 'تغير حجز المورد أثناء العملية. راجع المباراة الحالية ثم أكد النقل مجدداً.';
   Object.assign(errors, { provider_busy: 'المورد مشغول بمباراة أخرى. لم يتغير بثها.', provider_reserved: 'المورد محجوز لمباراة أخرى. اختر مورداً آخر.', provider_unavailable: 'المورد قيد اختبار آخر. حاول لاحقاً.', invalid_provider: 'اختر مورداً مفعلاً من القائمة.', queue_full: 'طابور العمليات ممتلئ. انتظر اكتمال العمليات الحالية.', invalid_channel: 'حدد اسم قناة صالحاً أولاً.' });
   errors.channel_not_found = 'لم يعثر المورد على قناة تطابق هذا الاسم. اختر قناة من قائمة Kooora الخاصة بالمباراة؛ أسماء المنصات مثل MBC Shahid ليست بديلاً عن اسم قناة محددة. لم تتغير القناة المعتمدة.';
@@ -117,10 +119,17 @@ import { currentConsoleSelection } from './selection.js';
         action('provider', { matchId: match.matchId, providerId: provider.value, ...(owners.length ? { takeover: true, expectedOwnerIds: owners } : {}) }, pin);
       }); pin.append(document.createTextNode('اعتماد المورد'));
       const renew = button('refresh-cw', 'تجديد الرابط من المورد واختبار الفيديو', () => action('refresh-links', { matchId: match.matchId }, renew)); renew.append(document.createTextNode('تجديد الرابط'));
-      const controls = document.createElement('div'); controls.className = 'match-actions'; controls.append(save, pin, renew);
+      const toggle = button('square', 'إيقاف بث المباراة', () => {
+        const current = snapshot.matches.find(item => item.matchId === match.matchId);
+        if (!current.paused && !confirm(`إيقاف بث ${matchLabel(match.matchId)}؟ ستبقى النتيجة ظاهرة ويمكنك استئناف البث لاحقاً.`)) return;
+        action(current.paused ? 'matches/resume' : 'matches/stop', { matchId: match.matchId }, toggle);
+      });
+      toggle.className = 'match-toggle danger';
+      const toggleLabel = document.createElement('span'); toggle.append(toggleLabel);
+      const controls = document.createElement('div'); controls.className = 'match-actions'; controls.append(save, pin, renew, toggle);
       row.append(check, name, state, channelEditor, supplier, controls); return row;
     }));
-    updateProviderStatus();
+    updateProviderStatus(); renderJobs();
   }
   function updateProviderStatus() {
     $('servers').replaceChildren(...snapshot.status.accounts.map(account => { const node = document.createElement('span'); node.className = `server ${/STOPPED|UNAVAILABLE|COOLDOWN|STALLED/.test(account.status) ? 'bad' : ''}`; node.textContent = `${account.provider} · ${account.status}${account.current_channel ? ` · ${account.current_channel}` : ''}`; return node; }));
@@ -158,7 +167,13 @@ import { currentConsoleSelection } from './selection.js';
       const currentJob = snapshot.jobs.find(job => active(job) && (['selection', 'metadata_refresh'].includes(job.kind) || job.matchId === row.dataset.match || job.matchIds?.includes(row.dataset.match)));
       const busy = Boolean(currentJob);
       const match = snapshot.matches.find(item => item.matchId === row.dataset.match);
-      for (const control of row.querySelectorAll('.match-actions button')) control.disabled = busy || match && ended(match);
+      const toggle = row.querySelector('.match-toggle');
+      const toggleText = match?.paused ? 'استئناف البث' : 'إيقاف البث';
+      toggle.querySelector('span').textContent = toggleText;
+      toggle.title = toggleText; toggle.setAttribute('aria-label', toggleText);
+      toggle.querySelector('img').src = `/api/operator/ui/icons/${match?.paused ? 'play' : 'square'}`;
+      toggle.classList.toggle('danger', !match?.paused);
+      for (const control of row.querySelectorAll('.match-actions button')) control.disabled = busy || match && (ended(match) || match.paused && control !== toggle);
       row.classList.toggle('busy', busy);
       if (currentJob) row.querySelector('.badge').textContent = phaseNames[currentJob.phase] || 'قيد التنفيذ';
     }

@@ -10,6 +10,8 @@ import { HlsResourceCache } from './hls-resource-cache.js';
 import { ProviderPool, PoolError, PROVIDER_IDS } from './provider-pool.js';
 import { AccountHealth } from './account-health.js';
 import { HlsProgressMonitor } from './hls-progress.js';
+import { createMediaValidator } from './media-validation.js';
+import { releaseStoppedMatchResources } from './stop-match-resources.js';
 import { singleQualityManifest } from './single-quality.js';
 import { diagnosticPlayback, registerMultiview } from './multiview.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
@@ -465,6 +467,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   };
   const prewarmKeepalive = new Map();
   const preparedMatches = new Map();
+  const validateMedia = createMediaValidator({ enabled: config.mediaValidationEnabled, ...(config.inspectMedia ? { inspect: config.inspectMedia } : {}) });
   let operatorPreparing = false;
   const normalizeRuntimeMatch = row => {
     if (!prewarmState.enabled || row.resource_status !== 'ASSIGNED') return normalizeMatch(row, config);
@@ -481,7 +484,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     app.locals.matchSnapshotStartupTimer = primeTimer;
   }
 
-  const warmPlaybackManifest = async (playback, lease) => {
+  const warmPlaybackManifest = async (playback, lease, { validate = false } = {}) => {
     const headers = { 'User-Agent': config.upstreamUserAgent, Accept: '*/*' };
     let url = new URL(lease.mediaUrl || lease.url);
     for (let depth = 0; depth < 3; depth += 1) {
@@ -511,7 +514,13 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         await segment.body?.cancel();
         return { ok: false, status: segment.status, error: 'segment_unavailable' };
       }
-      if (!(await segment.arrayBuffer()).byteLength) return { ok: false, error: 'empty_segment' };
+      const segmentBytes = await segment.arrayBuffer();
+      if (!segmentBytes.byteLength) return { ok: false, error: 'empty_segment' };
+      const media = validate ? await validateMedia(lease.url, segmentBytes, { fresh: true }) : { ok: true };
+      if (!media.ok) {
+        console.warn('[media-validation]', { channel: playback.channel_id, provider: lease.provider, ...media });
+        return media;
+      }
       for (let index = Math.max(0, lines.length - 4); !lease.probe && index < lines.length; index += 1) {
         if (index === lastIndex) continue;
         const target = new URL(lines[index], base);
@@ -656,11 +665,19 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     prepareChannel: createOperatorChannelPreparer({
       pool: providerPool, accounts: config.providerAccounts,
       resolveChannel: config.resolveOperatorChannel, discover: config.discoverOperatorChannel,
-      warm: warmPlaybackManifest, install: installPreparedOperatorChannel,
+      warm: (playback, lease) => warmPlaybackManifest(playback, lease, { validate: true }), install: installPreparedOperatorChannel,
       refresh: () => config.refreshProviderCatalog()
     }),
-    applyResources: async ({ matchId, allowDeferred = false, displacedMatchIds = [], takeoverProvider } = {}) => {
+    applyResources: async ({ matchId, allowDeferred = false, displacedMatchIds = [], takeoverProvider, stopMatchIds = [], metadataOnly = false } = {}) => {
       const before = config.providerAssignments?.().assignments || [];
+      if (stopMatchIds.length) {
+        const stopped = new Set(stopMatchIds);
+        releaseStoppedMatchResources(providerPool, stopMatchIds, before, prewarmKeepalive);
+        for (const id of stopped) preparedMatches.delete(id);
+        prewarmState.results = prewarmState.results.filter(row => !stopped.has(row.matchId));
+        prewarmState.warmed = prewarmState.results.filter(row => row.ok).length;
+        prewarmState.failed = prewarmState.results.length - prewarmState.warmed;
+      }
       await refreshOperatorResources();
       config.refreshProviderCatalog?.();
       const targetAssignment = config.providerAssignments?.().assignments?.find(item => item.matchId === matchId || item.aliases?.includes(matchId));
@@ -681,8 +698,15 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           }
         }
       }
+      if (metadataOnly) {
+        const activeIds = new Set((config.providerAssignments?.().assignments || []).map(row => row.matchId));
+        for (const id of preparedMatches.keys()) if (!activeIds.has(id)) preparedMatches.delete(id);
+        prewarmState.results = prewarmState.results.filter(row => activeIds.has(row.matchId));
+        prewarmState.warmed = prewarmState.results.filter(row => row.ok).length;
+        prewarmState.failed = prewarmState.results.length - prewarmState.warmed;
+      }
       while (prewarmState.running) await new Promise(resolve => setTimeout(resolve, 100));
-      let result = await prewarmAssignedResources('operator-change', { matchId });
+      let result = metadataOnly ? prewarmState : await prewarmAssignedResources('operator-change', { matchId });
       const targetReady = state => state.results.some(row => row.matchId === (targetAssignment?.matchId || matchId) && row.ok);
       const deferred = allowDeferred && !targetAssignment && config.providerAssignments?.().ignored?.some(item => (item.matchId === matchId || item.aliases?.includes(matchId)) && ['not_due', 'manual_selection_required'].includes(item.reason));
       if (matchId && !targetReady(result) && !deferred) {
