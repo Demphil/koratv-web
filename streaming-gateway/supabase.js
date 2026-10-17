@@ -165,7 +165,7 @@ export function createMatchesReader(env, sourceFilter = null, catalog = null) {
         const catalogName = catalog?.resolve?.(name) || name;
         return catalog && hasCatalogSources(catalogName, assignedProviderIds) ? { name: catalogName } : null;
       }).find(Boolean);
-      return { row, channel, assignment: assignmentIsCurrent ? assignment : null };
+      return { row, channel: assignment?.status === 'PAUSED' ? null : channel, assignment: assignmentIsCurrent || assignment?.status === 'PAUSED' ? assignment : null };
     });
     const usedChannelNames = [...new Set(resolvedRows
       .map(({ channel }) => channel?.name)
@@ -319,6 +319,7 @@ export function createPlaybackResolver(env, sourceFilter = null, catalog = null,
     const override = catalog?.override(matchKey);
     const routeState = catalog?.matchRoute?.(matchKey);
     const assignment = catalog?.matchAssignment?.(matchKey);
+    if (assignment?.status === 'PAUSED') return unavailable('operator_paused');
     const broadcastCandidates = broadcastChannelCandidates(match);
     const fallbackChannel = normalizeBroadcastChannel(match.channel || payload.channel);
     const currentCandidates = override ? [override] : broadcastCandidates.length

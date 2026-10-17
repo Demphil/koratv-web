@@ -177,6 +177,7 @@ export function buildProjectAssignmentPlan({
   manualMatchIds = [],
   previousAssignments = [],
   providerBindings = {},
+  pausedMatches = {},
   now = new Date(),
   options = {},
 } = {}) {
@@ -207,6 +208,9 @@ export function buildProjectAssignmentPlan({
       const matchId = match.match_id || match.id;
       const state = routeStates[matchId];
       if (!matchId || !state || state.status !== 'RESOLVED' || !state.resolvedChannel) return null;
+      const paused = Object.entries(pausedMatches).some(([id, pause]) => pause.day === day
+        && (id === matchId || sameFixture(bindingMatches.get(id), match)));
+      if (paused) { deferred.push({ matchId, match, state, providerIds: [], reason: 'operator_paused' }); return null; }
       const previous = previousAssignments.find(item => item.matchId === matchId || item.aliases?.includes(matchId));
       const binding = bindings[matchId] || Object.entries(bindings).find(([id]) => sameFixture(bindingMatches.get(id), match))?.[1];
       const providerIds = (state.providerIds || []).filter(id => enabledProviders.includes(id)
@@ -565,6 +569,7 @@ export async function assignProjectMatchResources(env = process.env) {
     manualMatchIds,
     previousAssignments: previous.assignments || [],
     providerBindings: operator.providers || {},
+    pausedMatches: operator.pauses || {},
     options: {
       opensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || 20),
       vipTeams: parseList(env.VIP_TEAMS || 'Real Madrid,Barcelona,Manchester City,Liverpool,Arsenal,Bayern Munich,Paris Saint-Germain,Raja Casablanca,Wydad AC,FAR Rabat,Renaissance Berkane'),

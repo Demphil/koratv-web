@@ -1,12 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseKoooraMatches, persistMatchSnapshots, koooraTodayUrl } from '../scripts/sync-matches-from-source.js';
+import { parseKoooraMatches, persistMatchSnapshots, koooraTodayUrl, mergeExistingChannels } from '../scripts/sync-matches-from-source.js';
 import { runOperatorMatchImport } from '../scripts/operator-match-import.mjs';
 
 const pairs = [['روما', 'ريال مدريد'], ['مانشستر سيتي', 'باريس سان جيرمان'], ['ريال بيتيس', 'بورتو']];
 const group = (name, prefix, time) => ({ competition: { name }, matches: pairs.map(([home, away], i) => ({ id: `${prefix}-${i}`, teamA: { name: home }, teamB: { name: away }, startDate: `2026-10-14T${time}:00Z`, status: 'FIXTURE' })) });
 const html = groups => `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { data: groups } } })}</script>`;
 const fixture = html([group('دوري أبطال أوروبا', 'senior', '19:00'), group('دوري أبطال أوروبا للشباب', 'youth', '12:00')]);
+
+test('large Arabic fixture IDs use bounded read batches and fail closed on any batch error', async () => {
+  const rows = Array.from({ length: 99 }, (_, i) => ({ match_id: `kooora_${i}_${'المباراة'.repeat(8)}`, payload: { status: 'RESULT' } }));
+  const batches = [];
+  let fail = false;
+  const client = { from() { return this; }, select() { return this; }, async in(_key, ids) {
+    batches.push(ids);
+    assert.ok(ids.reduce((n, id) => n + encodeURIComponent(id).length + 4, 0) <= 4000);
+    return fail ? { error: { code: 'network' } } : { data: ids.map(match_id => ({ match_id, updated_at: '2026-10-17T01:00:00Z', payload: {} })) };
+  } };
+  const merged = await mergeExistingChannels(client, rows);
+  assert.equal(merged.rows.length, 99); assert.equal(merged.versions.size, 99);
+  assert.ok(batches.length > 1);
+  fail = true;
+  await assert.rejects(mergeExistingChannels(client, rows), /Cannot safely merge/);
+});
+
+test('operator metadata refresh runs a Kooora-only sync without requiring team names', async () => {
+  const result = await runOperatorMatchImport('refresh', {}, { sync: async options => {
+    assert.deepEqual(options, { dryRunMode: false }); return { parsed: 20, upserted: 20 };
+  } });
+  assert.deepEqual(result, { parsed: 20, upserted: 20 });
+  await assert.rejects(runOperatorMatchImport('refresh', {}, { sync: async () => ({ parsed: 0, upserted: 0 }) }), /source_search_failed/);
+});
 
 test('senior and youth names cannot share an ingestion or manual-search identity', () => {
   const senior = parseKoooraMatches(fixture);

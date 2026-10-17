@@ -179,6 +179,7 @@ test('pool gateway coalesces viewers, ignores quality overrides, fences old reso
 test('provider prewarm leases assigned resources before the first viewer', async t => {
   const calls = [];
   let assignedMatchId = 'assigned-live';
+  let ended = false;
   const config = {
     providerPoolEnabled: true,
     prewarmAssignedResources: true,
@@ -196,6 +197,7 @@ test('provider prewarm leases assigned resources before the first viewer', async
     sessionTtl: 300,
     sourceForOrigin: () => 'kooora',
     upstreamUserAgent: 'test',
+    getMatchesForOrigin: async () => [{ match_id: assignedMatchId, payload: { status: ended ? 'RESULT' : 'LIVE' } }],
     providerAssignments: () => ({
       assignments: [{ matchId: assignedMatchId, providerId: 'A', resolvedChannel: assignedMatchId === 'assigned-live' ? 'beIN SPORTS HD 1' : 'beIN SPORTS HD 2' }],
       ignored: []
@@ -254,6 +256,14 @@ test('provider prewarm leases assigned resources before the first viewer', async
   assert.ok(app.locals.providerPool.leases.get('D'));
   assert.equal(app.locals.providerPool.leases.has('A'), false);
   assert.equal(calls.some(url => url.includes('b.example')), false);
+  const finishedLease = app.locals.providerPool.leases.get('D');
+  app.locals.providerPool.demands.get(finishedLease.key).viewers.set('real-viewer', Date.now());
+  ended = true;
+  const finished = await app.locals.prewarmAssignedResources('finished');
+  assert.equal(finished.results.some(row => row.matchId === 'new-live'), false);
+  assert.equal(finishedLease.controller.signal.aborted, true);
+  assert.equal(app.locals.providerPool.leases.has('D'), false, 'finished match releases real viewers, not just its synthetic heartbeat');
+  assert.equal(app.locals.providerPool.leases.get('B'), peer, 'a different live match is preserved');
 });
 
 for (const failure of ['manifest-509', 'segment-503', 'all-failed']) {

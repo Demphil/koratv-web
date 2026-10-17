@@ -106,3 +106,18 @@ test('an explicitly requested provider variant cannot silently fall back to anot
   await prepare(variant, () => {}, { matchId: 'A' });
   assert.equal(tested, 1);
 });
+
+test('explicit takeover probes the chosen occupied account and restores it before the commit', async t => {
+  const { pool, accounts, leases } = setup(t, ['A','B']);
+  const prepare = createOperatorChannelPreparer({ pool, accounts: () => accounts,
+    discover: async (name, providers, verify) => {
+      assert.deepEqual(providers, ['B']);
+      assert.equal(await verify('B', { original_url: 'https://test.example/target.m3u8' }, name), true);
+      return { resolvedChannel: name, provider_sources: { B: 'https://test.example/target.m3u8' } };
+    }, warm: async (_, lease) => pool.run(lease, async () => ({ ok: true })), install: async () => {}, refresh: () => {} });
+  await assert.rejects(prepare('New', () => {}, { matchId: 'A' }, { providerId: 'B' }), /provider_busy/);
+  const result = await prepare('New', () => {}, { matchId: 'A' }, { providerId: 'B', takeover: true });
+  assert.equal(result.providerId, 'B');
+  assert.equal(pool.leases.get('B').url, leases[1].url);
+  assert.equal(pool.valid(leases[0]), true);
+});

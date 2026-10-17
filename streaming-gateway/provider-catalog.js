@@ -2,7 +2,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { findChannelNameMatch, createChannelNameMatcher } from '../shared/channel-name-match.mjs';
 import { normalizeName, beinRegion, isProviderChannelCompatible, isCatalogChannelSourceVerified } from '../shared/provider-channel-match.mjs';
 import { PROVIDER_IDS } from './provider-pool.js';
-import { activeOperatorOverride, operatorPath } from './operator-state.js';
+import { activeOperatorOverride, operatorPath, operatorMatchPaused } from './operator-state.js';
 import { moroccoMatchDay } from '../shared/operator-imported-match.mjs';
 
 export function selectProviderChannel(match) {
@@ -46,6 +46,7 @@ export function createProviderCatalog(env = process.env) {
     if (!id) return null;
     const assignedIndex = (assignments.assignments || []).findIndex((item) => String(item?.matchId || '') === id || item?.aliases?.includes(id));
     const assigned = assignments.assignments?.[assignedIndex];
+    if ([id, assigned?.matchId, ...(assigned?.aliases || [])].some(key => key && operatorMatchPaused(operator, key))) return { matchId: id, status: 'PAUSED', providerId: null };
     if (assigned?.providerId && assigned?.resolvedChannel) {
       return {
         matchId: id,

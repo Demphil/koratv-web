@@ -14,6 +14,7 @@ test('operator jobs serialize, deduplicate, reserve providers and renew only the
   const dir = await mkdtemp(join(tmpdir(), 'operator-resources-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const values = new Map(), applied = [], calls = [];
+  let failApply = false, metadataCalls = 0, ended = false;
   const redis = { get: async k => values.get(k), set: async (k, v) => values.set(k, v), del: async k => values.delete(k), incr: async k => { const n = Number(values.get(k) || 0) + 1; values.set(k, n); return n; }, expire: async () => {} };
   const password = 'only-used-in-local-test';
   const config = { api: '', operatorControlPath: join(dir, 'state.json'), operatorPasswordHash: await hashOperatorPassword(password), providerAccounts: () => ({ A: { enabled: true }, B: { enabled: true } }) };
@@ -22,12 +23,13 @@ test('operator jobs serialize, deduplicate, reserve providers and renew only the
   const gate = new Promise(resolve => { release = resolve; });
   const app = express(); app.use(express.json());
   registerOperatorConsole(app, { config, redis, clientIp: () => 'test', status: () => ({}),
-    getMatches: async () => ['first', 'second', 'peer'].map(matchId => ({ matchId, channelName: `Channel ${matchId}` })),
+    getMatches: async () => ['first', 'second', 'peer'].map(matchId => ({ matchId, channelName: `Channel ${matchId}`, status: ended && matchId === 'first' ? 'RESULT' : 'LIVE' })),
+    matchWorker: async mode => { assert.equal(mode, 'refresh'); metadataCalls++; ended = true; return { parsed: 3, upserted: 3 }; },
     prepareChannel: async (channel, phase, match, options) => {
       concurrent++; maximum = Math.max(maximum, concurrent); calls.push({ channel, id: match.matchId, options });
       try { if (calls.length === 1) await gate; if (match.matchId === 'peer') throw new Error('channel_probe_failed'); return { name: channel, providerId: options.providerId || (match.matchId === 'first' ? 'A' : 'B') }; }
       finally { concurrent--; }
-    }, applyResources: async options => { applied.push(options); } });
+    }, applyResources: async options => { applied.push(options); if (failApply && options?.takeoverProvider) throw new Error('channel_probe_failed'); } });
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   t.after(() => { release(); server.closeAllConnections(); server.close(); });
   config.api = `http://127.0.0.1:${server.address().port}`;
@@ -60,4 +62,31 @@ test('operator jobs serialize, deduplicate, reserve providers and renew only the
   assert.equal(result.data.state.channels.peer, 'unchanged');
   assert.equal(calls[2].options.providerId, 'A');
   assert.equal(JSON.stringify(await (await fetch(`${config.api}/api/broadcast-control`)).json()).includes('providers'), false);
+  const stale = (await (await post('provider', { matchId: 'second', providerId: 'A', takeover: true, expectedOwnerIds: [] }, headers)).json()).job;
+  assert.equal((await waitJob(stale.id)).job.error, 'provider_owner_changed');
+  failApply = true;
+  const failed = (await (await post('provider', { matchId: 'second', providerId: 'A', takeover: true, expectedOwnerIds: ['first'] }, headers)).json()).job;
+  const rolledBack = await waitJob(failed.id);
+  assert.equal(rolledBack.job.state, 'failed');
+  assert.equal(rolledBack.data.state.providers.first.providerId, 'A');
+  assert.equal(rolledBack.data.state.pauses.first, undefined);
+  failApply = false;
+  const takeover = (await (await post('provider', { matchId: 'second', providerId: 'A', takeover: true, expectedOwnerIds: ['first'] }, headers)).json()).job;
+  const moved = await waitJob(takeover.id);
+  assert.equal(moved.job.state, 'complete');
+  assert.equal(moved.data.state.providers.second.providerId, 'A');
+  assert.equal(moved.data.state.pauses.first.day, moroccoMatchDay());
+  assert.equal(moved.data.state.providers.first, undefined);
+  assert.equal(moved.data.state.channels.peer, 'unchanged');
+  assert.equal(calls.at(-1).options.takeover, true);
+  const resume = (await (await post('provider', { matchId: 'first', providerId: 'B' }, headers)).json()).job;
+  const resumed = await waitJob(resume.id);
+  assert.equal(resumed.job.state, 'complete');
+  assert.equal(resumed.data.state.pauses.first, undefined);
+  const metadata = (await (await post('matches/refresh', {}, headers)).json()).job;
+  const refreshed = await waitJob(metadata.id);
+  assert.equal(refreshed.job.state, 'complete');
+  assert.equal(metadataCalls, 1);
+  assert.ok(refreshed.data.state.metadataRefreshedAt);
+  assert.deepEqual(applied.at(-1), { metadataOnly: true });
 });

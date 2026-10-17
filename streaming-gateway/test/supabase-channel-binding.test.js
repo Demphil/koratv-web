@@ -514,5 +514,12 @@ test('pooled playback does not play matches outside the assigned top resources',
     const [listed] = await createMatchesReader(env, 'kooora', catalog)();
     assert.equal(listed.source_ready, false);
     assert.equal(listed.resource_status, 'WAITING');
+    catalog.matchAssignment = () => ({ status: 'PAUSED' });
+    const paused = await createPlaybackResolver(env, 'kooora', catalog)(match.match_id);
+    assert.equal(paused.is_streaming_active, false);
+    assert.equal(paused.reason, 'operator_paused');
+    const [pausedListing] = await createMatchesReader(env, 'kooora', catalog)();
+    assert.equal(pausedListing.source_ready, false);
+    assert.equal(pausedListing.resource_status, 'PAUSED');
   } finally { globalThis.fetch = originalFetch; }
 });

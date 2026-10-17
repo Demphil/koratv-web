@@ -14,10 +14,14 @@ const matches = [
 const jobs = [], requests = new Map();
 const accounts = ['A', 'B', 'D', 'F', 'G', 'H', 'I', 'J'].map(provider => ({ provider, status: 'READY', matchIds: matches.filter(m => m.assignedProvider === provider).map(m => m.matchId) }));
 app.get('/api/operator/state', (req, res) => res.json({ csrf: 'local-fixture', state, matches, channels: [], jobs, providers: accounts.map(a => ({ id: a.provider })), status: { accounts, prewarm: { warmed: 3, failed: 0 } } }));
-for (const kind of ['channel', 'provider', 'refresh-links', 'selection']) app.post(`/api/operator/${kind}`, (req, res) => {
+app.get('/api/operator/channels', (_req, res) => res.json({ channels: [] }));
+for (const match of matches) match.providerOwners = Object.fromEntries(accounts.map(account => [account.provider, account.matchIds.filter(id => id !== match.matchId)]));
+for (const kind of ['channel', 'provider', 'refresh-links', 'selection', 'matches/refresh']) app.post(`/api/operator/${kind}`, (req, res) => {
   const previous = requests.get(req.body.requestId); if (previous) return res.status(202).json({ job: previous });
-  const job = { id: randomUUID(), kind: kind === 'refresh-links' ? 'refresh' : kind, state: 'running', phase: 'testing_media', matchId: req.body.matchId, matchIds: req.body.matchIds }; jobs.push(job); requests.set(req.body.requestId, job);
-  setTimeout(() => { job.state = 'complete'; job.phase = 'ready'; const match = matches.find(m => m.matchId === job.matchId); if (kind === 'provider' && match) match.boundProvider = match.assignedProvider = req.body.providerId; if (kind === 'channel' && match) match.channelName = req.body.channel; }, 4000);
+  const job = { id: randomUUID(), kind: kind === 'matches/refresh' ? 'metadata_refresh' : kind === 'refresh-links' ? 'refresh' : kind, state: 'running', phase: kind === 'matches/refresh' ? 'refreshing_metadata' : 'testing_media', matchId: req.body.matchId, matchIds: req.body.matchIds }; jobs.push(job); requests.set(req.body.requestId, job);
+  setTimeout(() => { job.state = 'complete'; job.phase = 'ready'; const match = matches.find(m => m.matchId === job.matchId); if (kind === 'provider' && match) match.boundProvider = match.assignedProvider = req.body.providerId; if (kind === 'channel' && match) match.channelName = req.body.channel;
+    if (kind === 'matches/refresh') { state.metadataRefreshedAt = new Date().toISOString(); matches[0].status = 'RESULT'; matches[0].isLive = false; matches[0].sourceReady = false; matches[0].score = '2 - 1'; }
+  }, 1500);
   res.status(202).json({ job });
 });
 registerOperatorConsole(app, { config: { operatorConsolePath: '/preview-operator' }, redis: {}, clientIp: () => 'local', getMatches: async () => [], status: () => ({}) });

@@ -234,3 +234,19 @@ test('hidden API fixtures do not reserve workers intended for the shared Kooora 
   ];
   assert.deepEqual(publicAssignmentMatches(matches).map(m=>m.match_id), ['visible','gulf']);
 });
+
+test('an explicit provider takeover pauses both feed identities until the operator resumes them', () => {
+  const now = new Date('2026-10-17T15:00:00Z');
+  const matches = [
+    { match_id: 'old', home_team: 'Liverpool', away_team: 'Arsenal', kickoff_time: '2026-10-17T14:00:00Z', payload: { status: 'LIVE' } },
+    { match_id: 'old-alias', home_team: 'ليفربول', away_team: 'أرسنال', kickoff_time: '2026-10-17T14:00:00Z', payload: { status: 'LIVE' } },
+    { match_id: 'target', home_team: 'Real Madrid', away_team: 'Barcelona', kickoff_time: '2026-10-17T14:00:00Z', payload: { status: 'LIVE' } }
+  ];
+  const input = { now, matches, providerCatalog: { providers: { A: {}, B: {} } },
+    routeStates: Object.fromEntries(matches.map(row => [row.match_id, { status: 'RESOLVED', resolvedChannel: row.match_id, providerIds: ['A','B'] }])),
+    providerBindings: { target: { day: '2026-10-17', providerId: 'A', manual: true } } };
+  const plan = buildProjectAssignmentPlan({ ...input, pausedMatches: { old: { day: '2026-10-17' } } });
+  assert.deepEqual(plan.assignments.map(row => [row.matchId,row.providerId]), [['target','A']]);
+  assert.equal(plan.ignored.filter(row => row.reason === 'operator_paused').length, 2);
+  assert.ok(buildProjectAssignmentPlan({ ...input, pausedMatches: { old: { day: '2026-10-16' } } }).assignments.some(row => row.matchId === 'old'));
+});

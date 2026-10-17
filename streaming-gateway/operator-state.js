@@ -1,11 +1,13 @@
-import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, rename, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { publicMatchId } from '../shared/public-match-id.mjs';
+import { moroccoMatchDay } from '../shared/operator-imported-match.mjs';
 import { normalizeNoticeDesign } from './player/broadcast-notice.js';
 
 export const operatorPath = (env = process.env) => env.OPERATOR_CONTROL_PATH || `${env.PROVIDER_POOL_DIR || '/etc/koratv'}/operator-control.json`;
-export const emptyOperatorState = () => ({ revision: 0, selection: null, overrides: {}, providers: {}, channels: {}, notices: { enabled: false, campaign: '', items: [], repeats: 1, duration: 10, interval: 300, matchIds: [] } });
+export const emptyOperatorState = () => ({ revision: 0, selection: null, overrides: {}, providers: {}, pauses: {}, channels: {}, notices: { enabled: false, campaign: '', items: [], repeats: 1, duration: 10, interval: 300, matchIds: [] } });
+export const operatorMatchPaused = (state, id, day = moroccoMatchDay()) => state?.pauses?.[id]?.day === day;
 export async function readOperatorState(path) {
   try { return { ...emptyOperatorState(), ...JSON.parse(await readFile(path, 'utf8')) }; }
   catch (error) { if (error.code !== 'ENOENT') throw error; return emptyOperatorState(); }
@@ -14,7 +16,16 @@ export async function writeOperatorState(path, state) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temp = `${path}.${randomUUID()}.tmp`;
   await writeFile(temp, JSON.stringify(state), { mode: 0o600 });
-  await rename(temp, path);
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try { await rename(temp, path); break; }
+      catch (error) {
+        // Windows readers/scanners can briefly hold the destination open.
+        if (process.platform !== 'win32' || !['EPERM', 'EBUSY', 'EACCES'].includes(error.code) || attempt >= 7) throw error;
+        await new Promise(resolve => setTimeout(resolve, 20 * (attempt + 1)));
+      }
+    }
+  } finally { await unlink(temp).catch(() => {}); }
 }
 export function activeOperatorOverride(state, matchId, now = Date.now()) {
   const row = state?.overrides?.[matchId];

@@ -11,7 +11,7 @@ import { access } from 'node:fs/promises';
 import { validateMatchSearch } from '../shared/operator-match-search.mjs';
 import { moroccoMatchDay } from '../shared/operator-imported-match.mjs';
 import { sourceMatchState } from '../shared/match-lifecycle.mjs';
-import { readOperatorState, writeOperatorState, validateSelection, validateNotices, publicControlState } from './operator-state.js';
+import { readOperatorState, writeOperatorState, validateSelection, validateNotices, publicControlState, operatorMatchPaused } from './operator-state.js';
 import { verifyOperatorPassword, sessionDigest, operatorCookie, readOperatorCookie } from './operator-auth.js';
 
 const execute = promisify(execFile);
@@ -29,6 +29,16 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
   let mutation = Promise.resolve(), operationQueue = Promise.resolve(), pendingOperations = 0, authenticating = false;
   const requests = new Map();
   const read = () => readOperatorState(path);
+  const ownersOf = (provider, target, state) => {
+    const assignments = config.providerAssignments?.().assignments || [];
+    const own = assignments.find(item => item.matchId === target || item.aliases?.includes(target));
+    const excluded = new Set([target, own?.matchId, ...(own?.aliases || []), ...(state.pauses?.[target]?.aliases || [])]);
+    return [...new Set([
+      ...Object.entries(state.providers || {}).filter(([, row]) => row.providerId === provider && row.day === moroccoMatchDay() && row.manual !== false).map(([id]) => id),
+      ...assignments.filter(item => item.providerId === provider).flatMap(item => [item.matchId, ...(item.aliases || [])]),
+      ...(status().accounts || []).filter(item => item.provider === provider).flatMap(item => item.matchIds || [])
+    ])].filter(id => id && !excluded.has(id) && !operatorMatchPaused(state, id)).sort();
+  };
   const update = change => {
     const work = mutation.catch(() => {}).then(async () => {
       const previous = await read();
@@ -102,7 +112,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     const assignments = config.providerAssignments?.().assignments || [];
     res.json({ csrf: req.operatorSession.csrf, day: moroccoMatchDay(), state, matches: matches.map(match => {
       const assignment = assignments.find(item => item.matchId === match.matchId || item.aliases?.includes(match.matchId));
-      return { ...match, assignedProvider: assignment?.providerId || '', boundProvider: sourceMatchState(match) !== 'ended' && state.providers?.[match.matchId]?.day === moroccoMatchDay() && state.providers[match.matchId].manual !== false ? state.providers[match.matchId].providerId : '' };
+      return { ...match, paused: operatorMatchPaused(state, match.matchId), providerOwners: Object.fromEntries(Object.keys(config.providerAccounts?.() || {}).map(id => [id, ownersOf(id, match.matchId, state)])), assignedProvider: assignment?.providerId || '', boundProvider: sourceMatchState(match) !== 'ended' && state.providers?.[match.matchId]?.day === moroccoMatchDay() && state.providers[match.matchId].manual !== false ? state.providers[match.matchId].providerId : '' };
     }), status: status(), providers: Object.entries(config.providerAccounts?.() || {}).filter(([, account]) => account.enabled).map(([id]) => ({ id })),
       channels: [...new Set(matches.flatMap(match => [match.channelName, ...(match.broadcastChannels || [])]).filter(Boolean))].slice(0, 64).map(name => ({ name })),
       jobs: [...jobs.values()] });
@@ -136,7 +146,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     const executeJob = async () => {
       job.state = 'running'; job.phase = 'preparing';
       try { if (exclusive) await beginOperation?.(); await task(job); job.state = 'complete'; job.phase = 'ready'; }
-      catch (error) { job.state = 'failed'; job.error = ['no_free_provider', 'channel_not_found', 'channel_probe_failed', 'invalid_selection', 'invalid_match', 'invalid_channel', 'search_expired', 'match_not_found', 'match_not_broadcastable', 'capacity_full', 'source_search_failed', 'invalid_provider', 'provider_busy', 'provider_reserved', 'provider_unavailable'].includes(error.message) ? error.message : 'operation_failed'; }
+      catch (error) { job.state = 'failed'; job.error = ['no_free_provider', 'channel_not_found', 'channel_probe_failed', 'invalid_selection', 'invalid_match', 'invalid_channel', 'search_expired', 'match_not_found', 'match_not_broadcastable', 'capacity_full', 'source_search_failed', 'invalid_provider', 'provider_busy', 'provider_reserved', 'provider_unavailable', 'provider_owner_changed'].includes(error.message) ? error.message : 'operation_failed'; console.warn('[operator-job]', { kind: job.kind, phase: job.phase, error: job.error, code: error.code || null }); }
       finally { job.finishedAt = new Date().toISOString(); if (exclusive) { pendingOperations--; await endOperation?.(); } }
     };
     if (exclusive) operationQueue = operationQueue.catch(() => {}).then(executeJob);
@@ -205,6 +215,18 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     await update(state => ({ ...state, channels: { ...state.channels, ...Object.fromEntries(affected.map(id => [id, randomUUID()])) } }));
     publish(await read());
   }, { kind: 'selection' }));
+  app.post('/api/operator/matches/refresh', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, async job => {
+    job.phase = 'refreshing_metadata';
+    const before = await getMatches();
+    const result = await matchWorker('refresh', {});
+    await config.refreshMatchSnapshots?.();
+    job.phase = 'assigning';
+    await applyResources({ metadataOnly: true });
+    const after = await getMatches();
+    const endedIds = after.filter(match => sourceMatchState(match) === 'ended' && before.some(row => row.matchId === match.matchId && sourceMatchState(row) !== 'ended')).map(row => row.matchId);
+    publish(await update(state => ({ ...state, metadataRefreshedAt: new Date().toISOString(), channels: { ...state.channels, ...Object.fromEntries(endedIds.map(id => [id, randomUUID()])) } })));
+    job.result = result;
+  }, { kind: 'metadata_refresh' }));
   const changeChannel = async (req, job, { refreshOnly = false, providerChange = false } = {}) => {
     const matches = await getMatches(), match = matches.find(item => item.matchId === req.body.matchId);
     if (!match) throw new Error('invalid_match');
@@ -213,30 +235,45 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     const binding = currentState.providers?.[match.matchId];
     const requested = req.body.providerId ?? (binding?.day === moroccoMatchDay() && binding.manual !== false ? binding.providerId : '');
     if (typeof requested !== 'string' || requested && (!/^[A-J]$/.test(requested) || !config.providerAccounts?.()[requested]?.enabled)) throw new Error('invalid_provider');
-    const reservable = new Set(matches.filter(item => !['ended', 'unavailable'].includes(sourceMatchState(item))).map(item => item.matchId));
-    if (requested && Object.entries(currentState.providers || {}).some(([id, row]) => id !== match.matchId && reservable.has(id) && row.day === moroccoMatchDay() && row.manual !== false && row.providerId === requested)) throw new Error('provider_reserved');
+    const owners = requested ? ownersOf(requested, match.matchId, currentState) : [];
+    const takeover = req.body.takeover === true;
+    if (owners.length && !takeover) throw new Error('provider_reserved');
+    if (takeover && (!requested || !Array.isArray(req.body.expectedOwnerIds) || JSON.stringify([...new Set(req.body.expectedOwnerIds)].sort()) !== JSON.stringify(owners))) throw new Error('provider_owner_changed');
     const channel = String(refreshOnly || providerChange ? match.channelName || currentState.overrides[match.matchId]?.channel : req.body.channel || '').trim();
     if (!channel || channel.length > 100 || /https?:|[/\\\r\n]/i.test(channel)) throw new Error('invalid_channel');
     job.matchId = match.matchId;
-    const prepared = await prepareChannel(channel, phase => { job.phase = phase; }, match, { providerId: requested });
+    const prepared = await prepareChannel(channel, phase => { job.phase = phase; }, match, { providerId: requested, ...(takeover ? { takeover: true } : {}) });
     // Persist only after a media segment has passed the bounded probe.
     job.phase = 'saving';
-    const previous = (await read()).overrides[match.matchId], previousProvider = currentState.providers?.[match.matchId];
-    await update(state => ({ ...state, providers: { ...state.providers, ...(prepared.providerId ? { [match.matchId]: { providerId: prepared.providerId, day: moroccoMatchDay(), manual: Boolean(requested), verifiedAt: new Date().toISOString() } } : {}) },
-      overrides: { ...state.overrides, [match.matchId]: { channel: prepared.name, expiresAt: new Date(Date.now() + 24 * 3600000).toISOString(), enabled: true } } }));
+    const previous = (await read()).overrides[match.matchId];
+    const targetIds = [match.matchId, ...(currentState.pauses?.[match.matchId]?.aliases || [])];
+    const affected = [...new Set([...targetIds, ...owners])];
+    await update(state => {
+      const providers = { ...state.providers }, pauses = { ...state.pauses };
+      for (const id of targetIds) delete pauses[id];
+      for (const id of owners) {
+        const assignment = config.providerAssignments?.().assignments?.find(row => row.matchId === id || row.aliases?.includes(id));
+        delete providers[id]; pauses[id] = { day: moroccoMatchDay(), aliases: assignment ? [assignment.matchId, ...(assignment.aliases || [])] : [id], displacedBy: match.matchId, at: new Date().toISOString() };
+      }
+      if (prepared.providerId) providers[match.matchId] = { providerId: prepared.providerId, day: moroccoMatchDay(), manual: Boolean(requested), verifiedAt: new Date().toISOString() };
+      return { ...state, providers, pauses, overrides: { ...state.overrides, [match.matchId]: { channel: prepared.name, expiresAt: new Date(Date.now() + 24 * 3600000).toISOString(), enabled: true } } };
+    });
     job.phase = 'assigning';
-    const scope = { matchId: match.matchId, ...(sourceMatchState(match) === 'upcoming' && !match.isLive ? { allowDeferred: true } : {}) };
+    const scope = { matchId: match.matchId, ...(owners.length ? { displacedMatchIds: owners, takeoverProvider: requested } : {}), ...(sourceMatchState(match) === 'upcoming' && !match.isLive ? { allowDeferred: true } : {}) };
     try { await applyResources(scope); }
     catch (error) {
       await update(state => { const overrides = { ...state.overrides }, providers = { ...state.providers }; if (previous) overrides[match.matchId] = previous; else delete overrides[match.matchId];
-        if (previousProvider) providers[match.matchId] = previousProvider; else delete providers[match.matchId]; return { ...state, overrides, providers }; });
-      await applyResources(scope).catch(() => {});
+        const pauses = { ...state.pauses };
+        for (const id of affected) { if (currentState.providers?.[id]) providers[id] = currentState.providers[id]; else delete providers[id]; if (currentState.pauses?.[id]) pauses[id] = currentState.pauses[id]; else delete pauses[id]; }
+        return { ...state, overrides, providers, pauses }; });
+      await applyResources(owners.length ? {} : scope).catch(() => {});
       throw error;
     }
-    await update(state => ({ ...state, channels: { ...state.channels, [match.matchId]: randomUUID() } }));
+    await update(state => ({ ...state, channels: { ...state.channels, ...Object.fromEntries(affected.map(id => [id, randomUUID()])) } }));
     publish(await read());
     job.channel = prepared.name;
     job.provider = prepared.providerId;
+    job.displacedMatchIds = owners;
   };
   app.post('/api/operator/channel', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, job => changeChannel(req, job), { kind: 'channel' }));
   app.post('/api/operator/provider', sameOrigin, authorize, csrf, (req, res) => runJob(req, res, job => changeChannel(req, job, { providerChange: true }), { kind: 'provider' }));
@@ -330,7 +367,8 @@ export async function runOperatorMatchWorker(mode, input, env = process.env) {
   try { await access(script); }
   catch { script = '/home/ubuntu/iptv-system/secure-streaming/scripts/operator-match-import.mjs'; }
   let stdout;
-  try { ({ stdout } = await execute(process.execPath, [script, mode, JSON.stringify(input)], { env, timeout: 120000, maxBuffer: 512 * 1024 })); }
+  const workerEnv = mode === 'refresh' ? { ...env, MATCH_SOURCE_PROVIDER: 'kooora', KOOORA_DETAIL_CHANNEL_LIMIT: '0' } : env;
+  try { ({ stdout } = await execute(process.execPath, [script, mode, JSON.stringify(input)], { env: workerEnv, timeout: 180000, maxBuffer: 512 * 1024 })); }
   catch (error) { stdout = error.stdout; if (!stdout) throw new Error('source_search_failed'); }
   let result;
   try { result = JSON.parse(stdout); } catch { throw new Error('source_search_failed'); }

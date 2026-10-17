@@ -9,7 +9,7 @@
     <div id="workspace" hidden>
       <nav><button class="active" data-view="matches-view">المباريات والموارد</button><button data-view="notices-view">الإشعارات</button></nav>
       <section id="matches-view">
-        <div class="section-heading"><h1>مباريات اليوم</h1><span id="resource-count"></span></div>
+        <div class="section-heading"><h1>مباريات اليوم</h1><span id="resource-count"></span><button id="refresh-kooora"><img src="/api/operator/ui/icons/refresh-cw" alt="">تحديث بيانات Kooora</button><small id="metadata-updated"></small></div>
         <div id="servers" class="servers"></div>
         <div class="selection-toolbar"><label><input id="manual-enabled" type="checkbox"> تفضيل يدوي</label><span id="selected-count">0 / 8</span><button id="renew-selected"><img src="/api/operator/ui/icons/refresh-cw" alt="">تجديد روابط المحددة</button><button id="save-selection" class="primary"><img src="/api/operator/ui/icons/save" alt="">حفظ الاختيار</button></div>
         <div id="selected-list" class="selected-list"></div>
@@ -38,6 +38,6 @@
     </div>
     <p id="message" role="status"></p>
   </main>
-<script type="module" src="/api/operator/ui/console.js?v=20261013-provider-control"></script>
+<script type="module" src="/api/operator/ui/console.js?v=20261017-full-control"></script>
   <script type="module" src="/api/operator/ui/depth.js"></script>
 </body></html>

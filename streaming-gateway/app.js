@@ -535,9 +535,14 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     const results = [];
     const currentKeys = new Set();
     try {
+      const snapshots = await config.getMatchesForOrigin(config.frontend);
+      const endedIds = new Set(snapshots.filter(row => ['ended', 'unavailable'].includes(sourceMatchState(row.payload || row))).map(row => row.match_id || row.id));
+      for (const id of endedIds) config.invalidatePlayback?.(id);
       const assignments = (config.providerAssignments?.().assignments || [])
         .filter((assignment) => assignment?.matchId && assignment?.providerId)
+        .filter(item => ![item.matchId, ...(item.aliases || [])].some(id => endedIds.has(id)))
         .slice(0, config.prewarmMaxResources || 8);
+      const scheduledChannels = new Set(assignments.map(item => item.resolvedChannel));
       const targets = matchId ? assignments.filter(item => item.matchId === matchId || item.aliases?.includes(matchId)) : assignments;
       const targetViewers = new Set(targets.map(item => `prewarm:${item.matchId}`));
       const scheduledViewers = new Set(assignments.map(item => `prewarm:${item.matchId}`));
@@ -547,6 +552,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       for (const [key, viewerId] of prewarmKeepalive) {
         if (!scheduledViewers.has(viewerId)) {
           providerPool.releaseViewer(key, viewerId);
+          const demand = providerPool.demands.get(key);
+          if (demand && !scheduledChannels.has(demand.channel)) {
+            providerPool.demands.delete(key);
+            for (const lease of providerPool.leases.values()) if (lease.key === key) providerPool.revoke(lease.provider);
+          }
           prewarmKeepalive.delete(key);
         } else if (matchId && !targetViewers.has(viewerId)) {
           currentKeys.add(key);
@@ -649,7 +659,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       warm: warmPlaybackManifest, install: installPreparedOperatorChannel,
       refresh: () => config.refreshProviderCatalog()
     }),
-    applyResources: async ({ matchId, allowDeferred = false } = {}) => {
+    applyResources: async ({ matchId, allowDeferred = false, displacedMatchIds = [], takeoverProvider } = {}) => {
       const before = config.providerAssignments?.().assignments || [];
       await refreshOperatorResources();
       config.refreshProviderCatalog?.();
@@ -658,6 +668,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       else config.invalidatePlayback?.();
       await config.refreshMatchSnapshots?.();
       if (providerPool) {
+        if (displacedMatchIds.length && takeoverProvider) {
+          const lease = providerPool.leases.get(takeoverProvider);
+          if (lease) { providerPool.demands.delete(lease.key); providerPool.revoke(takeoverProvider); prewarmKeepalive.delete(lease.key); }
+          for (const id of displacedMatchIds) { config.invalidatePlayback?.(id); preparedMatches.delete(id); }
+        }
         const wanted = new Set((config.providerAssignments?.().assignments || []).map(item => item.resolvedChannel));
         for (const lease of providerPool.leases.values()) {
           if (!wanted.has(lease.channel)) {

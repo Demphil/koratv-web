@@ -1,7 +1,7 @@
 import { PROVIDER_IDS } from './provider-pool.js';
 
 export function createOperatorChannelPreparer({ pool, accounts, resolveChannel, discover, warm, install, refresh }) {
-  return async (channel, phase, match, { providerId = '' } = {}) => {
+  return async (channel, phase, match, { providerId = '', takeover = false } = {}) => {
     if (!pool || !discover) throw new Error('channel_not_found');
     pool.rebalance();
     const inventory = accounts();
@@ -12,7 +12,7 @@ export function createOperatorChannelPreparer({ pool, accounts, resolveChannel, 
     };
     const target = [...pool.leases.values()].find(ownsTarget);
     if (providerId && (!PROVIDER_IDS.includes(providerId) || !inventory[providerId]?.enabled)) throw new Error('invalid_provider');
-    if (providerId && pool.leases.has(providerId) && !ownsTarget(pool.leases.get(providerId))) throw new Error('provider_busy');
+    if (providerId && pool.leases.has(providerId) && !ownsTarget(pool.leases.get(providerId)) && !takeover) throw new Error('provider_busy');
     if (providerId && pool.probes.has(providerId)) throw new Error('provider_unavailable');
     const available = PROVIDER_IDS.filter(id => inventory[id]?.enabled && !pool.leases.has(id)
       && !pool.probes.has(id) && (pool.blocked.get(id) || 0) <= pool.now());
@@ -29,7 +29,7 @@ export function createOperatorChannelPreparer({ pool, accounts, resolveChannel, 
       if (++probes > 8 || Date.now() >= deadline) return false;
       phase('testing_media');
       const current = pool.leases.get(provider);
-      if (current && !(current.provider === target?.provider && ownsTarget(current)) && !(current.channel === name && current.url === chosen.original_url)) return false;
+      if (current && !(takeover && provider === providerId) && !(current.provider === target?.provider && ownsTarget(current)) && !(current.channel === name && current.url === chosen.original_url)) return false;
       try {
         const test = lease => warm({ channel_id: name }, lease);
         const probe = current?.channel === name && current.url === chosen.original_url

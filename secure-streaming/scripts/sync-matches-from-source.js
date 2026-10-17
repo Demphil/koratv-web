@@ -905,18 +905,24 @@ export function mergeMatchPayload(existingPayload = {}, refreshedPayload = {}) {
   return { ...existingPayload, ...refreshedPayload };
 }
 
-async function mergeExistingChannels(supabase, rows) {
-  const matchIds = rows.map((row) => row.match_id).filter(Boolean);
+export async function mergeExistingChannels(supabase, rows) {
+  const matchIds = [...new Set(rows.map((row) => row.match_id).filter(Boolean))];
   if (!matchIds.length) return { rows, versions: new Map() };
-
-  const { data, error } = await supabase
-    .from(matchesTable)
-    .select("match_id,channel,payload,updated_at")
-    .in("match_id", matchIds);
-
-  if (error) {
-    throw new Error(`Cannot safely merge current match snapshots (${error.code || 'network'})`);
+  // Arabic IDs expand in URLs; a large IN filter overflows the proxy response headers.
+  const data = [];
+  let batch = [], length = 0;
+  const readBatch = async () => {
+    const result = await supabase.from(matchesTable).select('match_id,channel,payload,updated_at').in('match_id', batch);
+    if (result.error) throw new Error(`Cannot safely merge current match snapshots (${result.error.code || 'network'})`);
+    data.push(...(result.data || []));
+    batch = []; length = 0;
+  };
+  for (const id of matchIds) {
+    const size = encodeURIComponent(id).length + 4;
+    if (batch.length && (length + size > 4000 || batch.length >= 20)) await readBatch();
+    batch.push(id); length += size;
   }
+  if (batch.length) await readBatch();
 
   const existingByMatchId = new Map((data || []).map((row) => [row.match_id, row]));
   const merged = rows.map((row) => {

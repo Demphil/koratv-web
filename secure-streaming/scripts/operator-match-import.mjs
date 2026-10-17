@@ -1,11 +1,17 @@
 import { fileURLToPath } from 'node:url';
-import { fetchHtml, parseKoooraMatches, koooraTodayUrl, enrichKoooraRowsWithScheduleChannels, enrichKoooraRowsWithDetailChannels, upsertMatchRows } from './sync-matches-from-source.js';
+import { fetchHtml, parseKoooraMatches, koooraTodayUrl, enrichKoooraRowsWithScheduleChannels, enrichKoooraRowsWithDetailChannels, upsertMatchRows, syncMatchesFromSource } from './sync-matches-from-source.js';
 import { validateMatchSearch, findRequestedMatches } from '../../shared/operator-match-search.mjs';
 import { reconcileBroadcasts } from '../../shared/match-broadcasts.mjs';
 import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
 import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs';
 
 export async function runOperatorMatchImport(mode, input, dependencies = {}) {
+  if (mode === 'refresh') {
+    if (process.env.MATCH_SOURCE_PROVIDER !== 'kooora' && !dependencies.sync) throw new Error('source_search_failed');
+    const result = await (dependencies.sync || syncMatchesFromSource)({ dryRunMode: false });
+    if (!result.parsed || !Number.isInteger(result.upserted)) throw new Error('source_search_failed');
+    return { parsed: result.parsed, upserted: result.upserted };
+  }
   const query = validateMatchSearch(input);
   if (input.day && input.day !== query.day) throw new Error('search_expired');
   const load = dependencies.load || (async () => parseKoooraMatches(await fetchHtml(koooraTodayUrl(query.day)), { includeAll: true, expectedDate: query.day }));
