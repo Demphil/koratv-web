@@ -121,8 +121,13 @@ import { currentConsoleSelection } from './selection.js';
       const renew = button('refresh-cw', 'تجديد الرابط من المورد واختبار الفيديو', () => action('refresh-links', { matchId: match.matchId }, renew)); renew.append(document.createTextNode('تجديد الرابط'));
       const toggle = button('square', 'إيقاف بث المباراة', () => {
         const current = snapshot.matches.find(item => item.matchId === match.matchId);
+        if (current.paused) {
+          const assigned = new Set(snapshot.matches.filter(item => !item.paused && !ended(item) && item.assignedProvider).map(item => item.assignedProvider));
+          if (assigned.size >= (snapshot.status.maxResources || 8)) return message('كل موارد البث محجوزة. أوقف مباراة أخرى أولاً؛ لن نقطع بث المشاهدين لاستئناف هذه المباراة.', true);
+        }
         if (!current.paused && !confirm(`إيقاف بث ${matchLabel(match.matchId)}؟ ستبقى النتيجة ظاهرة ويمكنك استئناف البث لاحقاً.`)) return;
-        action(current.paused ? 'matches/resume' : 'matches/stop', { matchId: match.matchId }, toggle);
+        action(current.paused ? 'channel' : 'matches/stop', { matchId: match.matchId,
+          ...(current.paused ? { resume: true, channel: input.value, ...(provider.dataset.dirty === 'true' ? { providerId: provider.value } : {}) } : {}) }, toggle);
       });
       toggle.className = 'match-toggle danger';
       const toggleLabel = document.createElement('span'); toggle.append(toggleLabel);

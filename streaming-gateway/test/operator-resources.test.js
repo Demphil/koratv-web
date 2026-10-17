@@ -106,6 +106,16 @@ test('operator jobs serialize, deduplicate, reserve providers and renew only the
   assert.equal(restarted.job.state, 'complete');
   assert.equal(restarted.data.state.pauses.first, undefined);
   assert.equal(restarted.data.state.pauses['first-alias'], undefined);
+  const stopAgain = (await (await post('matches/stop', { matchId: 'first' }, headers)).json()).job;
+  await waitJob(stopAgain.id);
+  const draftResume = (await (await post('channel', { matchId: 'first', resume: true, channel: 'Chosen first HD', providerId: 'B' }, headers)).json()).job;
+  const draftResumed = await waitJob(draftResume.id);
+  assert.equal(draftResumed.job.state, 'complete');
+  assert.equal(calls.at(-1).channel, 'Chosen first HD');
+  assert.equal(calls.at(-1).options.providerId, 'B');
+  assert.equal(draftResumed.data.state.pauses['first-alias'], undefined);
+  assert.equal(draftResumed.data.state.providers.second.providerId, 'A');
+  assert.equal(draftResumed.data.state.channels.peer, 'unchanged');
   const metadata = (await (await post('matches/refresh', {}, headers)).json()).job;
   const refreshed = await waitJob(metadata.id);
   assert.equal(refreshed.job.state, 'complete');

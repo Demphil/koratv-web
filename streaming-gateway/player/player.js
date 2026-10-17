@@ -44,6 +44,9 @@ let selectedLineupSide = 'home';
 let matchPanelRequestSequence = 0;
 let liveUpdatesMode = false;
 let liveUpdatesSignature = '';
+let recoveringStream = false;
+let recoveryPolls = 0;
+let resumeAfterAdminStop = false;
 let resumeAfterQualityChange = false;
 const sessionKey = 'koratv-playback-session';
 const lastMatchKey = 'koratv-last-match-id';
@@ -535,13 +538,16 @@ async function loadMatchPanel(matchId) {
 }
 
 function stopVideoForLiveUpdates() {
+  if (hlsSessionToken) resumeAfterAdminStop = !video.paused || resumePlayback;
   for (const timer of [expiryTimer, loadTimer, retryTimer, qualityStallTimer, stallRecoveryTimer]) clearTimeout(timer);
   clearInterval(poolHeartbeatTimer);
   clearInterval(playbackProgressTimer);
+  playbackProgressTimer = null;
   hls?.destroy();
   hls = null;
   hlsSessionToken = '';
   resumePlayback = false;
+  resumeAfterQualityChange = false;
   video.pause();
   video.removeAttribute('src');
   video.load();
@@ -600,12 +606,17 @@ async function prepareLiveUpdates(matchId) {
   return true;
 }
 
-async function start({ forceNewSession = false } = {}) {
+async function start({ forceNewSession = false, recovery = false } = {}) {
   if (!enforceEmbedIntegrity()) return;
   notifyParent('connecting');
   showLoading('جاري تجهيز البث...', 'يتم إنشاء جلسة مشاهدة آمنة');
   const requestedMatchId = embeddedMatchId || decodeJwtPayload(entry || '').matchId;
-  if (requestedMatchId && await prepareLiveUpdates(requestedMatchId)) return;
+  if (recovery) {
+    const match = await loadMatchPanel(requestedMatchId || activeMatchId);
+    if (liveUpdatesMode) return;
+    if (match?.playbackState === 'ended') { showLiveUpdates(match); return; }
+    if (!match?.sourceReady) throw new Error('recovery_pending');
+  } else if (requestedMatchId && await prepareLiveUpdates(requestedMatchId)) return;
   if (!Hls.isSupported() && !video.canPlayType('application/vnd.apple.mpegurl')) throw new Error('المتصفح لا يدعم تشغيل هذا البث. يرجى تحديثه أو استخدام متصفح حديث.');
   let session;
   const readStoredSession = () => {
@@ -716,7 +727,7 @@ async function start({ forceNewSession = false } = {}) {
   connectStream(0);
   expiryTimer = setTimeout(() => {
     try { sessionStorage.removeItem(sessionKey); } catch {}
-    failPlayback('انتهت جلسة المشاهدة. افتح المباراة من الموقع للمتابعة.', false);
+    recoverStream();
   }, sessionExpiresAt - Date.now());
 }
 
@@ -772,6 +783,7 @@ function connectStream(attempt = 0) {
   retryTimer = null;
   clearTimeout(qualityStallTimer);
   resumePlayback = resumePlayback || !video.paused;
+  resumeAfterQualityChange = resumeAfterQualityChange || resumePlayback;
   hls?.destroy();
   playbackProgressAt = Date.now();
   playbackProgressTime = video.currentTime;
@@ -792,8 +804,7 @@ function connectStream(attempt = 0) {
     if ([409, 503].includes(data.response?.code)) {
       clearTimeout(loadTimer); clearTimeout(retryTimer);
       hls.stopLoad();
-      showLoading('جاري انتظار خط بث متاح', 'تتم إعادة المحاولة تلقائياً للمباراة نفسها');
-      retryTimer = setTimeout(() => connectStream(0), 3000);
+      recoverStream();
       return;
     }
     if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
@@ -804,7 +815,7 @@ function connectStream(attempt = 0) {
     if ([401, 403].includes(data.response?.code)) {
       try { sessionStorage.removeItem(sessionKey); } catch {}
       hlsSessionToken = '';
-      failPlayback('انتهت جلسة المشاهدة أو رُفض الوصول. افتح المباراة مجدداً من الموقع.', false);
+      recoverStream();
     } else if (selectedManualHeight && (data.type === Hls.ErrorTypes.NETWORK_ERROR || data.type === Hls.ErrorTypes.MEDIA_ERROR)) {
       fallbackToAuto('الجودة المختارة غير مستقرة. تم الرجوع للوضع التلقائي.');
     } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries < MAX_NETWORK_RECOVERIES) {
@@ -900,8 +911,32 @@ function armLoadTimeout() {
   loadTimer = setTimeout(() => scheduleReconnect('تأخر وصول البث من المصدر.'), INITIAL_LOAD_TIMEOUT_MS);
 }
 
+async function recoverStream() {
+  if (liveUpdatesMode || recoveringStream || !activeMatchId) return;
+  recoveringStream = true;
+  for (const timer of [loadTimer, retryTimer, qualityStallTimer, stallRecoveryTimer, expiryTimer]) clearTimeout(timer);
+  hls?.stopLoad();
+  showLoading('جاري استعادة القناة...', 'يتم فحص نسخة بديلة من القناة نفسها تلقائياً');
+  recoveryPolls++;
+  try {
+    const match = await loadMatchPanel(activeMatchId);
+    if (liveUpdatesMode) return;
+    if (match?.playbackState === 'ended') { showLiveUpdates(match); return; }
+    if (match?.sourceReady) {
+      recoveryPolls = 0;
+      if (!hlsSessionToken || sessionExpiresAt <= Date.now() + 5000) {
+        await start({ forceNewSession: true, recovery: true });
+      } else connectStream(0);
+      return;
+    }
+  } catch {}
+  finally { recoveringStream = false; }
+  if (!liveUpdatesMode) retryTimer = setTimeout(() => recoverStream(), Math.min(15000, 3000 + Math.floor(recoveryPolls / 3) * 1000));
+}
+
 function scheduleReconnect(reason) {
   if (liveUpdatesMode) return;
+  if (recoveringStream) return;
   clearTimeout(loadTimer);
   clearTimeout(retryTimer);
   retryTimer = null;
@@ -912,7 +947,7 @@ function scheduleReconnect(reason) {
     retryTimer = setTimeout(() => connectStream(nextAttempt), delay);
     return;
   }
-  failPlayback('البث غير متوفر حالياً - حاول لاحقاً.', true);
+  recoverStream();
 }
 
 function failPlayback(message, retry = true) {
@@ -1154,14 +1189,24 @@ let operatorRefreshRunning = false;
 window.refreshOperatorPlayback = async () => {
   if (operatorRefreshRunning || !activeMatchId) return;
   operatorRefreshRunning = true;
-  const wasPlaying = !video.paused;
+  const wasPlaying = !video.paused || resumeAfterAdminStop;
   clearTimeout(expiryTimer); clearInterval(matchTimer); clearInterval(poolHeartbeatTimer);
   clearTimeout(retryTimer); clearTimeout(loadTimer);
   hls?.destroy(); hls = null;
   try {
+    const match = await loadMatchPanel(activeMatchId);
+    if (match?.broadcastPaused || match?.resourceStatus === 'PAUSED' || match?.playbackState === 'ended') { showLiveUpdates(match); return; }
+    if (!match?.sourceReady) throw new Error('resume_pending');
+    liveUpdatesMode = false;
+    liveUpdatesSignature = '';
+    document.documentElement.classList.remove('live-updates-view');
+    status.classList.remove('live-updates-state');
+    if (refreshStreamButton) refreshStreamButton.hidden = false;
     try { sessionStorage.removeItem(sessionKey); } catch {}
     resumePlayback = wasPlaying;
     await start({ forceNewSession: true });
+    resumeAfterAdminStop = false;
+    if (!playbackProgressTimer) playbackProgressTimer = setInterval(checkPlaybackProgress, 2000);
   } catch { showLoading('جاري تحديث القناة', 'تتم إعادة المحاولة تلقائياً'); setTimeout(() => window.refreshOperatorPlayback(), 5000); }
   finally { operatorRefreshRunning = false; }
 };

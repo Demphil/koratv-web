@@ -210,7 +210,8 @@ export function buildProjectAssignmentPlan({
       if (!matchId || !state || state.status !== 'RESOLVED' || !state.resolvedChannel) return null;
       const paused = Object.entries(pausedMatches).some(([id, pause]) => pause.day === day
         && (id === matchId || sameFixture(bindingMatches.get(id), match)));
-      if (paused) { deferred.push({ matchId, match, state, providerIds: [], reason: 'operator_paused' }); return null; }
+      if (paused) { deferred.push({ matchId, match, state, providerIds: [], priorityScore: scoreProjectMatch(match, state.resolvedChannel, options),
+        manualRank: manualRank.has(matchId) ? manualRank.get(matchId) : null, reason: 'operator_paused' }); return null; }
       const previous = previousAssignments.find(item => item.matchId === matchId || item.aliases?.includes(matchId));
       const binding = bindings[matchId] || Object.entries(bindings).find(([id]) => sameFixture(bindingMatches.get(id), match))?.[1];
       const providerIds = (state.providerIds || []).filter(id => enabledProviders.includes(id)
@@ -507,18 +508,19 @@ async function readProjectMatches(supabase, env, dateKey, timezone) {
   return publicAssignmentMatches((data || []).filter((row) => dateKeyFor(row.kickoff_time, timezone) === dateKey));
 }
 
-async function writeProjectAssignmentsToSupabase(supabase, env, dateKey, plan) {
+export async function writeProjectAssignmentsToSupabase(supabase, env, dateKey, plan) {
   if (String(env.RESOURCE_ASSIGNMENT_WRITE_SUPABASE_STATE || 'true').trim().toLowerCase() === 'false') {
     return { enabled: false, written: 0 };
   }
   const table = env.RESOURCE_ASSIGNMENT_TABLE || 'match_resource_assignments';
+  const priority = value => Number.isFinite(Number(value)) ? Math.round(Number(value)) : 0;
   const rows = plan.assignments.flatMap((assignment) => [assignment.matchId, ...(assignment.aliases || [])].map(matchId => ({
     match_id: matchId,
     assignment_date: dateKey,
     provider_id: assignment.providerId,
     requested_channel: assignment.requestedChannel,
     resolved_channel: assignment.resolvedChannel,
-    priority_score: assignment.priorityScore,
+    priority_score: priority(assignment.priorityScore),
     status: 'ASSIGNED',
     updated_at: assignment.assignedAt,
   })));
@@ -529,7 +531,7 @@ async function writeProjectAssignmentsToSupabase(supabase, env, dateKey, plan) {
       provider_id: null,
       requested_channel: null,
       resolved_channel: row.resolvedChannel,
-      priority_score: row.priorityScore,
+      priority_score: priority(row.priorityScore),
       status: 'WAITING',
       updated_at: plan.generatedAt,
     })));

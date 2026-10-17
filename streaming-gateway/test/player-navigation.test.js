@@ -105,7 +105,7 @@ test('native HLS uses the protected stream endpoint without constructing Hls', (
   let loads = 0;
   const video = { load: () => loads++ };
   const context = { clearTimeout: () => {}, retryTimer: null, qualityStallTimer: null, hls: null,
-    resumePlayback: false, liveUpdatesMode: false,
+    resumePlayback: false, liveUpdatesMode: false, resumeAfterQualityChange: false,
     reconnectAttempt: 0, networkRetries: 0, mediaRetries: 0, showLoading: () => {}, armLoadTimeout: () => {},
     Hls: { isSupported: () => false }, video, currentQuality: '',
     streamUrlForQuality: () => 'https://stream-api.koratv.click/api/stream.m3u8?token=protected-session' };
