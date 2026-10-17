@@ -9,7 +9,7 @@ import {
   getMoroccoDateKey,
   getNextMoroccoDayDelay
 } from './api.js?v=20261013-youth-exclusion';
-import { frontendMatchState } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
+import { frontendMatchState, sourceMatchState } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
 
 const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
 const PLAYER_ORIGIN = 'https://fabor.sbs';
@@ -398,7 +398,8 @@ function renderSection(container, matches, message) {
 
 function compareBroadcastPriority(a, b, now = new Date()) {
   const start = match => matchStartDate(match)?.getTime() || 0;
-  const phase = match => frontendMatchState(match, (start(match) - now.getTime()) / 60000);
+  const phase = match => sourceMatchState(match) === 'upcoming' && start(match) > now.getTime()
+    ? 'upcoming' : frontendMatchState(match, (start(match) - now.getTime()) / 60000);
   const group = match => phase(match) === 'ended' ? 5
     : phase(match) === 'live' && (match.broadcastPaused === true || match.resourceStatus === 'PAUSED') ? 1
     : (match.resourceStatus === 'WAITING' && match.sourceReady !== true)

@@ -1,8 +1,8 @@
 export function createAutomaticChannelRepair({ pool, discover, warm, install, refresh, now = Date.now }) {
   const failedUntil = new Map();
   const pending = new Map();
-  return async (playback, failedLease) => {
-    if (!discover || !failedLease) return null;
+  return async (playback, failedLease, { shouldContinue = () => true } = {}) => {
+    if (!discover || !failedLease || !shouldContinue()) return null;
     const provider = failedLease.provider, channel = playback.channel_id;
     const key = `${provider}:${channel}`;
     if (pending.has(key)) return pending.get(key);
@@ -13,7 +13,7 @@ export function createAutomaticChannelRepair({ pool, discover, warm, install, re
       const deadline = now() + 45_000;
       try {
         const result = await discover(channel, [provider], async (id, candidate, name) => {
-          if (id !== provider || name !== channel || candidate.original_url === failedLease.url
+          if (!shouldContinue() || id !== provider || name !== channel || candidate.original_url === failedLease.url
             || ++probes > 8 || now() >= deadline) return false;
           const current = pool.leases.get(provider);
           // Only replace this broken channel, never borrow another match's account.
@@ -25,6 +25,7 @@ export function createAutomaticChannelRepair({ pool, discover, warm, install, re
             return ok;
           } catch { return false; }
         });
+        if (!shouldContinue()) return null;
         if (result?.resolvedChannel !== channel || !verifiedUrls.has(result.provider_sources?.[provider])
           || Object.keys(result.provider_sources).some(id => id !== provider)) throw new Error('no_verified_edition');
         await install(result);
@@ -35,6 +36,7 @@ export function createAutomaticChannelRepair({ pool, discover, warm, install, re
         if (demand?.failedProvider === provider) demand.failedUntil = 0;
         return result;
       } catch {
+        if (!shouldContinue()) return null;
         if (failedUntil.size >= 100) failedUntil.delete(failedUntil.keys().next().value);
         failedUntil.set(key, now() + 300_000);
         return null;

@@ -322,10 +322,10 @@ for (const failure of ['manifest-509', 'segment-503', 'all-failed']) {
 
 for (const recover of [true, false]) {
   test(`automatic media inspection rejects HTTP 200 HEVC and ${recover ? 'selects H264' : 'keeps readiness false'}`, async t => {
-    let selected = 'bad', paused = false, discoveries = 0;
+    let selected = 'bad', paused = false, scheduled = false, discoveries = 0;
     const rows = () => [{ match_id: 'target', home_team: 'Morocco', away_team: 'Mali',
       league: 'International Friendlies', kickoff_time: new Date(Date.now() - 60000).toISOString(),
-      channel: 'Exact HD 5', resource_status: paused ? 'PAUSED' : 'ASSIGNED', source_ready: true, payload: { status: 'LIVE' } }];
+      channel: 'Exact HD 5', resource_status: paused ? 'PAUSED' : scheduled ? 'SCHEDULED' : 'ASSIGNED', source_ready: true, payload: { status: 'LIVE' } }];
     const config = { providerPoolEnabled: true, prewarmAssignedResources: true, mediaValidationEnabled: true, enableAntiBot: false,
       secret: 's'.repeat(48), hmacSecret: 'h'.repeat(48), frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example',
       frontendOrigins: new Set(['https://koratv.click']), upstreamOrigins: new Set(), trustedProxies: [], upstreamUserAgent: 'test',
@@ -365,6 +365,9 @@ for (const recover of [true, false]) {
     assert.equal(app.locals.providerPool.leases.get('A'), peer);
     assert.equal(peer.controller.signal.aborted, false);
     assert.equal(discoveries, 1);
+    scheduled = true;
+    assert.equal((await getMatches())[0].sourceReady, false, 'a scheduled catalog link is not a prepared match');
+    scheduled = false;
     paused = true;
     await app.locals.prewarmAssignedResources('test-refresh');
     const stopped = (await getMatches())[0];

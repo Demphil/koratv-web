@@ -475,9 +475,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   const validateMedia = createMediaValidator({ enabled: config.mediaValidationEnabled, ...(config.inspectMedia ? { inspect: config.inspectMedia } : {}) });
   let operatorPreparing = false;
   const normalizeRuntimeMatch = row => {
-    if (!prewarmState.enabled || row.resource_status !== 'ASSIGNED') return normalizeMatch(row, config);
-    const prepared = preparedMatches.get(row.match_id || row.id);
-    const ready = prepared?.ok && prepared.channel === cleanText(row.channel || row.payload?.channel)
+    if (!prewarmState.enabled) return normalizeMatch(row, config);
+    const id = row.match_id || row.id;
+    const assignment = config.providerAssignments?.().assignments?.find(item => item.matchId === id || item.aliases?.includes(id));
+    const prepared = preparedMatches.get(assignment?.matchId || id);
+    const ready = row.resource_status === 'ASSIGNED' && prepared?.ok && prepared.channel === cleanText(row.channel || row.payload?.channel)
       && providerPool.valid(prepared.lease)
       && prepared.sourceUrl === prepared.lease.url
       && Date.now() - prepared.checkedAt < 2 * (config.prewarmIntervalMs || 60_000);
@@ -592,6 +594,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         }
       }
       for (const assignment of targets) {
+        if (operatorPreparing && !reason.startsWith('operator-')) {
+          for (const [key, viewer] of prewarmKeepalive) if (scheduledViewers.has(viewer)) currentKeys.add(key);
+          break;
+        }
         const result = {
           matchId: assignment.matchId,
           channel: assignment.resolvedChannel || null,
@@ -631,7 +637,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
             catch { warmed = { ok: false, error: 'upstream_unreachable' }; }
             if (warmed.ok) break;
             if (warmed.status !== 509) {
-              const repaired = await repairAutomaticChannel(playback, lease);
+              const repaired = await repairAutomaticChannel(playback, lease, {
+                shouldContinue: () => !operatorPreparing || reason.startsWith('operator-')
+              });
               if (repaired) {
                 playback = { ...playback, provider_sources: { ...playback.provider_sources, ...repaired.provider_sources } };
                 lease = providerPool.acquire(playback, viewerId);

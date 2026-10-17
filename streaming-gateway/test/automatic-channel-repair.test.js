@@ -75,3 +75,21 @@ test('automatic repair cannot probe or replace an unrelated occupied provider', 
   assert.equal(pool.leases.get('A'), peer);
   assert.equal(peer.controller.signal.aborted, false);
 });
+
+test('operator activity cancels background edition search without installing or imposing backoff', async t => {
+  const pool = new ProviderPool(); t.after(() => pool.close());
+  const playback = { match_id: 'target', channel_id: 'TV', provider_sources: { A: 'https://test.example/old.m3u8' } };
+  const lease = pool.acquire(playback, 'prewarm:target');
+  let active = true, discoveries = 0;
+  const repair = createAutomaticChannelRepair({ pool,
+    discover: async (channel, _ids, verify) => {
+      discoveries++; active = false;
+      assert.equal(await verify('A', { original_url: 'https://test.example/new.m3u8' }, channel), false);
+    }, warm: () => { throw new Error('operator should take priority'); },
+    install: () => { throw new Error('cancelled search must not install'); }, refresh: () => {},
+  });
+  assert.equal(await repair(playback, lease, { shouldContinue: () => active }), null);
+  active = true;
+  await repair(playback, lease, { shouldContinue: () => active });
+  assert.equal(discoveries, 2);
+});

@@ -31,7 +31,7 @@ test('both frontend lifecycle modules stay identical to the shared backend contr
   assert.equal(readFileSync(new URL('../../../foottv6/shared/match-lifecycle.mjs', import.meta.url), 'utf8'), canonical);
   for (const path of ['../../assets/js/matches.js', '../../../foottv6/assets/js/matches.js']) {
     const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-    assert.match(source, /import \{ frontendMatchState \} from/);
+    assert.match(source, /import \{ frontendMatchState, sourceMatchState \} from/);
     assert.doesNotMatch(source, /getMatchDuration|diffMins < -|diff < -duration/);
   }
 });
