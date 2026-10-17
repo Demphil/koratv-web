@@ -31,3 +31,6 @@
 - The public API changed from paused/not-ready to assigned/ready; the resumed player decoded video with readyState 4.
 - An independent Barcelona player remained playing through deployment and resume, advancing from 20 to over 220 seconds without navigation.
 - HLS library and API configuration SHA256 hashes remained unchanged. Private rollback archives were created on both hosts.
+- A CDP offline simulation affected only the agent's resumed-match tab: 15 manifest requests, nine metadata requests and 27 heartbeats failed with ERR_INTERNET_DISCONNECTED.
+- After restoring that tab's network, video resumed automatically with readyState 4 and no Page.frameNavigated events. The independent Barcelona tab kept playing and advanced beyond 418 seconds.
+- Both public origins subsequently reported the resumed fixture as assigned/ready and not paused. No supplier outage was induced in production.
