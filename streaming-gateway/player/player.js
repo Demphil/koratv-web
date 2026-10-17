@@ -527,25 +527,44 @@ async function loadMatchPanel(matchId) {
     const goals = document.getElementById('match-goals');
     const scorers = Array.isArray(match.goals) ? match.goals.filter((goal) => goal?.player).slice(0, 8) : [];
     goals.innerHTML = scorers.map((goal) => `<span>${escapeHtml(goal.minute ? `${goal.minute}' ` : '')}${escapeHtml(goal.player)}</span>`).join('');
-    if (liveUpdatesMode) showLiveUpdates(match);
+    if (liveUpdatesMode || match.broadcastPaused === true || match.resourceStatus === 'PAUSED') showLiveUpdates(match);
     return match;
   } catch {
     // Match context is decorative; playback should not fail if it is unavailable.
   }
 }
 
+function stopVideoForLiveUpdates() {
+  for (const timer of [expiryTimer, loadTimer, retryTimer, qualityStallTimer, stallRecoveryTimer]) clearTimeout(timer);
+  clearInterval(poolHeartbeatTimer);
+  clearInterval(playbackProgressTimer);
+  hls?.destroy();
+  hls = null;
+  hlsSessionToken = '';
+  resumePlayback = false;
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  try { sessionStorage.removeItem(sessionKey); } catch {}
+}
+
 function showLiveUpdates(match) {
+  const wasLiveUpdatesMode = liveUpdatesMode;
   liveUpdatesMode = true;
+  if (!wasLiveUpdatesMode) stopVideoForLiveUpdates();
   document.documentElement.classList.add('live-updates-view');
   status.classList.remove('error');
   status.classList.add('live-updates-state');
   const ended = match.playbackState === 'ended';
-  const ready = match.sourceReady === true && match.playbackState === 'live';
-  const signature = `${ended}|${ready}|${match.resourceStatus}`;
+  const paused = match.broadcastPaused === true || match.resourceStatus === 'PAUSED';
+  const ready = !paused && match.sourceReady === true && match.playbackState === 'live';
+  const signature = `${ended}|${paused}|${ready}|${match.resourceStatus}`;
   if (signature === liveUpdatesSignature) return;
   liveUpdatesSignature = signature;
   const message = ended
     ? 'انتهت المباراة. يمكنك مراجعة النتيجة وأحداثها في البطاقة أسفل الصفحة.'
+    : paused
+      ? 'البث المرئي موقوف من الإدارة. تبقى النتيجة والإحصائيات وأحداث المباراة متاحة أدناه.'
     : ready
       ? 'أصبح البث المرئي جاهزاً. يمكنك الانتقال للمشاهدة أو الاستمرار في متابعة أحداث المباراة أدناه.'
     : match.resourceStatus === 'WAITING'
@@ -572,7 +591,7 @@ function showLiveUpdates(match) {
 async function prepareLiveUpdates(matchId) {
   activeMatchId = matchId;
   const match = await loadMatchPanel(matchId);
-  if (!match || match.playbackState !== 'live' || match.sourceReady === true) return false;
+  if (!match || !(match.broadcastPaused === true || match.resourceStatus === 'PAUSED') && (match.playbackState !== 'live' || match.sourceReady === true)) return false;
   selectedMatchTab = 'details';
   renderMatchPanel();
   showLiveUpdates(match);
@@ -677,6 +696,7 @@ async function start({ forceNewSession = false } = {}) {
       try { sessionStorage.setItem(sessionKey, JSON.stringify(session)); } catch {}
     }
   }
+  if (liveUpdatesMode) return;
   if (!session?.token || session.expiresAt <= Date.now()) throw new Error('انتهت جلسة المشاهدة. افتح المباراة من الموقع للمتابعة.');
   hlsSessionToken = session.token;
   activeMatchId = session.matchId;
@@ -747,6 +767,7 @@ function hlsOptions() {
 }
 
 function connectStream(attempt = 0) {
+  if (liveUpdatesMode) return;
   clearTimeout(retryTimer);
   retryTimer = null;
   clearTimeout(qualityStallTimer);
@@ -880,6 +901,7 @@ function armLoadTimeout() {
 }
 
 function scheduleReconnect(reason) {
+  if (liveUpdatesMode) return;
   clearTimeout(loadTimer);
   clearTimeout(retryTimer);
   retryTimer = null;
@@ -894,6 +916,7 @@ function scheduleReconnect(reason) {
 }
 
 function failPlayback(message, retry = true) {
+  if (liveUpdatesMode) return;
   clearTimeout(loadTimer);
   clearTimeout(retryTimer);
   clearTimeout(qualityStallTimer);
@@ -1050,11 +1073,13 @@ function monitorQualityStall() {
 }
 
 function showLoading(message, detail = '') {
+  if (liveUpdatesMode) return;
   status.classList.remove('error');
   status.innerHTML = `<div class="player-loading-box"><span class="stream-spinner" aria-hidden="true"></span><strong>${escapeHtml(message)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ''}</div>`;
 }
 
 function hideStatus() {
+  if (liveUpdatesMode) return;
   status.textContent = '';
   status.classList.remove('error');
 }

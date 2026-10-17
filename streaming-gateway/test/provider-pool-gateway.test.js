@@ -319,3 +319,57 @@ for (const failure of ['manifest-509', 'segment-503', 'all-failed']) {
     }
   });
 }
+
+for (const recover of [true, false]) {
+  test(`automatic media inspection rejects HTTP 200 HEVC and ${recover ? 'selects H264' : 'keeps readiness false'}`, async t => {
+    let selected = 'bad', paused = false, discoveries = 0;
+    const rows = () => [{ match_id: 'target', home_team: 'Morocco', away_team: 'Mali',
+      league: 'International Friendlies', kickoff_time: new Date(Date.now() - 60000).toISOString(),
+      channel: 'Exact HD 5', resource_status: paused ? 'PAUSED' : 'ASSIGNED', source_ready: true, payload: { status: 'LIVE' } }];
+    const config = { providerPoolEnabled: true, prewarmAssignedResources: true, mediaValidationEnabled: true, enableAntiBot: false,
+      secret: 's'.repeat(48), hmacSecret: 'h'.repeat(48), frontend: 'https://koratv.click', player: 'https://fabor.sbs', api: 'https://api.example',
+      frontendOrigins: new Set(['https://koratv.click']), upstreamOrigins: new Set(), trustedProxies: [], upstreamUserAgent: 'test',
+      providerAssignments: () => ({ assignments: [{ matchId: 'target', providerId: 'B', resolvedChannel: 'Exact HD 5' }] }),
+      getMatchesForOrigin: async () => rows(),
+      getPlaybackForSource: async () => paused ? { is_streaming_active: false, reason: 'operator_paused' }
+        : { is_streaming_active: true, match_id: 'target', channel_id: 'Exact HD 5', preferred_provider: 'B',
+          provider_sources: { B: `https://test.example/${selected}.m3u8` } },
+      inspectMedia: async bytes => [{ codec_type: 'video', codec_name: new Uint8Array(bytes)[1] === 2 ? 'h264' : 'hevc', start_time: '10' },
+        { codec_type: 'audio', codec_name: 'aac', start_time: '10' }],
+      discoverOperatorChannel: async (channel, ids, verify) => {
+        discoveries++;
+        assert.deepEqual(ids, ['B']);
+        for (const name of ['bad', ...(recover ? ['working'] : ['broken'])]) {
+          const original_url = `https://test.example/${name}.m3u8`;
+          if (await verify('B', { original_url }, channel)) return { resolvedChannel: channel, provider_sources: { B: original_url } };
+        }
+      },
+      installPreparedChannel: async result => { assert.equal(result.provider_sources.B, 'https://test.example/working.m3u8'); selected = 'working'; },
+      refreshProviderCatalog: () => {}, invalidatePlayback: () => {},
+    };
+    const app = createApp({ config, redis: {}, fetchImpl: async url => {
+      const manifest = url.pathname.endsWith('.m3u8');
+      const response = new Response(manifest ? `#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:7\n#EXTINF:6,\n${url.pathname.slice(1, -5)}.ts\n`
+        : new Uint8Array([71, url.pathname.includes('working') ? 2 : 1]));
+      Object.defineProperty(response, 'url', { value: url.href }); return response;
+    } });
+    clearInterval(app.locals.providerPrewarmTimer); clearInterval(app.locals.providerPrewarmHeartbeatTimer); clearTimeout(app.locals.providerPrewarmStartupTimer);
+    const peer = app.locals.providerPool.acquire({ match_id: 'peer', channel_id: 'Other TV', provider_sources: { A: 'https://test.example/peer.m3u8' } }, 'real-viewer');
+    const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+    t.after(() => { app.locals.providerPool.close(); server.closeAllConnections(); server.close(); });
+    const getMatches = async () => (await (await fetch(`http://127.0.0.1:${server.address().port}/api/matches`, { headers: { Origin: config.frontend } })).json()).matches;
+    assert.equal((await getMatches())[0].sourceReady, false);
+    const state = await app.locals.prewarmAssignedResources('test');
+    assert.equal(state.warmed, Number(recover));
+    assert.equal((await getMatches())[0].sourceReady, recover);
+    assert.equal(app.locals.providerPool.leases.get('A'), peer);
+    assert.equal(peer.controller.signal.aborted, false);
+    assert.equal(discoveries, 1);
+    paused = true;
+    await app.locals.prewarmAssignedResources('test-refresh');
+    const stopped = (await getMatches())[0];
+    assert.equal(stopped.broadcastPaused, true);
+    assert.equal(stopped.sourceReady, false);
+    assert.equal(discoveries, 1, 'automatic refresh must not resume a manual stop');
+  });
+}

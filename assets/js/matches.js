@@ -188,9 +188,10 @@ function renderMatch(match) {
   match = { ...match, playbackState: lifecycleState };
   const isEnded = lifecycleState === 'ended';
   const isLive = lifecycleState === 'live';
+  const isPaused = match.broadcastPaused === true || match.resourceStatus === 'PAUSED';
   const isSoon = diffMins > 0 && diffMins <= 60; 
   const hasKnownSource = match.sourceAvailable === true || Boolean(match.channelName);
-  const canOpenSecurePlayer = isLive && !isEnded;
+  const canOpenSecurePlayer = (isLive || isPaused) && !isEnded;
   const disabledReason = isEnded
     ? 'ended'
     : !isLive
@@ -223,6 +224,10 @@ function renderMatch(match) {
       statusBadge = '<span class="live-badge ended">انتهت</span>';
       timeText = match.score && match.score !== 'VS' ? `<span class="live-score">${scoreMarkup(match.score)}</span>` : 'انتهت';
       matchStatusClass = 'is-ended';
+  } else if (isPaused) {
+      statusBadge = '<span class="live-badge ended">البث موقوف</span>';
+      matchStatusClass = 'is-paused';
+      if (match.score && match.score.includes('-')) timeText = `<span class="live-score">${scoreMarkup(match.score)}</span>`;
   } else if (isSoon) {
       timeText = '<span class="soon-text-blink">تبدأ قريباً</span>';
       statusBadge = '<span class="live-badge soon">قريباً</span>';
@@ -282,6 +287,7 @@ function matchCanonicalKey(match) {
 
 function matchCompletenessScore(match) {
   let score = 0;
+  if (match.resourceStatus === 'PAUSED' || match.broadcastPaused === true) score += 1000;
   if (match.resourceStatus === 'ASSIGNED') score += 100;
   if (match.playbackState === 'live') score += 14;
   if (match.playbackState === 'ended') score += 8;
@@ -352,7 +358,7 @@ function matchRenderSignature(match) {
     match.liveExtraMinute || 0,
     frontendMatchState(match, minutesUntilStart),
     minutesUntilStart > 0 && minutesUntilStart <= 60,
-    match.resourceStatus || '', match.sourceReady, match.sourceAvailable, match.channelName || '',
+    match.resourceStatus || '', match.broadcastPaused, match.sourceReady, match.sourceAvailable, match.channelName || '',
     match.homeTeam?.name || '', match.awayTeam?.name || '',
     Number.isFinite(Number(match.liveMinute)) ? String(match.liveMinute) : '',
     JSON.stringify(match.yellowCards || null),
@@ -393,11 +399,12 @@ function renderSection(container, matches, message) {
 function compareBroadcastPriority(a, b, now = new Date()) {
   const start = match => matchStartDate(match)?.getTime() || 0;
   const phase = match => frontendMatchState(match, (start(match) - now.getTime()) / 60000);
-  const group = match => phase(match) === 'ended' ? 4
+  const group = match => phase(match) === 'ended' ? 5
+    : phase(match) === 'live' && (match.broadcastPaused === true || match.resourceStatus === 'PAUSED') ? 1
     : (match.resourceStatus === 'WAITING' && match.sourceReady !== true)
-      || (phase(match) === 'live' && match.resourceStatus !== 'ASSIGNED' && match.sourceReady !== true) ? 3
+      || (phase(match) === 'live' && match.resourceStatus !== 'ASSIGNED' && match.sourceReady !== true) ? 4
     : phase(match) === 'live' ? 0
-    : start(match) <= now.getTime() + 60 * 60000 ? 1 : 2;
+    : start(match) <= now.getTime() + 60 * 60000 ? 2 : 3;
   const difference = group(a) - group(b);
   if (difference) return difference;
   const timeDifference = group(a) === 0 ? start(b) - start(a) : start(a) - start(b);

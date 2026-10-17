@@ -20,6 +20,7 @@ import { matchPlaybackState as providerPlaybackState, sourceMatchState, matchLis
 import { resolvePublicMatchId } from '../shared/public-match-id.mjs';
 import { broadcastChannelCandidates } from '../shared/match-broadcasts.mjs';
 import { registerOperatorConsole, installPreparedOperatorChannel, refreshOperatorResources } from './operator-console.js';
+import { createAutomaticChannelRepair } from './automatic-channel-repair.js';
 import { createOperatorChannelPreparer } from './operator-channel.js';
 import { isOperatorImportedMatch } from '../shared/operator-imported-match.mjs';
 
@@ -128,7 +129,8 @@ function normalizeMatch(row, config) {
   const playbackState = matchPlaybackState(row, config);
   const cards = payload.cards || payload.stats?.cards || {};
   const channelName = cleanText(row.channel || payload.channel);
-  const sourceAvailable = row.source_ready === true;
+  const broadcastPaused = row.resource_status === 'PAUSED';
+  const sourceAvailable = !broadcastPaused && row.source_ready === true;
   return {
     match_id: row.match_id || row.id,
     matchId: row.match_id || row.id,
@@ -152,6 +154,7 @@ function normalizeMatch(row, config) {
     sourceReady: sourceAvailable && playbackState === 'live',
     sourceAvailable,
     resourceStatus: row.resource_status || null,
+    broadcastPaused,
     broadcastRank: row.broadcast_rank || null,
     manuallySelected: row.manually_selected === true,
     operatorImported: isOperatorImportedMatch(row),
@@ -287,6 +290,7 @@ function normalizeMatchName(value) {
 
 function matchCompletenessScore(match) {
   let score = 0;
+  if (match.resourceStatus === 'PAUSED') score += 1000;
   if (match.resourceStatus === 'ASSIGNED') score += 100;
   if (match.sourceReady) score += 20;
   if (match.sourceAvailable) score += 10;
@@ -467,6 +471,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   };
   const prewarmKeepalive = new Map();
   const preparedMatches = new Map();
+  const preparedProgress = new HlsProgressMonitor();
   const validateMedia = createMediaValidator({ enabled: config.mediaValidationEnabled, ...(config.inspectMedia ? { inspect: config.inspectMedia } : {}) });
   let operatorPreparing = false;
   const normalizeRuntimeMatch = row => {
@@ -474,6 +479,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     const prepared = preparedMatches.get(row.match_id || row.id);
     const ready = prepared?.ok && prepared.channel === cleanText(row.channel || row.payload?.channel)
       && providerPool.valid(prepared.lease)
+      && prepared.sourceUrl === prepared.lease.url
       && Date.now() - prepared.checkedAt < 2 * (config.prewarmIntervalMs || 60_000);
     return normalizeMatch({ ...row, source_ready: Boolean(ready) }, config);
   };
@@ -484,7 +490,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     app.locals.matchSnapshotStartupTimer = primeTimer;
   }
 
-  const warmPlaybackManifest = async (playback, lease, { validate = false } = {}) => {
+  const warmPlaybackManifest = async (playback, lease, { fresh = false } = {}) => {
     const headers = { 'User-Agent': config.upstreamUserAgent, Accept: '*/*' };
     let url = new URL(lease.mediaUrl || lease.url);
     for (let depth = 0; depth < 3; depth += 1) {
@@ -503,6 +509,11 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       }
       lease.mediaUrl = allowedUrl(base, new Set([new URL(base).origin])).href;
       if (!lines.length) return { ok: false, error: 'empty_manifest' };
+      const progressKey = createHash('sha256').update(lease.url).digest('hex').slice(0, 24);
+      if (preparedProgress.channels.size >= 100 && !preparedProgress.channels.has(`${lease.provider}:${progressKey}`)) {
+        preparedProgress.channels.delete(preparedProgress.channels.keys().next().value);
+      }
+      if (preparedProgress.observe(lease.provider, progressKey, text).stalled) return { ok: false, error: 'stalled_manifest' };
       const sequence = Number(text.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/m)?.[1]);
       const hasSequence = Number.isSafeInteger(sequence) && sequence >= 0;
       const hash = hasSequence ? '' : createHash('sha256').update(text).digest('hex').slice(0, 16);
@@ -516,7 +527,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       }
       const segmentBytes = await segment.arrayBuffer();
       if (!segmentBytes.byteLength) return { ok: false, error: 'empty_segment' };
-      const media = validate ? await validateMedia(lease.url, segmentBytes, { fresh: true }) : { ok: true };
+      const media = await validateMedia(lease.url, segmentBytes, { fresh });
       if (!media.ok) {
         console.warn('[media-validation]', { channel: playback.channel_id, provider: lease.provider, ...media });
         return media;
@@ -531,10 +542,19 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
           () => fetchLeasedUpstream(target, { headers, redirect: 'follow' }, lease)
         );
       }
+      if (!providerPool.valid(lease)) return { ok: false, error: 'pool_reassigned' };
+      lease.validatedSource = lease.url;
       return { ok: true, channel: playback.channel_id, provider: lease.provider };
     }
     return { ok: false, error: 'playlist_depth' };
   };
+
+  const repairAutomaticChannel = createAutomaticChannelRepair({
+    pool: providerPool, discover: config.discoverOperatorChannel,
+    warm: warmPlaybackManifest,
+    install: config.installPreparedChannel || installPreparedOperatorChannel,
+    refresh: () => { config.refreshProviderCatalog?.(); config.invalidatePlayback?.(); }
+  });
 
   const prewarmAssignedResources = async (reason = 'interval', { fresh = false, matchId = '' } = {}) => {
     if (!prewarmState.enabled || prewarmState.running || (operatorPreparing && !reason.startsWith('operator-'))) return prewarmState;
@@ -610,6 +630,18 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
             try { warmed = await warmPlaybackManifest(playback, lease); }
             catch { warmed = { ok: false, error: 'upstream_unreachable' }; }
             if (warmed.ok) break;
+            if (warmed.status !== 509) {
+              const repaired = await repairAutomaticChannel(playback, lease);
+              if (repaired) {
+                playback = { ...playback, provider_sources: { ...playback.provider_sources, ...repaired.provider_sources } };
+                lease = providerPool.acquire(playback, viewerId);
+                providerPool.updateSource(lease, playback.provider_sources[lease.provider]);
+                try { warmed = await warmPlaybackManifest(playback, lease); }
+                catch { warmed = { ok: false, error: 'upstream_unreachable' }; }
+                if (warmed.ok) break;
+              }
+            }
+            if (!providerPool.valid(lease)) lease = [...providerPool.leases.values()].find(current => current.provider === lease.provider && current.key === lease.key) || lease;
             providerPool.fail(lease, warmed.status || 503);
             // Capacity errors need a free account; expired links also need urgent renewal.
             if (warmed.status !== 509 && tried.size === 1 && !fresh) {
@@ -622,7 +654,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
             prewarmKeepalive.set(lease.key, viewerId);
             currentKeys.add(lease.key);
           }
-          preparedMatches.set(assignment.matchId, { ok: warmed.ok, channel: playback.channel_id, lease, checkedAt: Date.now() });
+          preparedMatches.set(assignment.matchId, { ok: warmed.ok, channel: playback.channel_id, sourceUrl: lease?.url, lease, checkedAt: Date.now() });
           results.push({ ...result, ...warmed });
         } catch (error) {
           preparedMatches.set(assignment.matchId, { ok: false, checkedAt: Date.now() });
@@ -665,7 +697,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     prepareChannel: createOperatorChannelPreparer({
       pool: providerPool, accounts: config.providerAccounts,
       resolveChannel: config.resolveOperatorChannel, discover: config.discoverOperatorChannel,
-      warm: (playback, lease) => warmPlaybackManifest(playback, lease, { validate: true }), install: installPreparedOperatorChannel,
+      warm: (playback, lease) => warmPlaybackManifest(playback, lease, { fresh: true }), install: installPreparedOperatorChannel,
       refresh: () => config.refreshProviderCatalog()
     }),
     applyResources: async ({ matchId, allowDeferred = false, displacedMatchIds = [], takeoverProvider, stopMatchIds = [], metadataOnly = false } = {}) => {
@@ -1065,6 +1097,13 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         const attemptedProviders = new Set();
         let retriedProviderEntry = false;
         while (true) {
+          if (lease && req.path === '/api/stream.m3u8' && config.mediaValidationEnabled && lease.validatedSource !== lease.url) {
+            const verified = await warmPlaybackManifest(playback, lease);
+            if (!verified.ok) {
+              prewarmAssignedResources('unverified-source', { matchId: playback.match_id }).catch(() => {});
+              throw new PoolError('media_not_ready', 503);
+            }
+          }
           try {
             upstream = await fetchCachedUpstream(source, { headers, redirect: 'follow' }, cacheVersion, lease);
           } catch (error) {

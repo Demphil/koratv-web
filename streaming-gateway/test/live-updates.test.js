@@ -44,7 +44,7 @@ test('ready streams and non-live matches do not enter text-only mode', async () 
 test('both sites open live matches without claiming they have a ready video source', () => {
   for (const file of ['../../assets/js/matches.js', '../../../foottv6/assets/js/matches.js']) {
     const text = readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.match(text, /const canOpenSecurePlayer = isLive && !isEnded;/);
+    assert.match(text, /const canOpenSecurePlayer = \(isLive \|\| isPaused\) && !isEnded;/);
     assert.doesNotMatch(text, /sourceReady\s*=\s*true/);
   }
   const css = readFileSync(new URL('../player/player.css', import.meta.url), 'utf8');
@@ -82,5 +82,46 @@ test('match info exposes assignment and text mode without invoking playback reso
   assert.equal(match.broadcastRank, 2);
   assert.equal(match.manuallySelected, true);
   assert.equal(match.providerId, undefined);
+  row.resource_status = 'PAUSED';
+  response = await fetch(`${base}/api/match-info?matchId=exact-match`);
+  ({ match } = await response.json());
+  assert.equal(match.broadcastPaused, true);
+  assert.equal(match.sourceReady, false, 'pause wins even over a stale ready snapshot');
+  assert.equal(match.viewingMode, 'live_updates');
+  const listed = await (await fetch(`${base}/api/matches`, { headers: { Origin: config.frontend } })).json();
+  assert.equal(listed.matches.some(item => item.matchId === 'exact-match' && item.broadcastPaused), true);
   assert.equal((await fetch(`${base}/api/match-info?matchId=wrong-match`)).status, 404);
+});
+
+test('paused matches ignore stale readiness and never create a video session', async () => {
+  const block = source.slice(source.indexOf('async function prepareLiveUpdates('), source.indexOf('function isAllowedStreamApiUrl('));
+  for (const playbackState of ['live', 'upcoming']) {
+    let shown = 0;
+    const context = vm.createContext({ embeddedMatchId: 'paused', entry: '', activeMatchId: '', selectedMatchTab: '', matchTimer: null,
+      enforceEmbedIntegrity: () => true, notifyParent: () => {}, showLoading: () => {},
+      loadMatchPanel: async () => ({ playbackState, resourceStatus: 'PAUSED', sourceReady: true }),
+      renderMatchPanel: () => {}, showLiveUpdates: () => shown++, clearInterval: () => {}, setInterval: () => 1,
+      fetch: () => { throw new Error('paused match must not request a token'); },
+    });
+    await vm.runInContext(block + ';start()', context);
+    assert.equal(shown, 1);
+  }
+});
+
+test('entering text coverage destroys video and clears reconnect and heartbeat timers', () => {
+  const block = source.slice(source.indexOf('function stopVideoForLiveUpdates('), source.indexOf('function showLiveUpdates('));
+  const timeouts = [], intervals = [], videoCalls = [];
+  const context = vm.createContext({ expiryTimer: 1, loadTimer: 2, retryTimer: 3, qualityStallTimer: 4, stallRecoveryTimer: 5,
+    poolHeartbeatTimer: 6, playbackProgressTimer: 7, hlsSessionToken: 'old', resumePlayback: true,
+    hls: { destroy: () => videoCalls.push('destroy') }, sessionKey: 'test', sessionStorage: { removeItem: () => {} },
+    clearTimeout: id => timeouts.push(id), clearInterval: id => intervals.push(id),
+    video: { pause: () => videoCalls.push('pause'), removeAttribute: name => videoCalls.push(name), load: () => videoCalls.push('load') },
+  });
+  vm.runInContext(block + ';stopVideoForLiveUpdates()', context);
+  assert.deepEqual(timeouts, [1, 2, 3, 4, 5]);
+  assert.deepEqual(intervals, [6, 7]);
+  assert.deepEqual(videoCalls, ['destroy', 'pause', 'src', 'load']);
+  assert.equal(context.hlsSessionToken, '');
+  assert.equal(context.hls, null);
+  assert.match(source, /if \(liveUpdatesMode\) return;/);
 });
