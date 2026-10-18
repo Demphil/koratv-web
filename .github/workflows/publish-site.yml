@@ -16,6 +16,9 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/generate-match-pages.cjs"
+      - "scripts/public-analytics.cjs"
+      - "scripts/public-analytics.test.cjs"
+      - "assets/js/site-metrics.js"
       - "scripts/match-archive.cjs"
       - "scripts/match-archive.test.cjs"
       - "assets/css/archive.css"
@@ -73,6 +76,7 @@ jobs:
           npm ci --ignore-scripts --no-audit --fund=false
           node scripts/check-seo.js
           node --test scripts/build-public-site.test.cjs
+          node --test scripts/public-analytics.test.cjs
           node --test scripts/news-images.test.cjs
           node --test scripts/match-loading.test.cjs
           node scripts/build-public-site.cjs
