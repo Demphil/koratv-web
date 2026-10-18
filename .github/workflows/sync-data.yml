@@ -64,8 +64,8 @@ jobs:
           npm ci --ignore-scripts --no-audit --fund=false
           node scripts/check-seo.js
           node --test scripts/build-public-site.test.cjs scripts/generate-match-pages.test.cjs scripts/prerender-match-list.test.cjs scripts/match-archive.test.cjs
-          node scripts/build-public-site.cjs
-          node scripts/generate-match-pages.cjs --output _site
+          node --test scripts/build-complete-site.test.cjs scripts/news-pages.test.cjs
+          node scripts/build-complete-site.cjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

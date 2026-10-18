@@ -1,8 +1,6 @@
 name: Publish static SEO updates
 
 on:
-  schedule:
-    - cron: "12 */4 * * *"
   push:
     branches:
       - main
@@ -15,6 +13,8 @@ on:
       - "scripts/apply-seo.js"
       - "scripts/build-public-site.cjs"
       - "scripts/build-public-site.test.cjs"
+      - "scripts/build-complete-site.cjs"
+      - "scripts/build-complete-site.test.cjs"
       - "package.json"
       - "package-lock.json"
       - "scripts/generate-match-pages.cjs"
@@ -46,7 +46,7 @@ on:
       - "assets/css/icons.css"
       - "assets/fonts/**"
       - "assets/images/logo-header.webp"
-      - ".github/workflows/publish-site.yml"
+      - ".github/workflows/*.yml"
   workflow_dispatch:
 
 concurrency:
@@ -83,19 +83,18 @@ jobs:
           npm ci --ignore-scripts --no-audit --fund=false
           node scripts/check-seo.js
           node --test scripts/build-public-site.test.cjs
+          node --test scripts/build-complete-site.test.cjs
           node --test scripts/public-analytics.test.cjs
           node --test scripts/news-images.test.cjs
           node --test scripts/news-pages.test.cjs
           node --test scripts/match-loading.test.cjs
-          node scripts/build-public-site.cjs
 
-      - name: Test and generate indexable match pages
+      - name: Test indexable match pages
         run: |
           node --test scripts/generate-match-pages.test.cjs scripts/prerender-match-list.test.cjs scripts/match-archive.test.cjs
-          node scripts/generate-match-pages.cjs --output _site
 
-      - name: Generate internal news and article sitemap
-        run: node scripts/news-pages.cjs
+      - name: Build complete publication including match and news archives
+        run: node scripts/build-complete-site.cjs
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

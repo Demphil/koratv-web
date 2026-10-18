@@ -128,16 +128,25 @@ async function readResponse(response, maximum) {
   return Buffer.concat(parts).toString('utf8');
 }
 
-async function loadPrevious(config, now, fetcher) {
-  const response = await fetcher(config.siteUrl + '/news/catalog.json', { signal: AbortSignal.timeout(12000), redirect: 'error' });
-  if (response.status === 404) return { articles: [], feeds: [] };
-  if (!response.ok) throw new Error('Previous news archive unavailable (' + response.status + ')');
-  const data = JSON.parse(await readResponse(response, 16000000));
+function validateCatalog(data, config, now) {
   if (data.version !== 1 || data.siteUrl !== config.siteUrl || !Array.isArray(data.articles) || !Array.isArray(data.feeds))
     throw new Error('Invalid previous news archive');
   const articles = data.articles.map(raw => normalize(raw, now));
   if (articles.some(article => !article)) throw new Error('Invalid archived news entry');
   return { articles, feeds: data.feeds };
+}
+
+async function loadPrevious(config, now, fetcher, recovery = null) {
+  const response = await fetcher(config.siteUrl + '/news/catalog.json', { signal: AbortSignal.timeout(12000), redirect: 'error' });
+  if (response.status === 404) {
+    if (!recovery) return { articles: [], feeds: [] };
+    const restored = validateCatalog(recovery, config, now);
+    console.warn('[news] Restoring ' + restored.articles.length + ' archived pages from the checked-in recovery checkpoint.');
+    return restored;
+  }
+  if (!response.ok) throw new Error('Previous news archive unavailable (' + response.status + ')');
+  const data = JSON.parse(await readResponse(response, 16000000));
+  return validateCatalog(data, config, now);
 }
 
 async function collectFeeds(previous, now, fetcher) {
@@ -297,7 +306,9 @@ function writeNews(output, config, articles, feeds) {
 async function generateNews({ root = path.resolve(__dirname, '..'), output = path.join(root, '_site'),
   now = new Date().toISOString(), fetcher = fetch, previous, fresh, curated } = {}) {
   const config = siteConfig(root);
-  const prior = previous || await loadPrevious(config, now, fetcher);
+  const recoveryFile = path.join(root, 'content/news/archive-seed.json');
+  const recovery = fs.existsSync(recoveryFile) ? JSON.parse(fs.readFileSync(recoveryFile, 'utf8')) : null;
+  const prior = previous || await loadPrevious(config, now, fetcher, recovery);
   const collected = fresh ? { articles: fresh, feeds: prior.feeds } : await collectFeeds(prior, now, fetcher);
   const reviewed = curated || JSON.parse(fs.readFileSync(path.join(root, 'content/news/editorial.json'), 'utf8'));
   const articles = mergeArticles(prior.articles, collected.articles, reviewed, now);

@@ -24,9 +24,18 @@ The article layout inherits the existing news stylesheet, background and color
 variables. Playback, provider allocation, gateway services and DNS are outside
 this publisher.
 
-Run in this order:
+All Pages deployment workflows must use the complete publication entry point:
 
-    node --test scripts/news-pages.test.cjs
-    node scripts/build-public-site.cjs
-    node scripts/generate-match-pages.cjs --output _site
-    node scripts/news-pages.cjs
+    node --test scripts/news-pages.test.cjs scripts/build-complete-site.test.cjs
+    node scripts/build-complete-site.cjs
+
+This entry point builds static assets, matches, and news in order, then refuses
+publication if an article page, catalog, feed or sitemap is missing. The
+workflow contract test rejects deployments that bypass it.
+Scheduled publication runs only in sync-data.yml; publish-site.yml handles
+source changes and explicit static publication without duplicating the timer.
+
+archive-seed.json is a public-data recovery checkpoint from the last complete
+Pages artifact on 2026-10-18 (run 39154994991). It preserves 77 previously
+published URLs and timestamps if the public catalog returns 404. It is not a
+continuously updated backup. Other HTTP errors still abort publication.
