@@ -1,8 +1,8 @@
 // assets/js/news.js
 import { newsImageCandidates } from './news-images.js?v=20261008-article-images';
 
-const CACHE_KEY = "koratv_rss_news_v5_hespress"; // كاش جديد تماماً
-const CACHE_DURATION = 2 * 60 * 60 * 1000; 
+const CACHE_KEY = "local_news_v6_internal";
+const CACHE_DURATION = 15 * 60 * 1000;
 
 const elements = {
     grid: document.getElementById('news-grid-container') || document.getElementById('sports-news'),
@@ -42,43 +42,23 @@ function getCache(key) {
 
 async function fetchNews() {
     const cachedData = getCache(CACHE_KEY);
-    if (cachedData && cachedData.length > 0) return cachedData;
-    
+    if (Array.isArray(cachedData) && cachedData.length > 0) return cachedData;
     try {
-        if (elements.grid) {
-            elements.grid.innerHTML = '<div class="loading-placeholder" style="grid-column: 1/-1; text-align:center; padding: 40px;"><i class="fas fa-spinner fa-spin"></i><p>جاري جلب أحدث الأخبار...</p></div>';
-        }
-
-        // استخدام 3 مصادر موثوقة ونشطة (RT + هسبريس رياضة + فرانس24)
-        const sources = [
-            'https://arabic.rt.com/rss/sport/',
-            'https://www.hespress.com/sport/feed',
-            'https://www.france24.com/ar/%D8%B1%D9%8A%D8%A7%D8%B6%D8%A9/rss'
-        ];
-
-        const requests = sources.map(url => 
-            fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`).catch(() => null)
-        );
-
-        const responses = await Promise.all(requests);
-        let allArticles = [];
-
-        for (const res of responses) {
-            if (res && res.ok) {
-                const data = await res.json();
-                if (data.items) allArticles = [...allArticles, ...data.items];
-            }
-        }
-
-        // ترتيب من الأحدث للأقدم
-        allArticles.sort((a, b) => new Date((b.pubDate||'').replace(/-/g, '/')) - new Date((a.pubDate||'').replace(/-/g, '/')));
-
-        if (allArticles.length > 0) setCache(CACHE_KEY, allArticles);
-        return allArticles;
-
-    } catch (error) {
-        if (elements.grid) elements.grid.innerHTML = '<p class="error-msg" style="grid-column: 1/-1; text-align:center;">عذراً، تعذر الاتصال بمزود الأخبار.</p>';
-        return [];
+        const response = await fetch('/news/feed.json', { signal: AbortSignal.timeout(8000), credentials: 'omit' });
+        if (!response.ok) throw new Error('News snapshot unavailable');
+        const data = await response.json();
+        if (data.version !== 1 || !Array.isArray(data.articles)) throw new Error('Invalid news snapshot');
+        const articles = data.articles.filter(article => {
+            try {
+                const url = new URL(article.path, window.location.origin);
+                return url.origin === window.location.origin && /^\/news\/[^/]+\/$/.test(url.pathname);
+            } catch { return false; }
+        });
+        if (articles.length) setCache(CACHE_KEY, articles);
+        return articles.length ? articles : null;
+    } catch {
+        // Keep the server-rendered news visible when the local snapshot cannot load.
+        return null;
     }
 }
 
@@ -101,7 +81,7 @@ function displayNews(append = false) {
     
     if (!append && elements.breakingGrid) {
         // حماية ذكية: إذا كانت الأخبار قليلة، لا تضعها كلها في العاجل!
-        let breakingCount = state.filteredArticles.length >= 15 ? 10 : Math.floor(state.filteredArticles.length / 2);
+        let breakingCount = Math.min(3, state.filteredArticles.length);
         breakingCount = breakingCount === 0 ? 1 : breakingCount; // على الأقل خبر واحد للعاجل
 
         const breaking = state.filteredArticles.slice(0, breakingCount);
@@ -124,7 +104,7 @@ function displayNews(append = false) {
 function createNewsCard(article, type) {
     const title = article.title || 'تحديث رياضي';
     const description = stripHTML(article.description || article.content || '');
-    const articleUrl = sanitizeUrl(article.link);
+    const articleUrl = sanitizeUrl(article.path);
     const images = newsImageCandidates(article, window.location.origin, html => new DOMParser().parseFromString(html, 'text/html'));
     const imgUrl = images[0] || '';
     
@@ -139,18 +119,18 @@ function createNewsCard(article, type) {
     card.className = type === 'breaking' ? 'breaking-news-card' : 'news-card'; 
     
     card.innerHTML = `
-        <div class="news-image-wrapper">
+        <a class="news-image-wrapper news-image-link" href="${escapeAttribute(articleUrl)}" tabindex="-1" aria-hidden="true">
             <span class="news-category-badge">${escapeHTML(badge)}</span>
-            ${imgUrl ? `<img src="${escapeAttribute(imgUrl)}" alt="${escapeAttribute(title)}" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}
-        </div>
+            ${imgUrl ? `<img src="${escapeAttribute(imgUrl)}" alt="${escapeAttribute(title)}" loading="lazy" decoding="async" width="640" height="360" referrerpolicy="no-referrer">` : ''}
+        </a>
         <div class="news-content">
             <h3 class="news-title">
-                <a href="${escapeAttribute(articleUrl)}" target="_blank" rel="noopener noreferrer">${escapeHTML(truncateText(title, 80))}</a>
+                <a href="${escapeAttribute(articleUrl)}">${escapeHTML(truncateText(title, 80))}</a>
             </h3>
             ${description ? `<p class="news-summary">${escapeHTML(truncateText(description, 100))}</p>` : ''}
             <div class="news-meta">
                 <span><i class="far fa-clock"></i> ${escapeHTML(formatDate(article.pubDate))}</span>
-                <a href="${escapeAttribute(articleUrl)}" target="_blank" rel="noopener noreferrer" class="read-more-link">اقرأ <i class="fas fa-arrow-left"></i></a>
+                <a href="${escapeAttribute(articleUrl)}" class="read-more-link">اقرأ <i class="fas fa-arrow-left"></i></a>
             </div>
         </div>
     `;
@@ -169,7 +149,12 @@ const categoryTerms = {
     results: ['نتائج', 'نتيجة', 'فاز', 'score', 'result'],
     statistics: ['إحصائيات', 'احصائيات', 'أرقام', 'رقم', 'statistics'],
     fixtures: ['مواجهة', 'مواجهات', 'مباراة', 'مباريات', 'لقاء', 'match'],
-    analysis: ['تحليل', 'تحليلات', 'قراءة فنية', 'analysis']
+    analysis: ['تحليل', 'تحليلات', 'قراءة فنية', 'analysis'],
+    spanish: ['إسباني', 'اسبانيا', 'إسبانيا', 'ريال مدريد', 'برشلونة', 'فياريال', 'لاليغا'],
+    english: ['إنجليزي', 'انجليزي', 'ليفربول', 'أرسنال', 'ارسنال', 'مانشستر', 'تشيلسي', 'برينتفورد'],
+    saudi: ['سعودي', 'السعودية', 'الهلال', 'النصر', 'الاتحاد', 'الأهلي السعودي'],
+    champions: ['دوري الأبطال', 'دوري أبطال أوروبا', 'دوري ابطال اوروبا', 'أوروبي', 'الجولة الأوروبية'],
+    transfers: ['انتقال', 'تعاقد', 'صفقة', 'transfers']
 };
 
 function applyFilter(keyword) {
@@ -179,7 +164,7 @@ function applyFilter(keyword) {
         const lowerKeyword = keyword.toLowerCase();
         const terms = categoryTerms[keyword] || [lowerKeyword];
         state.filteredArticles = state.allArticles.filter(article => {
-            const searchable = `${article.title || ''} ${article.description || ''}`.toLowerCase();
+            const searchable = [article.title, article.description, ...(article.tags || [])].join(' ').toLowerCase();
             return terms.some(term => searchable.includes(term.toLowerCase()));
         });
     }
@@ -192,15 +177,14 @@ function setupFilterClick(btn) {
         siblings.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
 
-        let query = btn.dataset.category;
-        if(query === 'football' || query === 'all') query = 'كرة القدم';
-        if(query === 'spanish') query = 'إسباني';
-        if(query === 'english') query = 'إنجليزي';
-        if(query === 'saudi') query = 'سعودي';
-        if(query === 'champions') query = 'أبطال';
-        if(query === 'transfers') query = 'انتقال';
-
-        applyFilter(query);
+        const aliases = {
+            football: 'all',
+            'كرة-القدم-الإسبانية': 'spanish',
+            'كرة-القدم-الانجليزية': 'english',
+            'دوري-ابطال-اوروبا': 'champions',
+            'كرة-القدم-السعودية': 'saudi'
+        };
+        applyFilter(aliases[btn.dataset.category] || btn.dataset.category);
     });
 }
 
@@ -231,7 +215,7 @@ function sanitizeUrl(url, fallback = '#') {
     if (!url) return fallback;
     try {
         const parsed = new URL(url, window.location.origin);
-        if (parsed.protocol === 'https:' || parsed.protocol === 'http:') return parsed.href;
+        if (parsed.origin === window.location.origin && /^\/news\/[^/]+\/$/.test(parsed.pathname)) return parsed.href;
     } catch (e) {}
     return fallback;
 }
@@ -246,14 +230,17 @@ function escapeAttribute(value) {
 
 function formatDate(dateString) {
     if (!dateString) return "";
-    const date = new Date(dateString.replace(/-/g, '/'));
-    return date.toLocaleDateString('ar-EG-u-nu-latn', { month: 'short', day: 'numeric', year: 'numeric' });
+    const date = new Date(dateString);
+    if (!Number.isFinite(date.getTime())) return '';
+    return date.toLocaleDateString('ar-EG-u-nu-latn', { timeZone: 'Africa/Casablanca', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 async function init() {
-    state.allArticles = await fetchNews();
-    state.filteredArticles = [...state.allArticles];
-    displayNews(false); 
+    const articles = await fetchNews();
+    if (!articles) return;
+    state.allArticles = articles;
+    state.filteredArticles = [...articles];
+    displayNews(false);
 
     const performSearch = () => applyFilter(elements.searchInput?.value.trim());
     elements.searchBtn?.addEventListener('click', performSearch);

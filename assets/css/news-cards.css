@@ -1,0 +1,7 @@
+.news-image-link{display:block;color:inherit}
+.news-meta{gap:8px 12px;flex-wrap:wrap}
+.news-meta time,.news-meta>span{font-size:11px;min-width:0}
+.news-meta .read-more-link{white-space:nowrap}
+.news-no-image{display:block;width:100%;height:100%;background:rgba(0,0,0,.2)}
+.news-archive-link{display:block;max-width:260px;margin:28px auto;text-align:center;padding:12px;color:var(--secondary-color);text-decoration:underline}
+.news-title a{overflow-wrap:anywhere}

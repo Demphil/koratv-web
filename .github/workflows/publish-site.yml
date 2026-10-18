@@ -1,6 +1,8 @@
 name: Publish static SEO updates
 
 on:
+  schedule:
+    - cron: "12 */4 * * *"
   push:
     branches:
       - main
@@ -18,6 +20,11 @@ on:
       - "scripts/generate-match-pages.cjs"
       - "scripts/public-analytics.cjs"
       - "scripts/public-analytics.test.cjs"
+      - "scripts/news-pages.cjs"
+      - "scripts/news-pages.test.cjs"
+      - "content/news/**"
+      - "assets/css/article.css"
+      - "assets/css/news-cards.css"
       - "assets/js/site-metrics.js"
       - "scripts/match-archive.cjs"
       - "scripts/match-archive.test.cjs"
@@ -78,6 +85,7 @@ jobs:
           node --test scripts/build-public-site.test.cjs
           node --test scripts/public-analytics.test.cjs
           node --test scripts/news-images.test.cjs
+          node --test scripts/news-pages.test.cjs
           node --test scripts/match-loading.test.cjs
           node scripts/build-public-site.cjs
 
@@ -85,6 +93,9 @@ jobs:
         run: |
           node --test scripts/generate-match-pages.test.cjs scripts/prerender-match-list.test.cjs scripts/match-archive.test.cjs
           node scripts/generate-match-pages.cjs --output _site
+
+      - name: Generate internal news and article sitemap
+        run: node scripts/news-pages.cjs
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

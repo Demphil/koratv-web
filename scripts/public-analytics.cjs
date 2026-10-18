@@ -45,7 +45,7 @@ function instrumentPage(html, measurementId) {
 
 function instrumentPublicPages(output, measurementId) {
   const files = ['index.html', 'news.html'];
-  for (const directory of ['match', 'archive', 'teams', 'competitions']) {
+  for (const directory of ['news', 'match', 'archive', 'teams', 'competitions']) {
     const visit = folder => {
       if (!fs.existsSync(folder)) return;
       for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
