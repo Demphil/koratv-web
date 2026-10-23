@@ -75,12 +75,14 @@ Publish the two websites with their existing static workflows. KoraTV must
 continue using build-complete-site.cjs so news and sitemaps cannot disappear.
 No colors or styles are modified by this adapter.
 
-The manual publish-player-ads.yml workflow uploads only 739184.html and
-monetag-window.js. It checks the current HTML hash before changing anything,
+The manual publish-player-ads.yml workflow uploads only allowlisted static
+advertising-interface assets, including 739184.html, watch.html and the
+view-support notice. It checks both current HTML hashes before changing anything,
 backs up to /var/backups/koratv-player-ads/<run-id>, uses atomic file replacement,
 and verifies playback file hashes remain unchanged. It never restarts services.
 For rollback, run the same workflow with operation=rollback, the original
-deployment run ID, and the currently verified public HTML SHA256. For websites,
+deployment run ID, and the currently verified public and embedded HTML SHA256
+values. For websites,
 revert the isolated ad-adapter commit and run their normal static publisher.
 
 To stop adaptation in an already loaded page during diagnosis, call

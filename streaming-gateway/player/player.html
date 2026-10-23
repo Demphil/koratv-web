@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="./player.css">
   <link rel="stylesheet" href="./broadcast-notice.css">
   <link rel="stylesheet" href="./match-ui.css">
+  <link rel="stylesheet" href="./view-support.css">
 </head>
 <body>
   <canvas id="page-depth" aria-hidden="true"></canvas>
@@ -28,6 +29,14 @@
           <div class="picture-app-promo"><span class="app-icon">K<span>TV</span></span><span>تطبيق KoraTV <b>قريباً</b></span></div>
         </div>
         <div id="status" class="player-state" role="status">جاري تحميل البث...</div>
+        <aside id="watch-support-panel" class="watch-support" role="alertdialog" aria-modal="true" aria-labelledby="watch-support-title" aria-describedby="watch-support-description" tabindex="-1" data-no-popunder hidden>
+          <div class="watch-support-card">
+            <div class="watch-support-heading"><img src="./icons/shield-alert.svg" width="30" height="30" alt=""><h2 id="watch-support-title">يرجى تعطيل مانع الإعلانات</h2></div>
+            <p id="watch-support-description">الإعلانات تساعدنا على استمرار البث. أضف هذا الموقع إلى قائمة السماح، ثم أعد التحقق.</p>
+            <button id="watch-support-check" type="button"><img src="./icons/refresh-cw.svg" width="17" height="17" alt=""><span>إعادة التحقق</span></button>
+            <span id="watch-support-feedback" class="watch-support-feedback" role="status" hidden><span data-message="checking">جاري التحقق من الإعدادات...</span><span data-message="network">تعذّر التحقق من الاتصال. حاول مجددًا.</span></span>
+          </div>
+        </aside>
       </section>
       <dialog id="embed-modal" class="embed-modal" aria-labelledby="embed-modal-title" hidden>
         <div class="embed-modal-backdrop" data-close-embed></div>
@@ -93,6 +102,7 @@
   <script src="./hls.min.js"></script>
   <script src="./plyr.js"></script>
   <script src="./player.js"></script>
+  <script type="module" src="./view-support.js"></script>
   <script type="module" src="./broadcast-control.js"></script>
   <script src="./player-branding.js"></script>
   <script src="./page-depth.js" defer></script>
