@@ -62,6 +62,13 @@ test('expired blur listener, blocked popup and thrown native calls cannot retry 
   const failed = harness({ throws: true }); assert.throws(() => failed.run(`window.open('https://ad.example/','_blank','')`));
   failed.emit('blur'); assert.equal(failed.calls.length, 1);
 });
+test('multiple ad opens in one short burst share only one temporary focus listener', () => {
+  const h = harness();
+  h.run(`window.open('https://ad.example/one','_blank','');window.open('https://ad.example/two','_blank','')`);
+  h.emit('blur'); h.emit('blur');
+  assert.equal(h.calls.filter(call => call.focus).length, 1);
+  assert.equal(h.calls.filter(call => call.args).length, 2);
+});
 test('unrelated scripts, wrong zones, services, media, unsafe URLs and same-tab targets stay unchanged', () => {
   const h = harness();
   for (const [url, target, source] of [

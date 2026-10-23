@@ -15,10 +15,12 @@
   const mobile = config.mobileSwap === 'android-chrome' && /Android/.test(ua) && /Chrome\/\d/.test(ua) && !excludedBrowser;
   const protectedSelector = 'form,input,select,textarea,button,[role="button"],[contenteditable="true"],a[download],[data-no-popunder],[data-match-id],a[href*="fabor.sbs"],#player-container,#embed-modal';
   const registry = new Map();
-  const realms = new Map();
+  const realms = new WeakMap();
+  const realmRefs = new Set();
   const removers = [];
   const dirtyForms = new Set();
-  let pending = null, gesture = null, submitting = false, disposed = false, restoring = false;
+  const ownedExcludes = new WeakSet();
+  let pending = null, gesture = null, submitting = false, disposed = false, restoring = false, focusCleanup = null;
   let incoming = null;
   try { incoming = new URLSearchParams(location.hash.slice(1)).get(marker); } catch {}
   const nativeOpen = window.open;
@@ -36,8 +38,12 @@
   }
   function protectControls() {
     const prior = window.onClickExcludes;
-    const values = Array.isArray(prior) ? [...prior] : prior ? [prior] : [];
-    for (const element of document.querySelectorAll(protectedSelector)) if (!values.includes(element)) values.push(element);
+    const values = (Array.isArray(prior) ? [...prior] : prior ? [prior] : [])
+      .filter(element => !ownedExcludes.has(element) || element.isConnected !== false);
+    for (const element of document.querySelectorAll(protectedSelector)) if (!values.includes(element)) {
+      values.push(element);
+      ownedExcludes.add(element);
+    }
     window.onClickExcludes = values;
   }
   function fromNetwork() {
@@ -89,13 +95,17 @@
     return window;
   }
   function desktopOpen(original, receiver, args) {
+    if (focusCleanup) focusCleanup();
     const call = [...args];
     const features = String(call[2] || '').split(',').filter(Boolean)
       .filter(value => !/^\s*(popup|width|height|innerWidth|innerHeight|left|top|screenX|screenY)\s*(=|$)/i.test(value));
     features.push('popup=yes', 'width=640', 'height=480');
     call[2] = features.join(',');
     let requested = false;
-    const cleanup = () => window.removeEventListener('blur', focusOnce);
+    const cleanup = () => {
+      window.removeEventListener('blur', focusOnce);
+      if (focusCleanup === cleanup) focusCleanup = null;
+    };
     const focusOnce = () => {
       cleanup();
       if (requested || disposed) return;
@@ -104,6 +114,7 @@
       log('focus-request');
     };
     window.addEventListener('blur', focusOnce, { once: true });
+    focusCleanup = cleanup;
     let result;
     try { result = Reflect.apply(original, receiver, call); }
     catch (error) { cleanup(); throw error; }
@@ -134,7 +145,9 @@
       return fromNetwork() ? openAd(original, this, args) : Reflect.apply(original, this, args);
     };
     owner.open = wrapper;
-    realms.set(owner, { original, wrapper });
+    realms.set(owner, true);
+    for (const ref of realmRefs) if (!ref.owner.deref()) realmRefs.delete(ref);
+    realmRefs.add({ owner: new WeakRef(owner), original: new WeakRef(original), wrapper: new WeakRef(wrapper) });
   }
   function restoreFailure() {
     removeSnapshot();
@@ -223,9 +236,13 @@
     dispose() {
       disposed = true;
       clearPending();
+      if (focusCleanup) focusCleanup();
       for (const remove of removers) remove();
-      for (const [owner, entry] of realms) try { if (owner.open === entry.wrapper) owner.open = entry.original; } catch {}
-      realms.clear();
+      for (const ref of realmRefs) try {
+        const owner = ref.owner.deref(), original = ref.original.deref();
+        if (owner && original && owner.open === ref.wrapper.deref()) owner.open = original;
+      } catch {}
+      realmRefs.clear();
       if (Node.prototype.appendChild === appendWrapper) Node.prototype.appendChild = append;
     }
   };

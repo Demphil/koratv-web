@@ -29,6 +29,8 @@ The desktop path requests popup=yes,width=640,height=480 while preserving the
 original destination, target, security options, receiver and returned object.
 It requests focus once only if blur happens within 250 ms. No reopening,
 focus loops, fabricated window handles or synthetic ad clicks are used.
+Consecutive ad opens share one short-lived blur listener. Temporary iframe
+references are weak so removed frames are not retained for a long viewing session.
 Browsers ultimately control popup activation; this is not a universal focus
 guarantee. In particular, noopener/noreferrer are never removed, and null is
 not treated as proof of blocking when these options were supplied.
