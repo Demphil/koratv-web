@@ -21,6 +21,7 @@ await cp('player', 'dist', { recursive: true,
   filter: (path) => !/\.(?:md|map)$/i.test(path) });
 await cp('player/player.html', 'dist/739184.html');
 await cp('player/player.html', 'dist/watch.html');
+await cp('../assets/js/monetag-window.js', 'dist/monetag-window.js');
 await cp(require.resolve('hls.js/dist/hls.min.js'), 'dist/hls.min.js');
 for (const asset of ['three.module.min.js', 'three.core.min.js']) {
   await cp(join(dirname(require.resolve('three')), asset), `dist/${asset}`);
@@ -33,7 +34,7 @@ for (const icon of ['mail', 'trophy', 'scale', 'landmark', 'tv']) {
   await cp(join(dirname(require.resolve('lucide-static/package.json')), 'icons', `${icon}.svg`), `dist/icons/${icon}.svg`);
 }
 await writeFile('dist/config.js', `const STREAM_API_ORIGIN = ${JSON.stringify(api.origin)};\nconst STREAM_API_ORIGINS = new Set(${JSON.stringify(apiOrigins)});\n`);
-for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.js', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'multiview.js',
+for (const asset of ['monetag-window.js', 'config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.js', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'multiview.js',
   'hls.min.js', 'plyr.js', 'three.module.min.js', 'three.core.min.js']) {
   const result = await minify(await readFile(`dist/${asset}`, 'utf8'), {
     compress: false, mangle: { toplevel: false }, sourceMap: false, format: { comments: false },
@@ -43,7 +44,7 @@ for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcas
   await writeFile(`dist/${asset}`, result.code + '\n');
 }
 const version = createHash('sha256');
-for (const asset of ['config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.js', 'broadcast-notice.css', 'player.css', 'match-ui.css', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
+for (const asset of ['monetag-window.js', 'config.js', 'player.js', 'broadcast-control.js', 'broadcast-notice.js', 'broadcast-notice.css', 'player.css', 'match-ui.css', 'page-depth.js', 'embed-mode.js', 'player-branding.js', 'hls.min.js', 'plyr.js', 'plyr.css']) {
   version.update(await readFile(`dist/${asset}`));
 }
 const revision = version.digest('hex').slice(0, 12);

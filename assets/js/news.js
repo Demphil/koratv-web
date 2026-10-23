@@ -158,6 +158,7 @@ const categoryTerms = {
 };
 
 function applyFilter(keyword) {
+    state.filterWord = keyword || '';
     if (!keyword || keyword === 'كرة القدم' || keyword === 'all') {
         state.filteredArticles = [...state.allArticles];
     } else {
@@ -252,6 +253,20 @@ async function init() {
         elements.loadMoreBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري...';
         elements.loadMoreBtn.disabled = true;
         setTimeout(() => displayNews(true), 300); 
+    });
+    window.PublisherAdWindow?.register('news', {
+        capture: () => ({ query: elements.searchInput?.value || '', filter: state.filterWord || '', count: state.currentIndex,
+            active: [...elements.filterBtns, ...elements.categoryBtns].filter(btn => btn.classList.contains('active')).map(btn => btn.dataset.category) }),
+        restore: saved => {
+            if (!saved || typeof saved.query !== 'string' || saved.query.length > 1024 || typeof saved.filter !== 'string'
+                || saved.filter.length > 1024 || !Number.isInteger(saved.count) || saved.count < 0 || saved.count > 500
+                || !Array.isArray(saved.active) || saved.active.some(value => typeof value !== 'string' || value.length > 100)) return false;
+            if (elements.searchInput) elements.searchInput.value = saved.query;
+            for (const btn of [...elements.filterBtns, ...elements.categoryBtns]) btn.classList.toggle('active', saved.active.includes(btn.dataset.category));
+            applyFilter(saved.filter);
+            while (state.currentIndex < Math.min(saved.count, state.filteredArticles.length)) displayNews(true);
+            return true;
+        }
     });
 }
 

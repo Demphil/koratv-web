@@ -533,6 +533,15 @@ function setupTabs() {
     DOM.tomorrowTab?.addEventListener('click', () => {
         handleTabClick(DOM.tomorrowTab, DOM.todayTab, DOM.tomorrowContainer, DOM.todayContainer);
     });
+    return () => window.PublisherAdWindow?.register('matches', {
+        capture: () => ({ tab: DOM.tomorrowTab?.classList.contains('active') ? 'tomorrow' : 'today', day: getMoroccoDateKey() }),
+        restore: saved => {
+            if (!saved || !['today', 'tomorrow'].includes(saved.tab) || saved.day !== getMoroccoDateKey()) return false;
+            if (saved.tab === 'tomorrow') handleTabClick(DOM.tomorrowTab, DOM.todayTab, DOM.tomorrowContainer, DOM.todayContainer);
+            else handleTabClick(DOM.todayTab, DOM.tomorrowTab, DOM.todayContainer, DOM.tomorrowContainer);
+            return true;
+        }
+    });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -544,10 +553,10 @@ document.addEventListener('DOMContentLoaded', () => {
         container.replaceChildren(...(container === DOM.featuredContainer || container === DOM.todayContainer
           ? promoted.map(card => card.cloneNode(true)) : []));
     }
-    setupTabs();
+    const registerMatchState = setupTabs();
   setupSecurePlayerLinks();
     renderCachedMatchesImmediately();
-    loadAndRenderMatches().catch(error => {
+    loadAndRenderMatches().then(registerMatchState).catch(error => {
         console.error("An error occurred while loading matches:", error);
         hideLoading();
     });

@@ -1,0 +1,71 @@
+name: Publish isolated player ad adapter
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      expected_player_html_sha256:
+        description: Current public player HTML SHA256, checked before replacing anything
+        required: true
+        type: string
+      rollback_run_id:
+        description: Deployment run to restore, only for rollback
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: isolated-player-ad-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test and build isolated static assets
+        if: inputs.operation == 'deploy'
+        run: |
+          npm ci --ignore-scripts --no-audit --fund=false
+          npm ci --prefix streaming-gateway --ignore-scripts --no-audit --fund=false
+          node --test scripts/monetag-window.test.cjs scripts/ad-window-integration.test.cjs
+          node --test streaming-gateway/test/player-direct-ads.test.js
+          npm --prefix streaming-gateway run build:player
+      - name: Upload deployment helper
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: streaming-gateway/scripts/deploy-player-ads.sh
+          target: /tmp/koratv-player-ads-${{ github.run_id }}
+      - name: Upload only the two ad publication files
+        if: inputs.operation == 'deploy'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: streaming-gateway/dist/739184.html,streaming-gateway/dist/monetag-window.js
+          target: /tmp/koratv-player-ads-${{ github.run_id }}
+      - name: Back up and publish without restarting any service
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        env:
+          OPERATION: ${{ inputs.operation }}
+          EXPECTED_HASH: ${{ inputs.expected_player_html_sha256 }}
+          RESTORE_ID: ${{ inputs.rollback_run_id }}
+          RUN_ID: ${{ github.run_id }}
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: OPERATION,EXPECTED_HASH,RESTORE_ID,RUN_ID
+          script: |
+            set -eu
+            base="/tmp/koratv-player-ads-$RUN_ID/streaming-gateway"
+            bash "$base/scripts/deploy-player-ads.sh" "$OPERATION" "$base/dist" "$RUN_ID" "$EXPECTED_HASH" "$RESTORE_ID"

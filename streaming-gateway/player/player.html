@@ -8,6 +8,7 @@
   <meta name="robots" content="noindex, follow">
   <meta name="monetag" content="1b10ab3c35e3426936bb8124f9159790">
   <script src="./embed-mode.js"></script>
+  <script src="./monetag-window.js" data-zones="11949898" data-desktop="chrome-windows" data-mobile-swap="off" data-mode="player" data-direct-url="https://omg10.com/4/11949902"></script>
   <link rel="stylesheet" href="./plyr.css">
   <link rel="stylesheet" href="./player.css">
   <link rel="stylesheet" href="./broadcast-notice.css">
@@ -134,7 +135,10 @@
         if (now - lastClickAdAt < AD_COOLDOWN_MS) return;
         lastClickAdAt = now;
         // Keep the original Play event intact even when the popup is blocked.
-        try { window.open(DIRECT_CLICK_URL, '_blank', 'noopener,noreferrer'); } catch {}
+        try {
+          const open = window.PublisherAdWindow?.openDirect || window.open.bind(window);
+          open(DIRECT_CLICK_URL, '_blank', 'noopener,noreferrer');
+        } catch {}
       }
 
       container?.addEventListener('click', onPlayGesture, true);

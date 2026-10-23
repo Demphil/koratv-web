@@ -38,6 +38,9 @@ on:
       - "assets/js/supabase-config.js"
       - "assets/js/news.js"
       - "assets/js/news-images.js"
+      - "assets/js/monetag-window.js"
+      - "scripts/monetag-window.test.cjs"
+      - "scripts/ad-window-integration.test.cjs"
       - "shared/match-lifecycle.mjs"
       - "shared/match-visibility.mjs"
       - "shared/league-whitelist.mjs"
@@ -88,6 +91,7 @@ jobs:
           node --test scripts/news-images.test.cjs
           node --test scripts/news-pages.test.cjs
           node --test scripts/match-loading.test.cjs
+          node --test scripts/monetag-window.test.cjs scripts/ad-window-integration.test.cjs
 
       - name: Test indexable match pages
         run: |
