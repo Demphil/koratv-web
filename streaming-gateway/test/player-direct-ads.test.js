@@ -19,19 +19,22 @@ test('player embeds direct Monetag ads and local cooldown logic in the page', ()
 function adsHarness({ mobile = false, embedded = false } = {}) {
   const html = readFileSync(new URL('../player/player.html', import.meta.url), 'utf8');
   const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
-  const handlers = {}, tags = [], popups = [];
+  const handlers = {}, windowHandlers = {}, tags = [], popups = [], events = [];
   let clock = 0, updates = false;
   const video = { paused: true, addEventListener: (name, handler) => { handlers[name] = handler; } };
   const container = { addEventListener: (name, handler) => { handlers[name] = handler; } };
-  const win = { open: (...args) => popups.push(args), matchMedia: () => ({ matches: mobile }) };
+  const win = { open: (...args) => popups.push(args), matchMedia: () => ({ matches: mobile }),
+    addEventListener: (name, handler) => { windowHandlers[name] = handler; }, dispatchEvent: event => events.push(event) };
   win.self = win; win.top = embedded ? {} : win;
   vm.runInNewContext(script, {
     document: { getElementById: id => id === 'video' ? video : container,
       documentElement: { classList: { contains: () => updates } },
-      createElement: () => ({ dataset: {} }), body: { appendChild: tag => tags.push(tag) } },
-    performance: { now: () => clock }, window: win,
+      createElement: () => ({ dataset: {}, listeners: {}, addEventListener(name, handler) { this.listeners[name] = handler; }, remove() { this.removed = true; } }),
+      querySelectorAll: () => tags.filter(tag => !tag.removed), body: { appendChild: tag => tags.push(tag) } },
+    performance: { now: () => clock }, window: win, navigator: { userActivation: { isActive: true } },
+    CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
   });
-  return { handlers, tags, popups, video, time: value => { clock = value; }, updates: value => { updates = value; },
+  return { handlers, windowHandlers, tags, popups, events, video, time: value => { clock = value; }, updates: value => { updates = value; },
     click: (trusted = true, play = true) => handlers.click({ isTrusted: trusted, target: { closest: () => play ? {} : null } }) };
 }
 
@@ -71,6 +74,28 @@ test('click ads observe five minute cooldown and never open on text coverage', (
   h.time(600000); h.updates(true); h.click(); h.handlers.playing();
   assert.equal(h.popups.length, 2);
   assert.equal(h.tags.length, 0);
+});
+test('actual SDK load results are reported without extra requests or reinstalling successful tags', () => {
+  const h = adsHarness(); h.video.paused = false; h.handlers.playing();
+  h.tags[0].listeners.load(); h.tags[1].listeners.load(); h.tags[2].listeners.error();
+  assert.equal(h.tags[0].dataset.supportState, 'ready');
+  assert.equal(h.tags[2].dataset.supportState, 'failed');
+  assert.equal(h.events.length, 3);
+  assert.equal(h.tags.length, 3);
+  h.windowHandlers['watch-support-retry']({ detail: { userGesture: false } });
+  assert.equal(h.tags.length, 3);
+  h.windowHandlers['watch-support-retry']({ detail: { userGesture: true } });
+  assert.equal(h.tags.length, 4);
+  assert.equal(h.tags[2].removed, true);
+  assert.equal(h.tags[3].dataset.zone, '11949898');
+  assert.equal(h.tags[0].removed, undefined);
+  assert.equal(h.tags[1].removed, undefined);
+  h.tags[3].listeners.error();
+  h.windowHandlers['watch-support-retry']({ detail: { userGesture: true } });
+  assert.equal(h.tags.length, 4, 'failed retries are rate limited');
+  h.time(5000); h.windowHandlers['watch-support-retry']({ detail: { userGesture: true } });
+  assert.equal(h.tags.length, 5);
+  assert.equal(h.popups.length, 0);
 });
 
 test('player CSP allows only the direct ad script hosts requested by the page', () => {

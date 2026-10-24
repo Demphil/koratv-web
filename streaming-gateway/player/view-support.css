@@ -27,6 +27,9 @@
 .watch-support-heading { display: flex; align-items: center; justify-content: center; gap: 10px; }
 .watch-support-heading img { width: 30px; height: 30px; flex: 0 0 30px; filter: invert(85%) sepia(29%) saturate(523%) hue-rotate(89deg); }
 .watch-support h2 { margin: 0; font: 800 20px/1.5 Cairo, Tahoma, Arial, sans-serif; overflow-wrap: anywhere; letter-spacing: 0; }
+.watch-support [data-support-copy="provider"] { display: none; }
+.watch-support[data-reason="provider"] [data-support-copy="provider"] { display: inline; }
+.watch-support[data-reason="provider"] [data-support-copy="local"] { display: none; }
 .watch-support p { margin: 12px 0 18px; color: #d6e4df; font: 400 14px/1.8 Cairo, Tahoma, Arial, sans-serif; }
 .watch-support button {
   display: inline-flex;

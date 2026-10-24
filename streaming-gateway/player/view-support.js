@@ -1,4 +1,4 @@
-import { SUPPORT_HINT_KEY, initialSupportState, evaluateSupport } from './view-support-state.js';
+import { SUPPORT_HINT_KEY, initialSupportState, evaluateSupport, providerSupportStatus } from './view-support-state.js';
 
 function startSupportNotice() {
   const container = document.getElementById('player-container');
@@ -31,6 +31,8 @@ function startSupportNotice() {
     const wasHidden = panel.hidden;
     panel.hidden = !started || !state.blocked;
     panel.dataset.state = state.blocked ? 'blocked' : state.verdict;
+    panel.dataset.reason = state.reason || 'local';
+    panel.dataset.playback = started ? 'started' : 'waiting';
     button.disabled = checking;
     panel.setAttribute('aria-busy', String(checking));
     feedback.hidden = !checking && state.verdict !== 'unknown';
@@ -39,7 +41,7 @@ function startSupportNotice() {
   }
   function persist() {
     try {
-      if (state.blocked && state.verdict === 'blocked') localStorage.setItem(SUPPORT_HINT_KEY, JSON.stringify({ blocked: true, checkedAt: Date.now() }));
+      if (state.blocked && state.verdict === 'blocked') localStorage.setItem(SUPPORT_HINT_KEY, JSON.stringify({ blocked: true, reason: state.reason, checkedAt: Date.now() }));
       else if (!state.blocked && state.clearChecks >= 2) localStorage.removeItem(SUPPORT_HINT_KEY);
     } catch {}
   }
@@ -84,8 +86,14 @@ function startSupportNotice() {
       const style = getComputedStyle(bait);
       const cosmeticHidden = !bait.isConnected || bait.offsetHeight === 0 || bait.offsetWidth === 0
         || style.display === 'none' || style.visibility === 'hidden';
+      const providers = providerSupportStatus(Array.from(document.querySelectorAll('script[data-koratv-monetag="true"]'), script => ({
+        zone: script.dataset.zone, state: script.dataset.supportState, policyBlocked: script.dataset.supportPolicy === 'blocked'
+      })));
+      panel.dataset.providers = providers;
+      panel.dataset.probe = probeResult;
+      panel.dataset.control = String(controlHealthy);
       if (stopped) return;
-      state = evaluateSupport(state, { controlHealthy, probe: probeResult, cosmeticHidden });
+      state = evaluateSupport(state, { controlHealthy, probe: probeResult, cosmeticHidden, providers });
       persist();
     } catch {
       state = evaluateSupport(state, { controlHealthy: false, probe: 'unknown' });
@@ -97,7 +105,20 @@ function startSupportNotice() {
       }
     }
   }
-  button.addEventListener('click', () => { clearTimeout(timer); check(); });
+  button.addEventListener('click', event => {
+    clearTimeout(timer);
+    window.dispatchEvent(new CustomEvent('watch-support-retry', { detail: { userGesture: event.isTrusted } }));
+    check();
+  });
+  window.addEventListener('watch-support-provider', () => { if (started) check(); });
+  document.addEventListener('securitypolicyviolation', event => {
+    if (event.disposition !== 'enforce' || !event.effectiveDirective.startsWith('script-src')) return;
+    for (const script of document.querySelectorAll('script[data-koratv-monetag="true"]')) {
+      try {
+        if (new URL(script.src).origin === new URL(event.blockedURI).origin) script.dataset.supportPolicy = 'blocked';
+      } catch {}
+    }
+  });
   panel.addEventListener('click', event => event.stopPropagation());
   panel.addEventListener('keydown', event => {
     if (panel.hidden) return;

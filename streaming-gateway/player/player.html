@@ -31,8 +31,8 @@
         <div id="status" class="player-state" role="status">جاري تحميل البث...</div>
         <aside id="watch-support-panel" class="watch-support" role="alertdialog" aria-modal="true" aria-labelledby="watch-support-title" aria-describedby="watch-support-description" tabindex="-1" data-no-popunder hidden>
           <div class="watch-support-card">
-            <div class="watch-support-heading"><img src="./icons/shield-alert.svg" width="30" height="30" alt=""><h2 id="watch-support-title">يرجى تعطيل مانع الإعلانات</h2></div>
-            <p id="watch-support-description">الإعلانات تساعدنا على استمرار البث. أضف هذا الموقع إلى قائمة السماح، ثم أعد التحقق.</p>
+            <div class="watch-support-heading"><img src="./icons/shield-alert.svg" width="30" height="30" alt=""><h2 id="watch-support-title"><span data-support-copy="local">يرجى تعطيل مانع الإعلانات</span><span data-support-copy="provider">يرجى السماح بعرض الإعلانات</span></h2></div>
+            <p id="watch-support-description"><span data-support-copy="local">الإعلانات تساعدنا على استمرار البث. أضف هذا الموقع إلى قائمة السماح، ثم أعد التحقق.</span><span data-support-copy="provider">لم تُحمّل سكربتات الإعلانات. اسمح لهذا الموقع في AdGuard أو مانع الإعلانات ثم أعد التحقق. قد يكون هناك أيضًا عطل مؤقت في شبكة الإعلانات.</span></p>
             <button id="watch-support-check" type="button"><img src="./icons/refresh-cw.svg" width="17" height="17" alt=""><span>إعادة التحقق</span></button>
             <span id="watch-support-feedback" class="watch-support-feedback" role="status" hidden><span data-message="checking">جاري التحقق من الإعدادات...</span><span data-message="network">تعذّر التحقق من الاتصال. حاول مجددًا.</span></span>
           </div>
@@ -119,23 +119,49 @@
       const video = document.getElementById('video');
       let lastClickAdAt = -Infinity;
       let adsStarted = false;
+      let lastAdRetryAt = -Infinity;
 
-      // The provider tags install their own listeners. Load once, never duplicate them.
+      function appendMonetag(item) {
+        const script = document.createElement('script');
+        script.dataset.koratvMonetag = 'true';
+        script.dataset.zone = item.zone;
+        script.dataset.cfasync = 'false';
+        script.dataset.supportState = 'pending';
+        const report = state => {
+          script.dataset.supportState = state;
+          window.dispatchEvent(new CustomEvent('watch-support-provider', { detail: { zone: item.zone, state } }));
+        };
+        script.addEventListener('load', () => report('ready'), { once: true });
+        script.addEventListener('error', () => report('failed'), { once: true });
+        script.async = true;
+        script.src = item.src;
+        document.body.appendChild(script);
+      }
+
+      // A loaded SDK is never installed twice; only failed loads can be retried explicitly.
       function startMonetagAfterPlayback() {
         if (adsStarted || video.paused || document.documentElement.classList.contains('live-updates-view')) return;
         adsStarted = true;
         for (const item of MONETAG_SCRIPTS) {
           // Full-page vignette overlays must not cover a phone or embedded video.
           if (item.zone === '11908582' && (window.self !== window.top || window.matchMedia('(max-width: 620px)').matches)) continue;
-          const script = document.createElement('script');
-          script.dataset.koratvMonetag = 'true';
-          script.dataset.zone = item.zone;
-          script.dataset.cfasync = 'false';
-          script.async = true;
-          script.src = item.src;
-          document.body.appendChild(script);
+          appendMonetag(item);
         }
       }
+
+      window.addEventListener('watch-support-retry', event => {
+        if (!adsStarted || event.detail?.userGesture !== true || navigator.userActivation?.isActive !== true) return;
+        const now = performance.now();
+        if (now - lastAdRetryAt < 5000) return;
+        lastAdRetryAt = now;
+        for (const script of document.querySelectorAll('script[data-koratv-monetag="true"]')) {
+          if (script.dataset.supportState !== 'failed' || script.dataset.supportPolicy === 'blocked') continue;
+          const item = MONETAG_SCRIPTS.find(item => item.zone === script.dataset.zone && item.src === script.src);
+          if (!item) continue;
+          script.remove();
+          appendMonetag(item);
+        }
+      });
 
       function onPlayGesture(event) {
         if (!event.isTrusted || !video.paused || document.documentElement.classList.contains('live-updates-view')) return;

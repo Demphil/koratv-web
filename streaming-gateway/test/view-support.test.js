@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { initialSupportState, evaluateSupport, SUPPORT_HINT_TTL } from '../player/view-support-state.js';
+import { initialSupportState, evaluateSupport, providerSupportStatus, SUPPORT_HINT_TTL } from '../player/view-support-state.js';
 
 const healthy = { controlHealthy: true, probe: 'clear', cosmeticHidden: false };
 const blocked = { controlHealthy: true, probe: 'blocked', cosmeticHidden: false };
@@ -11,6 +11,27 @@ test('two independent successful checks are needed before a blocked notice can c
   state = evaluateSupport(state, blocked); assert.equal(state.blocked, true);
   state = evaluateSupport(state, healthy); assert.equal(state.blocked, true);
   state = evaluateSupport(state, healthy); assert.equal(state.blocked, false);
+});
+test('network-only provider blocking is detected even when first-party probes and cosmetic bait are allowed', () => {
+  const sample = { ...healthy, providers: 'failed' };
+  const state = evaluateSupport(evaluateSupport(initialSupportState(), sample), sample);
+  assert.equal(state.blocked, true);
+  assert.equal(state.reason, 'provider');
+});
+test('refresh cannot clear a provider requirement before the real ad scripts finish loading', () => {
+  const now = 10000000;
+  const state = initialSupportState({ blocked: true, reason: 'provider', checkedAt: now - 1000 }, now);
+  const pending = { ...healthy, providers: 'pending' };
+  assert.equal(evaluateSupport(evaluateSupport(state, pending), pending).blocked, true);
+  assert.equal(evaluateSupport(evaluateSupport(state, { ...healthy, providers: 'ready' }), { ...healthy, providers: 'ready' }).blocked, false);
+});
+test('provider status observes only configured ad zones and does not blame a server CSP policy on a blocker', () => {
+  assert.equal(providerSupportStatus([]), 'not-started');
+  assert.equal(providerSupportStatus([{ zone: 'other', state: 'failed' }]), 'not-started');
+  assert.equal(providerSupportStatus([{ zone: '11949898', state: 'pending' }]), 'pending');
+  assert.equal(providerSupportStatus([{ zone: '11949898', state: 'failed' }]), 'failed');
+  assert.equal(providerSupportStatus([{ zone: '11949898', state: 'ready' }]), 'ready');
+  assert.equal(providerSupportStatus([{ zone: '11949898', state: 'failed', policyBlocked: true }]), 'unknown');
 });
 test('refresh restores a recent confirmed requirement instead of dismissing it', () => {
   const now = 10000000;
