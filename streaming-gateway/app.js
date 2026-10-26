@@ -16,7 +16,7 @@ import { singleQualityManifest } from './single-quality.js';
 import { diagnosticPlayback, registerMultiview } from './multiview.js';
 import { isAllowedMatch, normalizeTeamName } from '../shared/league-whitelist.mjs';
 import { isEuropeanYouthLeague } from '../shared/match-visibility.mjs';
-import { matchPlaybackState as providerPlaybackState, sourceMatchState, matchListCacheControl } from '../shared/match-lifecycle.mjs';
+import { matchPlaybackState as providerPlaybackState, sourceMatchState, matchListCacheControl, DEFAULT_STREAM_OPENS_BEFORE_MINUTES } from '../shared/match-lifecycle.mjs';
 import { resolvePublicMatchId } from '../shared/public-match-id.mjs';
 import { broadcastChannelCandidates } from '../shared/match-broadcasts.mjs';
 import { registerOperatorConsole, installPreparedOperatorChannel, refreshOperatorResources } from './operator-console.js';
@@ -49,7 +49,7 @@ function moroccoPart(value, options) {
 
 function matchPlaybackState(row, config) {
   return providerPlaybackState(row, {
-    opensBeforeMinutes: Number(process.env.STREAM_OPENS_BEFORE_MINUTES || config.streamOpensBeforeMinutes || 20)
+    opensBeforeMinutes: Number(process.env.STREAM_OPENS_BEFORE_MINUTES || config.streamOpensBeforeMinutes || DEFAULT_STREAM_OPENS_BEFORE_MINUTES)
   });
 }
 

@@ -5,6 +5,7 @@ import { isAllowedMatch, isGulfCupLeague } from '../shared/league-whitelist.mjs'
 import { createProviderCatalog } from './provider-catalog.js';
 import { createProviderLiveResolver } from './provider-live-resolver.js';
 import { createSnapshotReader } from './snapshot-cache.js';
+import { DEFAULT_STREAM_OPENS_BEFORE_MINUTES } from '../shared/match-lifecycle.mjs';
 
 function sourceForOrigin(origin, { koratvOrigins, frajaOrigins }) {
   if (koratvOrigins.has(origin)) return 'kooora';
@@ -120,7 +121,7 @@ export function loadConfig(env = process.env) {
     trustedProxies: (env.TRUSTED_PROXIES || '').split(',').filter(Boolean),
     cloudflareProxies: (env.CLOUDFLARE_HEADER_TRUSTED_PROXIES || '').split(',').filter(Boolean),
     sessionTtl: Math.max(300, Number(env.STREAM_SESSION_TTL_SECONDS || 10800)),
-    streamOpensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || 20),
+    streamOpensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || DEFAULT_STREAM_OPENS_BEFORE_MINUTES),
     prewarmAssignedResources: String(env.STREAM_PREWARM_ENABLED || 'true').trim().toLowerCase() !== 'false',
     mediaValidationEnabled: String(env.STREAM_MEDIA_VALIDATION_ENABLED || 'true').trim().toLowerCase() !== 'false',
     prewarmIntervalMs: Math.max(30_000, Number(env.STREAM_PREWARM_INTERVAL_MS || 60_000)),

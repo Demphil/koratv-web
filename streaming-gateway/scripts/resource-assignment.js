@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { basePriority } from '../priority.js';
 import { sameFixture, teamIdentity } from '../../shared/match-broadcasts.mjs';
-import { sourceMatchState } from '../../shared/match-lifecycle.mjs';
+import { sourceMatchState, DEFAULT_STREAM_OPENS_BEFORE_MINUTES } from '../../shared/match-lifecycle.mjs';
 import { isAllowedMatch, isGulfCupLeague } from '../../shared/league-whitelist.mjs';
 import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs';
 import { operatorPath, readOperatorState } from '../operator-state.js';
@@ -183,7 +183,7 @@ export function buildProjectAssignmentPlan({
 } = {}) {
   const generatedAt = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
   const nowMs = new Date(now).getTime();
-  const opensBeforeMinutes = Math.max(0, Number(options.opensBeforeMinutes ?? 20));
+  const opensBeforeMinutes = Math.max(0, Number(options.opensBeforeMinutes ?? DEFAULT_STREAM_OPENS_BEFORE_MINUTES));
   const manualRank = new Map(manualMatchIds
     .map((id) => String(id || '').trim())
     .filter(Boolean)
@@ -573,7 +573,7 @@ export async function assignProjectMatchResources(env = process.env) {
     providerBindings: operator.providers || {},
     pausedMatches: operator.pauses || {},
     options: {
-      opensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || 20),
+      opensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || DEFAULT_STREAM_OPENS_BEFORE_MINUTES),
       vipTeams: parseList(env.VIP_TEAMS || 'Real Madrid,Barcelona,Manchester City,Liverpool,Arsenal,Bayern Munich,Paris Saint-Germain,Raja Casablanca,Wydad AC,FAR Rabat,Renaissance Berkane'),
       tierPoints: DEFAULT_TIER_POINTS,
     },

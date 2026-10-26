@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { findChannelNameMatch, createChannelNameMatcher } from '../shared/channel-name-match.mjs';
 import { broadcastChannelCandidates, deduplicateSourceEvents, normalizeBroadcastChannel } from '../shared/match-broadcasts.mjs';
 import { basePriority } from './priority.js';
-import { matchPlaybackState } from '../shared/match-lifecycle.mjs';
+import { matchPlaybackState, DEFAULT_STREAM_OPENS_BEFORE_MINUTES } from '../shared/match-lifecycle.mjs';
 
 function createServerClient(env) {
   const url = env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL;
@@ -293,7 +293,7 @@ function removeResolvedChannelCandidate(resolvedChannel, candidates = [], catalo
 export function createPlaybackResolver(env, sourceFilter = null, catalog = null, liveResolver = null) {
   const client = createServerClient(env);
   const table = env.SUPABASE_MATCHES_TABLE || 'matches';
-  const opensBeforeMinutes = Number(env.STREAM_OPENS_BEFORE_MINUTES || 20);
+  const opensBeforeMinutes = Number(env.STREAM_OPENS_BEFORE_MINUTES || DEFAULT_STREAM_OPENS_BEFORE_MINUTES);
   const unavailable = (reason, diagnostics = null) => ({
     is_streaming_active: false,
     reason,

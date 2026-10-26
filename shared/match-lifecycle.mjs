@@ -2,6 +2,7 @@ const endedStatuses = new Set(['RESULT', 'FINISHED', 'ENDED', 'FULL TIME', 'FT',
 const liveStatuses = new Set(['LIVE', '1H', 'HT', '2H', 'ET', 'BT', 'P', 'INT', 'SUSP', 'IN PLAY', 'IN PROGRESS', 'HALF TIME', 'مباشر', 'جارية']);
 const waitingStatuses = new Set(['FIXTURE', 'NS', 'TBD', 'NOT STARTED', 'SCHEDULED']);
 const unavailableStatuses = new Set(['PST', 'POSTPONED', 'CANC', 'CANCELLED', 'CANCELED', 'ABD', 'ABANDONED', 'AWD', 'WO']);
+export const DEFAULT_STREAM_OPENS_BEFORE_MINUTES = 35;
 
 export function nextMoroccoMidnight(reference = Date.now()) {
   const parts = value => Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
@@ -34,7 +35,7 @@ export function sourceMatchState(payload = {}) {
   return 'unknown';
 }
 
-export function matchPlaybackState(row, { now = Date.now(), opensBeforeMinutes = 20 } = {}) {
+export function matchPlaybackState(row, { now = Date.now(), opensBeforeMinutes = DEFAULT_STREAM_OPENS_BEFORE_MINUTES } = {}) {
   const payload = row.payload || row;
   const state = sourceMatchState(payload);
   if (state === 'ended' || state === 'live') return state;

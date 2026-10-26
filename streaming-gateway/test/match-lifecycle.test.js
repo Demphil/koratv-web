@@ -1,9 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { sourceMatchState, matchPlaybackState, frontendMatchState } from '../../shared/match-lifecycle.mjs';
+import { sourceMatchState, matchPlaybackState, frontendMatchState, DEFAULT_STREAM_OPENS_BEFORE_MINUTES } from '../../shared/match-lifecycle.mjs';
 import { createPlaybackResolver } from '../supabase.js';
 import { createApp } from '../app.js';
+
+test('broadcast opens exactly 35 minutes before kickoff and never opens a finished or postponed match', () => {
+  const kickoff = Date.parse('2026-10-26T21:00:00Z');
+  const row = { kickoff_time: new Date(kickoff).toISOString(), payload: { status: 'FIXTURE' } };
+  const opensAt = kickoff - 35 * 60_000;
+  assert.equal(DEFAULT_STREAM_OPENS_BEFORE_MINUTES, 35);
+  assert.equal(matchPlaybackState(row, { now: opensAt - 1 }), 'upcoming');
+  assert.equal(matchPlaybackState(row, { now: opensAt }), 'live');
+  assert.equal(matchPlaybackState(row, { now: kickoff - 30 * 60_000 }), 'live');
+  assert.equal(matchPlaybackState(row, { now: opensAt, opensBeforeMinutes: 20 }), 'upcoming');
+  assert.equal(matchPlaybackState({ ...row, payload: { status: 'RESULT' } }, { now: kickoff }), 'ended');
+  assert.equal(matchPlaybackState({ ...row, payload: { status: 'POSTPONED' } }, { now: kickoff }), 'upcoming');
+});
+
+test('protected playback uses the same 35-minute preparation window', async t => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const row = { id: 'pre-match', match_id: 'pre-match', active: true, source: 'kooora',
+    kickoff_time: new Date(Date.now() + 34 * 60_000).toISOString(), channel: 'Fixture TV',
+    payload: { status: 'FIXTURE', broadcast: { source: 'kooora', channels: ['Fixture TV'] } } };
+  globalThis.fetch = async input => Response.json(new URL(input).pathname.endsWith('/matches') ? [row]
+    : [{ id: 1, name: row.channel, active: true, original_url: 'https://media.example.com/live/test/1.m3u8' }]);
+  const resolve = createPlaybackResolver({ NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-key' });
+  assert.equal((await resolve(row.match_id)).is_streaming_active, true);
+  row.kickoff_time = new Date(Date.now() + 36 * 60_000).toISOString();
+  assert.deepEqual(await resolve(row.match_id), { is_streaming_active: false, reason: 'upcoming' });
+});
 
 test('source status, not match duration, controls termination', () => {
   const now = Date.now();

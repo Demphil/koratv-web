@@ -201,6 +201,20 @@ test('three live matches get resources while finished and distant fixtures consu
   assert.equal(buildProjectAssignmentPlan({matches, routeStates, providerCatalog, now}).assignments.length, 4);
 });
 
+test('automatic resource preparation starts at the same 35-minute boundary as playback', () => {
+  const now = new Date('2026-10-26T18:00:00Z');
+  const matches = [
+    { match_id: 'at-boundary', payload: { status: 'FIXTURE' }, kickoff_time: '2026-10-26T18:35:00.000Z' },
+    { match_id: 'too-early', payload: { status: 'FIXTURE' }, kickoff_time: '2026-10-26T18:35:00.001Z' },
+  ];
+  const routeStates = Object.fromEntries(matches.map(row => [row.match_id,
+    { status: 'RESOLVED', resolvedChannel: row.match_id, providerIds: ['A', 'B'] }]));
+  const providerCatalog = { providers: { A: { enabled: true }, B: { enabled: true } } };
+  const plan = buildProjectAssignmentPlan({ matches, routeStates, providerCatalog, now });
+  assert.deepEqual(plan.assignments.map(row => row.matchId), ['at-boundary']);
+  assert.equal(plan.ignored.find(row => row.matchId === 'too-early').reason, 'not_due');
+});
+
 test('flexible provider allocation does not strand a match with only one supported provider', () => {
   const matches = [
     {match_id:'flexible', payload:{status:'LIVE', national_team:true}},

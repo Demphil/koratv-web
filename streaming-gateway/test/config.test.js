@@ -35,6 +35,11 @@ test('stream sessions default to a long live-match window', () => {
   assert.equal(loadConfig(withoutTtl).sessionTtl, 10800);
 });
 
+test('broadcast opening defaults to 35 minutes and keeps explicit configuration', () => {
+  assert.equal(loadConfig(valid).streamOpensBeforeMinutes, 35);
+  assert.equal(loadConfig({ ...valid, STREAM_OPENS_BEFORE_MINUTES: '20' }).streamOpensBeforeMinutes, 20);
+});
+
 test('configuration identifies the unsafe origin variable', () => {
   assert.throws(() => loadConfig({ ...valid, PUBLIC_API_ORIGIN: 'http://127.0.0.1:3100' }), /PUBLIC_API_ORIGIN must use HTTPS/);
   assert.ok(
