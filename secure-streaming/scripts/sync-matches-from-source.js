@@ -13,6 +13,7 @@ import { attachApiFootballDetails } from '../../shared/match-details.mjs';
 import { isOperatorImportedMatch } from '../../shared/operator-imported-match.mjs';
 import { moroccoMatchDay } from '../../shared/operator-imported-match.mjs';
 import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs';
+import { applyTrustedBroadcastChannels } from './trusted-broadcast-sources.js';
 
 const FIXTURES_SITE_URL = "https://www.kooora.com/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85/%D9%85%D9%88%D8%A7%D8%B9%D9%8A%D8%AF-%D8%A7%D9%84%D9%85%D8%A8%D8%A7%D8%B1%D9%8A%D8%A7%D8%AA";
 const TV_SCHEDULE_SITE_URL = process.env.KOOORA_TV_SCHEDULE_URL || "https://www.kooora.com/%D8%A3%D8%AD%D8%AF%D8%A7%D8%AB-%D8%B1%D9%8A%D8%A7%D8%B6%D9%8A%D8%A9/%D9%83%D8%B1%D8%A9-%D8%A7%D9%84%D9%82%D8%AF%D9%85";
@@ -1248,7 +1249,9 @@ export async function upsertMatchRows(rows, { prune = true } = {}) {
   const withExisting = await mergeExistingChannels(supabase, rows);
   const enriched = await enrichApiFootballMatchDetails(withExisting.rows);
   const apiRows = enriched.filter(row => row.source === 'api-football');
-  const finalRowsForUpsert = enriched.map(row => row.source === 'kooora' ? attachApiFootballDetails(row, apiRows) : row);
+  const detailedRows = enriched.map(row => row.source === 'kooora' ? attachApiFootballDetails(row, apiRows) : row);
+  const { rows: finalRowsForUpsert, updated: officialCorrections } = await applyTrustedBroadcastChannels(supabase, detailedRows);
+  console.log(`Official beIN guide corrected ${officialCorrections} channel assignments.`);
 
   const written = await persistMatchSnapshots(supabase, finalRowsForUpsert, withExisting.versions);
   console.log(`Stored ${written}/${finalRowsForUpsert.length} match snapshots; concurrent newer snapshots preserved.`);

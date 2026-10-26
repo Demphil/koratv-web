@@ -3,6 +3,7 @@ import { currentConsoleSelection } from './selection.js';
 (() => {
   const $ = id => document.getElementById(id);
   let csrf = '', snapshot, selected = [], noticeItems = [], editing = false, polling, activeNotice = 0, importJob = '', searchJob = '', refreshing;
+  let stateRequestVersion = 0, searchAcceptedVersion = 0;
   const previewStage = $('notice-preview-stage');
   let channelSearchTimer, channelSearchVersion = 0, transportFailure = false, loggingIn = false;
   const pendingRequests = new Map(), rowJobs = new Map();
@@ -191,6 +192,7 @@ import { currentConsoleSelection } from './selection.js';
     return refreshing;
   }
   async function refreshSnapshot(render) {
+    const requestVersion = ++stateRequestVersion;
     const next = await api('state');
     if (!Array.isArray(next.matches) || !Array.isArray(next.jobs) || !Array.isArray(next.channels) || !next.state?.selection || !next.status?.prewarm) throw new Error('لم تصل حالة كاملة من الخادم. بقيت اختياراتك محفوظة.');
     snapshot = next;
@@ -202,7 +204,7 @@ import { currentConsoleSelection } from './selection.js';
         if (job.state === 'complete') renderImportResults(job.result);
         else { $('import-search-status').textContent = errors[job.error] || 'تعذر البحث. حاول مجدداً.'; }
         searchJob = ''; $('import-search').disabled = false;
-      } else if (!job) {
+      } else if (!job && requestVersion > searchAcceptedVersion) {
         searchJob = ''; $('import-search').disabled = false;
         $('import-search-status').textContent = 'أُعيد تشغيل الخدمة أثناء البحث. ابحث مجدداً؛ اختيارات البث لم تتغير.';
       }
@@ -332,7 +334,7 @@ import { currentConsoleSelection } from './selection.js';
     $('import-search-status').textContent = 'جاري البحث في Kooora…';
     try {
       const result = await api('matches/search', { homeTeam: $('import-home').value, awayTeam: $('import-away').value });
-      if (result.job) { searchJob = result.job.id; await refresh(false); }
+      if (result.job) { searchJob = result.job.id; searchAcceptedVersion = stateRequestVersion; await refresh(false); }
       else renderImportResults(result);
     } catch (error) { $('import-search-status').textContent = error.message; message(error.message, true); }
     finally { if (!searchJob) $('import-search').disabled = false; }
@@ -342,7 +344,8 @@ import { currentConsoleSelection } from './selection.js';
       $('import-results').replaceChildren(...result.matches.map(match => {
         const row = document.createElement('div'); row.className = 'import-result';
         const name = document.createElement('div'); name.className = 'match-name'; name.textContent = `${match.homeTeam} - ${match.awayTeam}`;
-        const meta = document.createElement('small'); meta.textContent = `${match.league} · ${new Intl.DateTimeFormat('ar', { timeZone: 'Africa/Casablanca', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(match.scheduledAt))} · ${match.status || ''}`;
+        const statusLabel = ({ POSTPONED: 'مؤجلة في Kooora، لا يوجد بث مباشر مؤكد', CANCELLED: 'ملغاة في Kooora', CANCELED: 'ملغاة في Kooora', RESULT: 'انتهت', FIXTURE: 'لم تبدأ', LIVE: 'مباشر' })[String(match.status || '').toUpperCase()] || match.status || '';
+        const meta = document.createElement('small'); meta.textContent = `${match.league} · ${new Intl.DateTimeFormat('ar', { timeZone: 'Africa/Casablanca', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(match.scheduledAt))} · ${statusLabel}`;
         name.append(meta);
         const channels = document.createElement('span'); channels.className = 'import-channels'; channels.textContent = match.channels.join(' · ') || 'القنوات غير محددة حالياً';
         const add = button('plus', 'إضافة للعرض في الموقع', async () => {
@@ -357,6 +360,7 @@ import { currentConsoleSelection } from './selection.js';
         });
         add.append(document.createTextNode('إضافة للعرض في الموقع')); add.className = 'import-match-button primary';
         add.dataset.unavailable = String(!match.canImport); add.disabled = !match.canImport;
+        if (!match.canImport) add.title = statusLabel || 'المباراة غير متاحة للإضافة بحسب حالتها في Kooora';
         row.append(name, channels, add); return row;
       }));
       renderJobs();

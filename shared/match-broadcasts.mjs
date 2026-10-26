@@ -37,7 +37,7 @@ const aliases = [
   ['Manchester City', 'مانشستر سيتي'], ['Manchester United', 'مانشستر يونايتد'],
   ['Liverpool', 'ليفربول'], ['Arsenal', 'آرسنال', 'أرسنال'], ['Chelsea', 'تشيلسي'],
   ['Tottenham', 'Tottenham Hotspur', 'توتنهام هوتسبير'], ['Newcastle', 'Newcastle United', 'نيوكاسل يونايتد'],
-  ['Paris Saint Germain', 'Paris Saint-Germain', 'باريس سان جيرمان'],
+  ['Paris Saint Germain', 'Paris Saint-Germain', 'PSG', 'باريس سان جيرمان'],
   ['Bayern München', 'Bayern Munich', 'بايرن ميونخ'], ['Borussia Dortmund', 'بوروسيا دورتموند'],
   ['Inter', 'Inter Milan', 'إنتر ميلان'], ['AC Milan', 'ميلان'], ['Juventus', 'يوفنتوس'],
   ['Napoli', 'نابولي'], ['AS Roma', 'روما'], ['Wydad AC', 'Wydad Casablanca', 'الوداد الرياضي'],
@@ -60,9 +60,10 @@ const aliases = [
   ['Al-Wasl FC', 'Al Wasl', 'الوصل'], ['Al-Ahli Jeddah', 'Al Ahli Saudi'],
   ['Tractor Sazi', 'Tractor', 'تراكتور'], ['Al Shamal', 'الشمال'],
   ['Al-Gharafa', 'Al Gharafa', 'الغرافة'], ['Esteghlal FC', 'Esteghlal', 'الاستقلال', 'استقلال'],
-  ['Al Quwa Al Jawiya', 'القوة الجوية'], ['Al Ain', 'العين'],
+  ['Al Quwa Al Jawiya', 'Air Force', 'القوة الجوية'], ['Al Ain', 'العين'],
   ['Al-Nassr', 'Al Nassr', 'النصر'], ['Neftchi', 'نيفتشي'],
-  ['Pakhtakor', 'باختاكور'], ['Al-Qadisiyah FC', 'Al Qadisiyah', 'القادسية'],
+  ['Pakhtakor', 'باختاكور'], ['Al-Qadisiyah FC', 'Al Qadisiyah', 'Al Qadsiah', 'القادسية'],
+  ['Al Ittihad', 'الاتحاد'], ['Al Sadd', 'السد'], ['Lyon', 'ليون'], ['Osasuna', 'أوساسونا', 'اوساسونا'],
 ];
 for (const names of aliases) {
   const existing = names.map((name) => identities.get(normalize(name))).find(Boolean);

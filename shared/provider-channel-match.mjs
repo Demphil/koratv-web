@@ -108,6 +108,9 @@ function channelRule(name) {
   const number = normalized.match(/\b(\d{1,2})\b/)?.[1];
   const maxNumber = normalized.match(/\bmax\s*(\d{1,2})\b/)?.[1] || (normalized.includes('max') ? number : '');
 
+  if (normalized.includes('bein') && normalized.includes('afc') && number) {
+    return { required: ['bein', 'sport', 'afc', number], preferred: ['hd'] };
+  }
   if (normalized.includes('bein') && normalized.includes('max') && maxNumber) {
     return { required: ['bein', 'sport', 'max', maxNumber], preferred: ['hd', 'arab'] };
   }
@@ -193,7 +196,7 @@ function scoreEntry(entry, rule, requestedName = '') {
     const number = rule.required.find((token) => /^\d+$/.test(token));
     const sourceNumber = normalizeName(entry.name).match(/\b(\d{1,2})\b/)?.[1];
     if (number && sourceNumber !== number) return -1;
-    for (const variant of ['max', 'xtra', 'premium', 'connect']) {
+    for (const variant of ['afc', 'max', 'xtra', 'premium', 'connect']) {
       if (nameWords.has(variant) !== rule.required.includes(variant)) return -1;
     }
     const requestedRegion = beinRegion(requestedName) || 'ar';

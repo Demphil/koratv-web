@@ -139,3 +139,12 @@ test('beIN EXTRA and XTRA are the same edition and neither can replace the main 
   assert.equal(isProviderChannelCompatible('beIN SPORTS HD 7', { name: 'AR | BEIN-SPORTS EXTRA 7 FHD', group: 'AR | SPORTS' }), false);
   assert.equal(isProviderChannelCompatible('beIN SPORTS XTRA 7', { name: 'AR | BEIN-SPORTS EXTRA 7 FHD', group: 'AR | SPORTS' }), true);
 });
+
+test('beIN AFC editions cannot replace the main numbered channel or vice versa', () => {
+  const main = entry('AR | beIN SPORTS 1 FHD', 'AR | SPORTS', 'main');
+  const afc = entry('AR | beIN SPORTS AFC 1 FHD', 'AR | SPORTS', 'afc');
+  assert.equal(isProviderChannelCompatible('beIN SPORTS HD 1', afc), false);
+  assert.equal(isProviderChannelCompatible('beIN SPORTS AFC 1', main), false);
+  assert.equal(matchChannels(['beIN SPORTS HD 1'], [afc, main])[0].original_url, main.url);
+  assert.equal(matchChannels(['beIN SPORTS AFC 1'], [main, afc])[0].original_url, afc.url);
+});
