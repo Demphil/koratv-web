@@ -121,8 +121,9 @@ export function preferredBroadcastChannels(names) {
   };
   return [...new Set((names || []).filter(name => typeof name === 'string' && name.trim())
     .map(normalizeBroadcastChannel).filter(Boolean))]
-    .map((name, index) => ({ name, index, arabic: isArabic(name) }))
-    .sort((a, b) => Number(b.arabic) - Number(a.arabic) || a.index - b.index)
+    // Tring has a single country edition; unqualified Arena/MAX labels can name different networks.
+    .map((name, index) => ({ name, index, arabic: isArabic(name), unambiguous: /^tring\s+sport\s+\d+/i.test(name) }))
+    .sort((a, b) => Number(b.arabic) - Number(a.arabic) || Number(b.unambiguous) - Number(a.unambiguous) || a.index - b.index)
     .map(({ name }) => name);
 }
 

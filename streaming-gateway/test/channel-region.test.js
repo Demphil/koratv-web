@@ -148,3 +148,30 @@ test('beIN AFC editions cannot replace the main numbered channel or vice versa',
   assert.equal(matchChannels(['beIN SPORTS HD 1'], [afc, main])[0].original_url, main.url);
   assert.equal(matchChannels(['beIN SPORTS AFC 1'], [main, afc])[0].original_url, afc.url);
 });
+
+test('Kooora MAX Sport defaults to Bulgaria, never the Croatian namesake', () => {
+  const bulgarian = entry('[BG] MAX SPORT 2 UHD', '[BU] BULGARIA', 'bg');
+  const croatian = entry('[CR] MAX SPORT 2 FHD', '[EXSP] SPORTS', 'hr');
+  assert.equal(matchChannels(['Max Sport 2'], [croatian, bulgarian])[0].original_url, bulgarian.url);
+  assert.equal(isProviderChannelCompatible('Max Sport 2', croatian), false);
+  assert.equal(matchChannels(['[CR] Max Sport 2'], [bulgarian, croatian])[0].original_url, croatian.url);
+  assert.deepEqual(matchChannels(['Max Sport 2'], [entry('Max Sport 2', 'SPORTS', 'unknown')]), []);
+  assert.equal(matchChannels(['MaxSport 2'], [bulgarian])[0].original_url, bulgarian.url);
+});
+
+test('Tring and Arena cannot borrow another numbered or premium edition', () => {
+  const arena = entry('[BLNSP] ARENA SPORT 1 UHD', '[EXSP] SPORTS', 'arena');
+  const premium = entry('[BA] ARENA SPORT PREMIUM 1', '[BO] BOSNIA', 'premium');
+  const tring = entry('[ALB] TRING SPORT 2 UHD', '[ALB] SPORTS', 'tring');
+  assert.deepEqual(matchChannels(['Tring Sport 1 HD'], [tring]), []);
+  assert.equal(matchChannels(['arena sport 1'], [premium, arena])[0].original_url, arena.url);
+  assert.equal(isProviderChannelCompatible('arena sport 1', premium), false);
+  assert.equal(matchChannels(['Tring Sport 2 HD'], [tring])[0].original_url, tring.url);
+});
+
+test('a listed unambiguous Tring alternative leads generic regional labels without overriding Arabic broadcasters', () => {
+  assert.deepEqual(preferredBroadcastChannels(['arena sport 1', 'Tring Sport 2 HD', 'Max Sport 3']),
+    ['Tring Sport 2 HD', 'arena sport 1', 'Max Sport 3']);
+  assert.deepEqual(preferredBroadcastChannels(['arena sport 1', 'Tring Sport 2 HD', 'beIN SPORTS HD 2']),
+    ['beIN SPORTS HD 2', 'Tring Sport 2 HD', 'arena sport 1']);
+});

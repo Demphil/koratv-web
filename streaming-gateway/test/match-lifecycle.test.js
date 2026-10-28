@@ -54,8 +54,8 @@ test('source status, not match duration, controls termination', () => {
 });
 
 test('both frontend lifecycle modules stay identical to the shared backend contract', () => {
-  const canonical = readFileSync(new URL('../../shared/match-lifecycle.mjs', import.meta.url), 'utf8');
-  assert.equal(readFileSync(new URL('../../../foottv6/shared/match-lifecycle.mjs', import.meta.url), 'utf8'), canonical);
+  const canonical = readFileSync(new URL('../../shared/match-lifecycle.mjs', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  assert.equal(readFileSync(new URL('../../../foottv6/shared/match-lifecycle.mjs', import.meta.url), 'utf8').replace(/\r\n/g, '\n'), canonical);
   for (const path of ['../../assets/js/matches.js', '../../../foottv6/assets/js/matches.js']) {
     const source = readFileSync(new URL(path, import.meta.url), 'utf8');
     assert.match(source, /import \{ frontendMatchState, sourceMatchState \} from/);

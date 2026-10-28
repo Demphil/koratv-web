@@ -47,6 +47,7 @@ export function normalizeName(name) {
     .replace(/\bsd\b/g, '')
     .replace(/\b0([1-9])\b/g, '$1')
     .replace(/\bsports\b/g, 'sport')
+    .replace(/\bmaxsport\b/g, 'max sport')
     .replace(/\bextra\b/g, 'xtra')
     .replace(/\bontime\b/g, 'on time')
     .replace(/\bal\s+kass\b/g, 'alkass')
@@ -108,6 +109,15 @@ function channelRule(name) {
   const number = normalized.match(/\b(\d{1,2})\b/)?.[1];
   const maxNumber = normalized.match(/\bmax\s*(\d{1,2})\b/)?.[1] || (normalized.includes('max') ? number : '');
 
+  if (/\bmax sport\b/.test(normalized) && number) {
+    return { required: ['max', 'sport', number], preferred: ['hd'], edition: 'max-sport', region: maxSportRegion(name) || 'bg' };
+  }
+  if (/\btring sport\b/.test(normalized) && number) {
+    return { required: ['tring', 'sport', number], preferred: ['hd'], edition: 'tring-sport' };
+  }
+  if (/\barena sport\b/.test(normalized) && number) {
+    return { required: ['arena', 'sport', ...(normalized.includes('premium') ? ['premium'] : []), number], preferred: ['hd'], edition: 'arena-sport' };
+  }
   if (normalized.includes('bein') && normalized.includes('afc') && number) {
     return { required: ['bein', 'sport', 'afc', number], preferred: ['hd'] };
   }
@@ -186,11 +196,31 @@ function channelRule(name) {
   return null;
 }
 
+function maxSportRegion(value) {
+  const text = String(value || '').toLowerCase();
+  if (/\b(?:bg|bu|bulgaria|bulgarian)\b/.test(text)) return 'bg';
+  if (/\b(?:cr|hr|croatia|croatian)\b/.test(text)) return 'hr';
+  return '';
+}
+
+function strictChannelRule(rule) {
+  return rule && (rule.edition || rule.required.includes('bein') || rule.required.includes('arryadia')
+    || (rule.required.includes('on') && rule.required.includes('sport')));
+}
+
 function scoreEntry(entry, rule, requestedName = '') {
   const text = entry.search || entrySearchText(entry);
   const raw = `${entry.rawName || entry.name} ${entry.group || ''}`.toLowerCase();
   const words = new Set(text.split(/\s+/));
   if (!rule.required.every((token) => words.has(token))) return -1;
+  if (rule.edition) {
+    const name = normalizeName(entry.name);
+    if (!rule.required.every(token => new Set(name.split(/\s+/)).has(token))) return -1;
+    const number = rule.required.find(token => /^\d+$/.test(token));
+    if (name.match(/\b(\d{1,2})\b/)?.[1] !== number) return -1;
+    if (rule.edition === 'max-sport' && maxSportRegion(raw) !== rule.region) return -1;
+    if (rule.edition === 'arena-sport' && /\bpremium\b/.test(name) !== rule.required.includes('premium')) return -1;
+  }
   if (rule.required.includes('bein')) {
     const nameWords = new Set(normalizeName(entry.name).split(/\s+/));
     const number = rule.required.find((token) => /^\d+$/.test(token));
@@ -262,15 +292,14 @@ function pushUniqueEntry(target, entry) {
 
 export function isProviderChannelCompatible(name, entry) {
   const rule = channelRule(name);
-  if (rule && (rule.required.includes('bein') || rule.required.includes('arryadia')
-    || (rule.required.includes('on') && rule.required.includes('sport')))) return scoreEntry(entry, rule, name) >= 0;
+  if (strictChannelRule(rule)) return scoreEntry(entry, rule, name) >= 0;
   return true;
 }
 
 export function isCatalogChannelSourceVerified(name, row, providerId) {
   const sourceName = row?.sourceNames?.[providerId] || '';
   const rule = channelRule(name);
-  if (rule && (rule.required.includes('arryadia') || (rule.required.includes('on') && rule.required.includes('sport')))) {
+  if (rule && (rule.edition || rule.required.includes('arryadia') || (rule.required.includes('on') && rule.required.includes('sport')))) {
     return Boolean(sourceName) && isProviderChannelCompatible(name, { name: sourceName, rawName: sourceName,
       group: row.sourceGroups?.[providerId] || '' });
   }
@@ -310,8 +339,7 @@ export function matchChannels(streamNames, m3uEntries, options = {}) {
       }
 
       const rule = channelRule(name);
-      if (rule && (rule.required.includes('bein') || rule.required.includes('arryadia')
-        || (rule.required.includes('on') && rule.required.includes('sport')))) {
+      if (strictChannelRule(rule)) {
         for (let index = candidates.length - 1; index >= 0; index -= 1) {
           if (scoreEntry(candidates[index], rule, name) < 0) candidates.splice(index, 1);
         }
