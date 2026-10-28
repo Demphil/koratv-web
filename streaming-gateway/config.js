@@ -124,6 +124,8 @@ export function loadConfig(env = process.env) {
     streamOpensBeforeMinutes: Number(env.STREAM_OPENS_BEFORE_MINUTES || DEFAULT_STREAM_OPENS_BEFORE_MINUTES),
     prewarmAssignedResources: String(env.STREAM_PREWARM_ENABLED || 'true').trim().toLowerCase() !== 'false',
     mediaValidationEnabled: String(env.STREAM_MEDIA_VALIDATION_ENABLED || 'true').trim().toLowerCase() !== 'false',
+    contentVerificationEnabled: String(env.STREAM_CONTENT_VERIFICATION_ENABLED || 'false').trim().toLowerCase() === 'true',
+    contentOcrLanguage: env.STREAM_CONTENT_OCR_LANGUAGE || 'eng+ara',
     prewarmIntervalMs: Math.max(30_000, Number(env.STREAM_PREWARM_INTERVAL_MS || 60_000)),
     prewarmMaxResources: Math.max(1, Number(env.STREAM_PREWARM_MAX_RESOURCES || env.MAX_EVENT_RESOURCES || 8)),
     upstreamUserAgent: env.IPTV_UPSTREAM_USER_AGENT || 'IPTVSmartersPlayer',

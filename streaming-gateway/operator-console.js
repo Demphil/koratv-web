@@ -18,7 +18,7 @@ const execute = promisify(execFile);
 const cwd = fileURLToPath(new URL('.', import.meta.url));
 const require = createRequire(import.meta.url);
 const cookie = (token, age) => `${operatorCookie}=${token}; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}`;
-export function registerOperatorConsole(app, { config, redis, clientIp, getMatches, prepareChannel, applyResources, status, beginOperation, endOperation, matchWorker = runOperatorMatchWorker }) {
+export function registerOperatorConsole(app, { config, redis, clientIp, getMatches, prepareChannel, applyResources, status, beginOperation, endOperation, installVerifiedChannel = installPreparedOperatorChannel, matchWorker = runOperatorMatchWorker }) {
   const path = config.operatorControlPath || '/etc/koratv/operator-control.json';
   const mediaPath = config.operatorMediaPath || '/etc/koratv/operator-media';
   const clients = new Set();
@@ -245,7 +245,7 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     catch { job.warning = 'resource_reconciliation_pending'; }
     job.stopped = true;
   }, { kind: 'stop' }));
-  const changeChannel = async (req, job, { refreshOnly = false, providerChange = false } = {}) => {
+  const changeChannel = async (req, job, { refreshOnly = false, providerChange = false, verified = null } = {}) => {
     const matches = await getMatches(), match = matches.find(item => item.matchId === req.body.matchId);
     if (!match) throw new Error('invalid_match');
     if (['ended', 'unavailable'].includes(sourceMatchState(match))) throw new Error('invalid_match');
@@ -261,7 +261,14 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     const channel = String(refreshOnly || providerChange ? match.channelName || currentState.overrides[match.matchId]?.channel : req.body.channel || '').trim();
     if (!channel || channel.length > 100 || /https?:|[/\\\r\n]/i.test(channel)) throw new Error('invalid_channel');
     job.matchId = match.matchId;
-    const prepared = await prepareChannel(channel, phase => { job.phase = phase; }, match, { providerId: requested, ...(takeover ? { takeover: true } : {}) });
+    let prepared;
+    if (verified) {
+      if (currentState.revision !== verified.revision || !verified.guard() || verified.content?.status !== 'verified'
+        || owners.length || requested !== verified.providerId || channel !== verified.channel
+        || verified.result?.resolvedChannel !== channel || Object.keys(verified.result.provider_sources || {}).join() !== requested) throw new Error('content_change_obsolete');
+      await installVerifiedChannel(verified.result);
+      prepared = { name: channel, providerId: requested };
+    } else prepared = await prepareChannel(channel, phase => { job.phase = phase; }, match, { providerId: requested, ...(takeover ? { takeover: true } : {}) });
     // Persist only after a media segment has passed the bounded probe.
     job.phase = 'saving';
     const previous = (await read()).overrides[match.matchId];
@@ -274,11 +281,11 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
         const assignment = config.providerAssignments?.().assignments?.find(row => row.matchId === id || row.aliases?.includes(id));
         delete providers[id]; pauses[id] = { day: moroccoMatchDay(), aliases: assignment ? [assignment.matchId, ...(assignment.aliases || [])] : [id], displacedBy: match.matchId, at: new Date().toISOString() };
       }
-      if (prepared.providerId) providers[match.matchId] = { providerId: prepared.providerId, day: moroccoMatchDay(), manual: Boolean(requested), verifiedAt: new Date().toISOString() };
+      if (prepared.providerId) providers[match.matchId] = { providerId: prepared.providerId, day: moroccoMatchDay(), manual: verified ? false : Boolean(requested), verifiedAt: new Date().toISOString(), ...(verified ? { source: 'content-verification' } : {}) };
       return { ...state, providers, pauses, overrides: { ...state.overrides, [match.matchId]: { channel: prepared.name, expiresAt: new Date(Date.now() + 24 * 3600000).toISOString(), enabled: true } } };
     });
     job.phase = 'assigning';
-    const scope = { matchId: match.matchId, ...(owners.length ? { displacedMatchIds: owners, takeoverProvider: requested } : {}), ...(sourceMatchState(match) === 'upcoming' && !match.isLive ? { allowDeferred: true } : {}) };
+    const scope = { matchId: match.matchId, ...(verified ? { preserveUnrelated: true } : {}), ...(owners.length ? { displacedMatchIds: owners, takeoverProvider: requested } : {}), ...(sourceMatchState(match) === 'upcoming' && !match.isLive ? { allowDeferred: true } : {}) };
     try { await applyResources(scope); }
     catch (error) {
       await update(state => { const overrides = { ...state.overrides }, providers = { ...state.providers }; if (previous) overrides[match.matchId] = previous; else delete overrides[match.matchId];
@@ -365,7 +372,22 @@ export function registerOperatorConsole(app, { config, redis, clientIp, getMatch
     heartbeat.unref();
     req.on('close', () => { clearInterval(heartbeat); clients.delete(res); const count = (connectionCounts.get(ip) || 1) - 1; if (count) connectionCounts.set(ip, count); else connectionCounts.delete(ip); });
   });
-  return { publish, read, update };
+  return { publish, read, update, busy: () => pendingOperations > 0,
+    applyVerifiedChannel(input) {
+      if (pendingOperations > 0) return Promise.resolve({ status: 'operator_busy' });
+      pendingOperations++;
+      const task = operationQueue.catch(() => {}).then(async () => {
+        try {
+          await beginOperation?.();
+          const job = { kind: 'content_repair', matchId: input.matchId, phase: 'verifying_content' };
+          await changeChannel({ body: { matchId: input.matchId, providerId: input.providerId, channel: input.channel } }, job, { verified: input });
+          return { status: 'corrected', provider: input.providerId, channel: input.channel };
+        } finally { pendingOperations--; await endOperation?.(); }
+      });
+      operationQueue = task.catch(() => {});
+      return task;
+    }
+  };
 }
 
 export async function installPreparedOperatorChannel(result, env = process.env) {

@@ -22,6 +22,8 @@ import { broadcastChannelCandidates } from '../shared/match-broadcasts.mjs';
 import { registerOperatorConsole, installPreparedOperatorChannel, refreshOperatorResources } from './operator-console.js';
 import { createAutomaticChannelRepair } from './automatic-channel-repair.js';
 import { createOperatorChannelPreparer } from './operator-channel.js';
+import { createMatchContentVerifier, contentWindow } from './match-content.js';
+import { createMatchContentRepair } from './match-content-repair.js';
 import { isOperatorImportedMatch } from '../shared/operator-imported-match.mjs';
 
 const issuer = 'koratv-gateway';
@@ -473,17 +475,30 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   const preparedMatches = new Map();
   const preparedProgress = new HlsProgressMonitor();
   const validateMedia = createMediaValidator({ enabled: config.mediaValidationEnabled, ...(config.inspectMedia ? { inspect: config.inspectMedia } : {}) });
+  const contentVerifier = createMatchContentVerifier({ enabled: config.contentVerificationEnabled,
+    language: config.contentOcrLanguage, ...(config.inspectContent ? { inspect: config.inspectContent } : {}) });
+  app.locals.matchContentVerifier = contentVerifier;
+  const contentFixtures = new Map(), contentRepairs = new Map();
+  let operatorController, repairMatchContent;
   let operatorPreparing = false;
+  const contentStatus = id => {
+    if (!contentVerifier.enabled) return null;
+    const prepared = preparedMatches.get(id), match = contentFixtures.get(id);
+    const report = prepared?.lease && match ? contentVerifier.latest({ match, provider: prepared.lease.provider, source: prepared.lease.url }) : null;
+    return { ...(report || { status: 'pending', reason: 'awaiting_content_sample' }), ...(contentRepairs.has(id) ? { repair: contentRepairs.get(id) } : {}) };
+  };
+  const contentBlocked = id => { const value = contentStatus(id); return value?.status === 'mismatch' || value?.blocked === true; };
   const normalizeRuntimeMatch = row => {
     if (!prewarmState.enabled) return normalizeMatch(row, config);
     const id = row.match_id || row.id;
     const assignment = config.providerAssignments?.().assignments?.find(item => item.matchId === id || item.aliases?.includes(id));
     const prepared = preparedMatches.get(assignment?.matchId || id);
-    const ready = row.resource_status === 'ASSIGNED' && prepared?.ok && prepared.channel === cleanText(row.channel || row.payload?.channel)
+    const content = contentStatus(assignment?.matchId || id);
+    const ready = !content?.blocked && content?.status !== 'mismatch' && row.resource_status === 'ASSIGNED' && prepared?.ok && prepared.channel === cleanText(row.channel || row.payload?.channel)
       && providerPool.valid(prepared.lease)
       && prepared.sourceUrl === prepared.lease.url
       && Date.now() - prepared.checkedAt < 2 * (config.prewarmIntervalMs || 60_000);
-    return normalizeMatch({ ...row, source_ready: Boolean(ready) }, config);
+    return { ...normalizeMatch({ ...row, source_ready: Boolean(ready) }, config), contentVerification: content };
   };
   app.locals.providerPrewarm = prewarmState;
   if (config.primeMatchSnapshots) {
@@ -492,7 +507,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     app.locals.matchSnapshotStartupTimer = primeTimer;
   }
 
-  const warmPlaybackManifest = async (playback, lease, { fresh = false } = {}) => {
+  const warmPlaybackManifest = async (playback, lease, { fresh = false, requireContent = false } = {}) => {
     const headers = { 'User-Agent': config.upstreamUserAgent, Accept: '*/*' };
     let url = new URL(lease.mediaUrl || lease.url);
     for (let depth = 0; depth < 3; depth += 1) {
@@ -534,6 +549,34 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         console.warn('[media-validation]', { channel: playback.channel_id, provider: lease.provider, ...media });
         return media;
       }
+      const match = contentFixtures.get(playback.match_id) || playback.match;
+      let content = contentVerifier.enabled ? { status: 'pending', reason: 'awaiting_content_sample' } : null;
+      if (contentVerifier.enabled && match) {
+        const input = { match, fixtures: [...contentFixtures.values()], provider: lease.provider, source: lease.url, segment: segmentBytes, signal: lease.controller.signal };
+        const check = contentVerifier.verify(input);
+        const continueRepair = async value => {
+          await contentVerifier.idle();
+          const id = match.match_id || match.matchId;
+          const currentMatch = contentFixtures.get(id);
+          if (!currentMatch || !contentWindow(currentMatch) || lease.url !== input.source
+            || contentVerifier.latest({ ...input, match: currentMatch }) !== value) return;
+          const current = preparedMatches.get(id);
+          if (current?.lease === lease && lease.url === input.source) {
+            const result = prewarmState.results.find(row => row.matchId === id);
+            if (result) result.content = value;
+          }
+          if (lease.probe || value.status === 'verified' || ['content_inspector_unavailable', 'content_inspection_failed'].includes(value.reason)
+            || !contentWindow(match) || !providerPool.valid(lease)
+            || operatorPreparing || !operatorController || operatorController.busy() || !repairMatchContent) return;
+          const state = await operatorController.read();
+          try {
+            const result = await repairMatchContent({ match, playback, lease, revision: state.revision });
+            if (result) contentRepairs.set(id, result);
+          } catch { contentRepairs.set(id, { status: 'retry_pending' }); }
+        };
+        if (requireContent) content = await check;
+        else { content = contentVerifier.latest(input) || content; check.then(value => { setImmediate(() => continueRepair(value).catch(() => {})); }).catch(() => {}); }
+      }
       for (let index = Math.max(0, lines.length - 4); !lease.probe && index < lines.length; index += 1) {
         if (index === lastIndex) continue;
         const target = new URL(lines[index], base);
@@ -546,7 +589,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       }
       if (!providerPool.valid(lease)) return { ok: false, error: 'pool_reassigned' };
       lease.validatedSource = lease.url;
-      return { ok: true, channel: playback.channel_id, provider: lease.provider };
+      return { ok: true, channel: playback.channel_id, provider: lease.provider, ...(content ? { content } : {}) };
     }
     return { ok: false, error: 'playlist_depth' };
   };
@@ -555,7 +598,8 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     pool: providerPool, discover: config.discoverOperatorChannel,
     warm: warmPlaybackManifest,
     install: config.installPreparedChannel || installPreparedOperatorChannel,
-    refresh: () => { config.refreshProviderCatalog?.(); config.invalidatePlayback?.(); }
+    refresh: () => { config.refreshProviderCatalog?.(); config.invalidatePlayback?.(); },
+    requireContent: Boolean(config.contentVerificationEnabled)
   });
 
   const prewarmAssignedResources = async (reason = 'interval', { fresh = false, matchId = '' } = {}) => {
@@ -567,6 +611,9 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     const currentKeys = new Set();
     try {
       const snapshots = await config.getMatchesForOrigin(config.frontend);
+      contentFixtures.clear();
+      for (const row of snapshots) contentFixtures.set(row.match_id || row.id, row);
+      for (const id of contentRepairs.keys()) if (!contentFixtures.has(id)) contentRepairs.delete(id);
       const endedIds = new Set(snapshots.filter(row => ['ended', 'unavailable'].includes(sourceMatchState(row.payload || row))).map(row => row.match_id || row.id));
       for (const id of endedIds) config.invalidatePlayback?.(id);
       const assignments = (config.providerAssignments?.().assignments || [])
@@ -687,7 +734,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   };
   app.locals.prewarmAssignedResources = prewarmAssignedResources;
 
-  registerOperatorConsole(app, {
+  operatorController = registerOperatorConsole(app, {
     config, redis, clientIp,
     beginOperation: async () => { operatorPreparing = true; while (prewarmState.running) await wait(100); },
     endOperation: () => { operatorPreparing = false; },
@@ -695,7 +742,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       .filter(row => !isEuropeanYouthLeague(row.league) && (isOperatorImportedMatch(row) || isAllowedMatch({ league: row.league, leagueCountry: row.payload?.leagueCountry, homeTeam: row.home_team, awayTeam: row.away_team })) && sourceMatchState(row.payload || row) !== 'unavailable')
       .map(row => ({ ...normalizeRuntimeMatch(row), broadcastChannels: broadcastChannelCandidates(row) }))
       .filter(row => moroccoPart(row.scheduledAt, { year: 'numeric', month: '2-digit', day: '2-digit' }) === moroccoPart(new Date(), { year: 'numeric', month: '2-digit', day: '2-digit' }))
-      .map(({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected }) => ({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected }))
+      .map(({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected, contentVerification }) => ({ matchId, homeTeam, awayTeam, league, scheduledAt, time, score, status, isLive, sourceReady, viewingMode, channelName, broadcastChannels, broadcastRank, manuallySelected, contentVerification }))
       .sort((a, b) => Number(b.isLive) - Number(a.isLive) || (a.isLive ? Date.parse(b.scheduledAt) - Date.parse(a.scheduledAt) : Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))),
     status: () => ({ accounts: (accountHealth?.snapshot() || []).map(({ provider, status, current_channel, last_http_code, cooldown_until, last_checked_at }) => {
       const lease = providerPool?.leases.get(provider);
@@ -708,7 +755,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       warm: (playback, lease) => warmPlaybackManifest(playback, lease, { fresh: true }), install: installPreparedOperatorChannel,
       refresh: () => config.refreshProviderCatalog()
     }),
-    applyResources: async ({ matchId, allowDeferred = false, displacedMatchIds = [], takeoverProvider, stopMatchIds = [], metadataOnly = false } = {}) => {
+    applyResources: async ({ matchId, allowDeferred = false, displacedMatchIds = [], takeoverProvider, stopMatchIds = [], metadataOnly = false, preserveUnrelated = false } = {}) => {
       const before = config.providerAssignments?.().assignments || [];
       if (stopMatchIds.length) {
         const stopped = new Set(stopMatchIds);
@@ -732,7 +779,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         }
         const wanted = new Set((config.providerAssignments?.().assignments || []).map(item => item.resolvedChannel));
         for (const lease of providerPool.leases.values()) {
-          if (!wanted.has(lease.channel)) {
+          if (!preserveUnrelated && !wanted.has(lease.channel)) {
             providerPool.demands.delete(lease.key);
             providerPool.revoke(lease.provider);
           }
@@ -761,6 +808,10 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
         !== identity(after.find(item => item.matchId === row.matchId))).flatMap(row => [row.matchId, ...(row.aliases || [])]))] };
     }
   });
+
+  repairMatchContent = createMatchContentRepair({ pool: providerPool, accounts: config.providerAccounts,
+    assignments: config.providerAssignments, discover: config.discoverOperatorChannel, warm: warmPlaybackManifest,
+    commit: input => operatorController.applyVerifiedChannel(input) });
 
   if (prewarmState.enabled) {
     const timer = setInterval(() => {
@@ -858,7 +909,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
   app.get('/healthz', async (req, res) => {
     try {
       await redis.ping();
-      res.json({ status: 'ok', hlsCache: hlsCache.stats(), ...(providerPool ? { providerPool: providerPool.snapshot(), providerFailures: providerPool.failures, providerPrewarm: prewarmState } : {}) });
+      res.json({ status: 'ok', hlsCache: hlsCache.stats(), contentVerification: { enabled: contentVerifier.enabled }, ...(providerPool ? { providerPool: providerPool.snapshot(), providerFailures: providerPool.failures, providerPrewarm: prewarmState } : {}) });
     } catch {
       res.status(503).json({ status: 'unavailable' });
     }
@@ -945,6 +996,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const matchId = await resolveRequestedMatchId(originFromHeader(req.headers.origin), req.query.matchId);
       if (req.query.matchId && !matchId) return res.status(404).json({ is_streaming_active: false });
       const playback = await config.getPlaybackForSource(source, matchId);
+      if (contentBlocked(matchId)) return res.json({ is_streaming_active: false, reason: 'content_mismatch' });
       res.json({ is_streaming_active: playback.is_streaming_active, reason: playback.reason || null });
     }
     catch { res.status(503).json({ is_streaming_active: false }); }
@@ -1000,6 +1052,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
       const requestedMatchId = await resolveRequestedMatchId(originFromHeader(req.headers.origin), requested);
       if (!requestedMatchId) return res.status(404).json({ error: 'match_unavailable' });
       let playback = await config.getPlaybackForSource(source, requestedMatchId);
+      if (contentBlocked(requestedMatchId)) return res.status(409).json({ error: 'content_mismatch' });
       if (!playback.is_streaming_active && playback.reason === 'source_unavailable' && config.refreshProviderCatalog) {
         config.refreshProviderCatalog();
         prewarmAssignedResources('urgent-source-unavailable', { fresh: true }).catch((error) => {
@@ -1025,6 +1078,7 @@ export function createApp({ config, redis, fetchImpl = fetch }) {
     try {
       requireOrigin(req, config.player);
       const claims = verify(req.body.token, req, 'player-entry');
+      if (contentBlocked(claims.matchId)) return res.status(409).json({ error: 'content_mismatch' });
       const playback = await resolvePlayback(claims);
       if (!playback.is_streaming_active || playback.channel_id !== claims.channel) return res.sendStatus(403);
       const result = await redis.set(`stream-used:${claims.jti}`, '1', { NX: true, EX: entryTtl });

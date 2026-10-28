@@ -79,6 +79,11 @@ export function teamIdentity(name, row = {}) {
   return identities.get(key) || `name:${key}`;
 }
 
+export function teamIdentityAliases(name, row = {}) {
+  const id = teamIdentity(name, row);
+  return [...new Set([normalize(name), ...[...identities].filter(([, value]) => value === id).map(([key]) => key)])].filter(Boolean);
+}
+
 export function sameFixture(left, right) {
   const delta = Math.abs(Date.parse(left.kickoff_time) - Date.parse(right.kickoff_time));
   if (!Number.isFinite(delta) || delta > 15 * 60_000) return false;

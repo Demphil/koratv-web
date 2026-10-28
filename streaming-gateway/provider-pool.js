@@ -126,14 +126,15 @@ export class ProviderPool {
     lease.url = sourceUrl;
     return true;
   }
-  async probe(provider, channel, url, operation) {
+  async probe(provider, channel, url, operation, { idleOnly = false, timeoutMs = 12000 } = {}) {
     if (this.probes.has(provider)) throw new PoolError('operation_in_progress', 409);
     const previous = this.leases.get(provider);
+    if (idleOnly && previous) throw new PoolError('provider_busy', 409);
     const controller = new AbortController();
     const lease = { id: randomUUID(), provider, channel, url, controller, probe: true };
     this.probes.set(provider, lease);
     previous?.controller.abort();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const timeout = setTimeout(() => controller.abort(), Math.max(1000, Math.min(20000, timeoutMs)));
     try {
       // Drain aborted media before opening a different channel on a one-slot account.
       await (this.tails.get(provider) || Promise.resolve()).catch(() => {});

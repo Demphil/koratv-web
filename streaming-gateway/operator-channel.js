@@ -31,7 +31,7 @@ export function createOperatorChannelPreparer({ pool, accounts, resolveChannel, 
       const current = pool.leases.get(provider);
       if (current && !(takeover && provider === providerId) && !(current.provider === target?.provider && ownsTarget(current)) && !(current.channel === name && current.url === chosen.original_url)) return false;
       try {
-        const test = lease => warm({ channel_id: name }, lease);
+        const test = lease => warm({ channel_id: name, match_id: match?.matchId, match }, lease);
         const probe = current?.channel === name && current.url === chosen.original_url
           ? await test(current)
           : await pool.probe(provider, name, chosen.original_url, test);

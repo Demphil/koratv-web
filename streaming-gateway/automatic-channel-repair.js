@@ -1,4 +1,4 @@
-export function createAutomaticChannelRepair({ pool, discover, warm, install, refresh, now = Date.now }) {
+export function createAutomaticChannelRepair({ pool, discover, warm, install, refresh, now = Date.now, requireContent = false }) {
   const failedUntil = new Map();
   const pending = new Map();
   return async (playback, failedLease, { shouldContinue = () => true } = {}) => {
@@ -19,8 +19,9 @@ export function createAutomaticChannelRepair({ pool, discover, warm, install, re
           // Only replace this broken channel, never borrow another match's account.
           if (pool.probes.has(provider) || current && (current.key !== failedLease.key || current.channel !== channel)) return false;
           try {
-            const ok = (await pool.probe(provider, channel, candidate.original_url,
-              lease => warm(playback, lease))).ok === true;
+            const sample = await pool.probe(provider, channel, candidate.original_url,
+              lease => warm(playback, lease, { requireContent }));
+            const ok = sample.ok === true && (!requireContent || sample.content?.status === 'verified');
             if (ok) verifiedUrls.add(candidate.original_url);
             return ok;
           } catch { return false; }

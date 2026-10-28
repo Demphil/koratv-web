@@ -10,7 +10,12 @@ import { currentConsoleSelection } from './selection.js';
   const active = job => ['queued', 'running'].includes(job.state);
   const ended = match => /^(RESULT|FINISHED|ENDED|FT|AET|PEN|انتهت)$/i.test(match.status || '');
   const renewableIds = () => selected.filter(id => snapshot.matches.some(match => match.matchId === id && !ended(match) && !match.paused && match.channelName));
-  const badgeText = match => ended(match) ? 'انتهت · البث مغلق' : match.paused ? 'متوقف بقرار الإدارة' : `${match.isLive ? 'مباشر' : /^(FIXTURE|NS|TBD)$/i.test(match.status || '') ? 'لم تبدأ' : match.status} · ${match.sourceReady ? 'جاهز' : 'غير جاهز'}`;
+  const readiness = match => match.contentVerification?.status === 'mismatch' || match.contentVerification?.blocked ? 'محتوى مختلف · يبحث عن بديل'
+    : !match.sourceReady ? 'غير جاهز' : !match.contentVerification ? 'جاهز'
+    : match.contentVerification.status === 'verified' ? 'المباراة مؤكدة بالصورة'
+      : 'الرابط يعمل · هوية المباراة لم تتأكد';
+  const confirmedReady = match => match.sourceReady && (!match.contentVerification || match.contentVerification.status === 'verified');
+  const badgeText = match => ended(match) ? 'انتهت · البث مغلق' : match.paused ? 'متوقف بقرار الإدارة' : `${match.isLive ? 'مباشر' : /^(FIXTURE|NS|TBD)$/i.test(match.status || '') ? 'لم تبدأ' : match.status} · ${readiness(match)}`;
   const matchLabel = id => { const row = snapshot.matches.find(item => item.matchId === id); return row ? `${row.homeTeam} - ${row.awayTeam}` : id; };
   async function submitJob(path, body) {
     const key = `${path}:${JSON.stringify(body)}`;
@@ -87,7 +92,7 @@ import { currentConsoleSelection } from './selection.js';
       check.onchange = () => { if (check.checked && selected.length === 8) { check.checked = false; return message('الحد الأقصى ثماني مباريات.', true); } selected = check.checked ? [...selected, match.matchId] : selected.filter(id => id !== match.matchId); $('manual-enabled').checked = true; editing = true; renderSelected(); };
       const name = document.createElement('div'); name.className = 'match-name'; name.textContent = `${match.homeTeam} - ${match.awayTeam}`;
       const meta = document.createElement('small'); meta.textContent = `${match.league} · ${match.time || ''} · ${match.score}`; name.append(meta);
-      const state = document.createElement('span'); state.className = `badge ${match.isLive ? 'live' : ''} ${match.sourceReady ? 'ready' : ''}`;
+      const state = document.createElement('span'); state.className = `badge ${match.isLive ? 'live' : ''} ${confirmedReady(match) ? 'ready' : ''}`;
       state.textContent = badgeText(match);
       const input = document.createElement('input'); input.setAttribute('list', 'channel-names'); input.value = match.channelName || ''; input.setAttribute('aria-label', 'القناة'); input.oninput = () => { input.dataset.dirty = 'true'; editing = true; suggestChannels(input.value); };
       if (channelDrafts.has(match.matchId)) { input.value = channelDrafts.get(match.matchId); input.dataset.dirty = 'true'; }
@@ -146,6 +151,7 @@ import { currentConsoleSelection } from './selection.js';
       const checked = snapshot.state.providers?.[match.matchId]?.verifiedAt || account?.last_checked_at;
       const date = checked && new Date(checked);
       actual.textContent = `${match.assignedProvider ? `الفعلي: ${match.assignedProvider}` : 'لا يوجد مورد نشط'}${match.boundProvider ? ` · محجوز: ${match.boundProvider}` : ''}${date && !Number.isNaN(date.getTime()) ? ` · فحص ${date.toLocaleTimeString('ar', { timeZone: 'Africa/Casablanca', hour: '2-digit', minute: '2-digit' })}` : ''}`;
+      if (match.contentVerification?.repair?.status === 'waiting_free_provider') actual.textContent += ' · ينتظر مورداً فارغاً للفحص دون قطع المشاهدين';
       const select = row.querySelector('.provider-select');
       if (select.dataset.dirty !== 'true') select.value = match.boundProvider || '';
       for (const option of select.options) {
@@ -184,7 +190,9 @@ import { currentConsoleSelection } from './selection.js';
       if (currentJob) row.querySelector('.badge').textContent = phaseNames[currentJob.phase] || 'قيد التنفيذ';
     }
     for (const button of document.querySelectorAll('.import-match-button')) button.disabled = running || button.dataset.unavailable === 'true';
-    $('resource-count').textContent = `${snapshot.status.prewarm.warmed} روابط جاهزة / 8`;
+    const contentChecks = snapshot.matches.some(match => match.contentVerification);
+    const confirmed = snapshot.matches.filter(match => match.sourceReady && match.contentVerification?.status === 'verified').length;
+    $('resource-count').textContent = contentChecks ? `${snapshot.status.prewarm.warmed} روابط تعمل · ${confirmed} محتوى مؤكد / 8` : `${snapshot.status.prewarm.warmed} روابط جاهزة / 8`;
   }
   async function refresh(render = true) {
     if (refreshing) return refreshing;
@@ -234,7 +242,7 @@ import { currentConsoleSelection } from './selection.js';
       if (match) {
         const meta = row.querySelector('.match-name small');
         meta.textContent = `${match.league} · ${match.time || ''} · ${match.score}`;
-        const badge = row.querySelector('.badge'); badge.textContent = badgeText(match); badge.classList.toggle('ready', match.sourceReady);
+        const badge = row.querySelector('.badge'); badge.textContent = badgeText(match); badge.classList.toggle('ready', confirmedReady(match));
         const input = row.querySelector('input[list]'), broadcasts = row.querySelector('.channel-editor select');
         const job = snapshot.jobs.find(job => job.id === rowJobs.get(match.matchId));
         if (job?.state === 'complete') { if (job.kind === 'channel') delete input.dataset.dirty; if (job.kind === 'provider') delete row.querySelector('.provider-select').dataset.dirty; rowJobs.delete(match.matchId); }
