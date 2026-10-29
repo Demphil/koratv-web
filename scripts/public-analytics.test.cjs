@@ -87,8 +87,29 @@ test('detail navigation and middle clicks are measured without replacing existin
   assert.deepEqual(Array.from(fresh.window.dataLayer, args => args[0]), ['js', 'config']);
 });
 
-test('the published homepage uses this site account measurement ID', () => {
-  const origin = fs.readFileSync(path.join(__dirname, '../CNAME'), 'utf8').trim();
-  const expected = origin === 'fraja.online' ? 'G-7FCFB7ZN4G' : 'G-HKXWEPJ14K';
-  assert.equal(measurementIdFromHomepage(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8')), expected);
+function assertAnalyticsDestination(html) {
+  const measurementId = measurementIdFromHomepage(html);
+  const $ = load(html);
+  const bootstraps = $('script:not([src])').toArray().map(element => $(element).html() || '')
+    .filter(source => source.includes('dataLayer') && /\bgtag\s*\(/.test(source));
+  assert.equal(bootstraps.length, 1, 'one Analytics bootstrap is required');
+  const context = { dataLayer: [] }; context.window = context;
+  vm.runInNewContext(bootstraps[0], context, { timeout: 100 });
+  const configured = Array.from(context.dataLayer, args => Array.from(args))
+    .filter(args => args[0] === 'config').map(args => args[1]);
+  assert.deepEqual(configured, [measurementId], 'the loader and inline config must use the same destination');
+  const published = load(instrumentPage(html, measurementId));
+  assert.equal(published('script[data-site-metrics]').attr('data-measurement-id'), measurementId);
+  return measurementId;
+}
+
+test('the published homepage preserves its current Analytics destination consistently', () => {
+  assertAnalyticsDestination(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8'));
+});
+
+test('an intentional destination change is valid, but a stale inline config still fails', () => {
+  const tagged = destination => page.replace('</head>', '<script src="https://www.googletagmanager.com/gtag/js?id=' + destination
+    + '"></script><script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)};gtag("config","' + destination + '");</script></head>');
+  assert.equal(assertAnalyticsDestination(tagged('G-ROTATED123')), 'G-ROTATED123');
+  assert.throws(() => assertAnalyticsDestination(tagged(id).replace('gtag("config","' + id, 'gtag("config","G-STALE12345')), /same destination/);
 });
