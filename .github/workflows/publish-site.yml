@@ -45,6 +45,10 @@ on:
       - "shared/match-visibility.mjs"
       - "shared/league-whitelist.mjs"
       - "assets/css/matches.css"
+      - "assets/css/app-promotion.css"
+      - "assets/images/korascoreai-ad.webp"
+      - "scripts/seo-promotion.test.cjs"
+      - "shared/site-build-feed.mjs"
       - "assets/css/fonts.css"
       - "assets/css/icons.css"
       - "assets/fonts/**"
@@ -66,9 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_MATCHES_TABLE: matches
+      SITE_MATCHES_SNAPSHOT_URL: https://stream-api.koratv.click/site-metadata/matches.json
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -85,6 +87,7 @@ jobs:
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --fund=false
           node scripts/check-seo.js
+          node --test scripts/seo-promotion.test.cjs
           node --test scripts/build-public-site.test.cjs
           node --test scripts/build-complete-site.test.cjs
           node --test scripts/public-analytics.test.cjs

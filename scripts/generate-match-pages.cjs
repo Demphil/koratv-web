@@ -6,6 +6,7 @@ const { isAllowedMatch, isGulfCupLeague } = require('../shared/league-whitelist.
 const { prerenderHomepage } = require('./prerender-match-list.cjs');
 const { loadArchive, restoreSlugs, writeArchive, id: archiveId } = require('./match-archive.cjs');
 const { measurementIdFromHomepage, instrumentPublicPages } = require('./public-analytics.cjs');
+const { loadPublicSiteMatches } = require('../shared/site-build-feed.mjs');
 
 const root = path.resolve(__dirname, '..');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -133,30 +134,7 @@ ${statRows ? `<section><h2>إحصاءات المباراة</h2><table><tbody>${s
 }
 
 async function loadMatches() {
-  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
-  const table = process.env.SUPABASE_MATCHES_TABLE || 'matches';
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)) throw new Error('Invalid matches table name');
-  const now = Date.now();
-  const from = new Date(now - 7 * DAY_MS).toISOString();
-  const to = new Date(now + 14 * DAY_MS).toISOString();
-  const url = new URL(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}`);
-  url.searchParams.set('select', 'id,match_id,source,home_team,away_team,league,channel,kickoff_time,payload,active,updated_at');
-  url.searchParams.set('active', 'eq.true');
-  url.searchParams.set('and', `(kickoff_time.gte.${from},kickoff_time.lte.${to})`);
-  url.searchParams.set('order', 'kickoff_time.asc');
-  url.searchParams.set('limit', '1000');
-  const response = await fetch(url, { headers: {
-    apikey: SUPABASE_SERVICE_ROLE_KEY,
-    authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-    accept: 'application/json'
-  }, signal: AbortSignal.timeout(30000) });
-  if (!response.ok) throw new Error(`Supabase match fetch failed (${response.status})`);
-  const rows = await response.json();
-  return Array.isArray(rows) ? rows.filter((row) => {
-    const kickoff = safeDate(row.kickoff_time)?.getTime();
-    return kickoff >= now - 7 * DAY_MS && kickoff <= now + 14 * DAY_MS;
-  }) : [];
+  return loadPublicSiteMatches({ siteUrl: siteConfig().siteUrl });
 }
 
 async function generate(outputDir = path.join(root, '_site'), rows) {

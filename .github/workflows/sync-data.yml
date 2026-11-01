@@ -13,40 +13,16 @@ permissions:
   contents: read
 
 jobs:
-  metadata:
-    name: Prune expired snapshots
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_MATCHES_TABLE: matches
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: secure-streaming/package-lock.json
-      - run: npm ci
-        working-directory: secure-streaming
-      - name: Remove expired match snapshots
-        working-directory: secure-streaming
-        run: npm run prune:matches
-      # Oracle owns Kooora ingestion and supplier refresh. No runtime restart here.
-
   deploy-pages:
     name: Publish current match snapshot
-    needs: metadata
     concurrency:
       group: static-pages-production
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_MATCHES_TABLE: matches
+      # Njalla owns metadata ingestion and retention; Actions only publishes static pages.
+      SITE_MATCHES_SNAPSHOT_URL: https://stream-api.koratv.click/site-metadata/matches.json
     permissions:
       contents: read
       pages: write
@@ -63,6 +39,7 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-audit --fund=false
           node scripts/check-seo.js
+          node --test scripts/seo-promotion.test.cjs
           node --test scripts/build-public-site.test.cjs scripts/generate-match-pages.test.cjs scripts/prerender-match-list.test.cjs scripts/match-archive.test.cjs
           node --test scripts/build-complete-site.test.cjs scripts/news-pages.test.cjs
           node --test scripts/public-analytics.test.cjs scripts/news-images.test.cjs scripts/match-loading.test.cjs

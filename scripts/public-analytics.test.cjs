@@ -87,6 +87,19 @@ test('detail navigation and middle clicks are measured without replacing existin
   assert.deepEqual(Array.from(fresh.window.dataLayer, args => args[0]), ['js', 'config']);
 });
 
+test('app promotion measures real store navigation intent, never installs or arbitrary tracking parameters', () => {
+  const r = runtime();
+  r.click('https://play.google.com/store/apps/details?id=com.korascoreai.app&referrer=PRIVATE', {}, { appPromotion: 'home' });
+  assert.equal(r.calls[0][1], 'app_store_open');
+  assert.equal(r.calls[0][2].placement, 'homepage');
+  assert.equal(r.calls[0][2].app_id, 'com.korascoreai.app');
+  assert.doesNotMatch(JSON.stringify(r.calls), /PRIVATE|referrer|install|https:/);
+  r.click('https://play.google.com/store/apps/details?id=other.app', {}, { appPromotion: 'home' });
+  r.click('https://other.test/store/apps/details?id=com.korascoreai.app', {}, { appPromotion: 'home' });
+  r.click('https://play.google.com/store/apps/details?id=com.korascoreai.app');
+  assert.equal(r.calls.length, 1);
+});
+
 function assertAnalyticsDestination(html) {
   const measurementId = measurementIdFromHomepage(html);
   const $ = load(html);

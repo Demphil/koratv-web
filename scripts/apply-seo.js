@@ -9,7 +9,7 @@ const configuredHost = process.env.SITE_URL || (fs.existsSync(cname)
 const siteUrl = new URL(configuredHost.includes("://") ? configuredHost : `https://${configuredHost}`).origin;
 const isFraja = new URL(siteUrl).hostname.endsWith("frajatv.fun");
 const brand = isFraja ? "فرجة" : "koratv";
-const alternateNames = isFraja ? ["Fraja"] : ["KoraTV", "كورا تي في", "koratv.click"];
+const alternateNames = isFraja ? ["Fraja"] : ["KoraTV", "كورة تي في", "كورا تي في", "koratv.click"];
 const logoPath = isFraja && fs.existsSync(path.join(root, "assets/images/fraja-logo.svg"))
   ? "/assets/images/fraja-logo.svg"
   : "/assets/images/logo.png";
@@ -22,13 +22,13 @@ const pages = [
     path: "/",
     title: isFraja
       ? "جدول مباريات اليوم ونتائج كرة القدم | فرجة"
-      : "koratv | نتائج المباريات وإحصائيات كرة القدم",
+      : "koratv | كورة تي في - نتائج مباريات اليوم وإحصائياتها",
     description: isFraja
       ? "اعرف مواعيد مباريات كرة القدم ونتائجها اليوم، مرتبة بحسب وقت البداية والبطولة وحالة المباراة، مع تحديثات للمتابعة من الهاتف."
-      : "تابع مع koratv نتائج مباريات كرة القدم وإحصائياتها والأحداث الحية، مع جدول مباريات اليوم والغد ومواعيدها بتوقيت المغرب.",
+      : "نتائج مباريات اليوم مباشرة على koratv كورة تي في، مع مواعيد اللقاءات بتوقيت المغرب، وإحصائيات كرة القدم والأحداث الحية وأخبار الفرق والبطولات.",
     h1: isFraja
       ? "مواعيد مباريات اليوم ونتائجها"
-      : "koratv | نتائج المباريات وإحصائياتها",
+      : "koratv | كورة تي في - نتائج المباريات وإحصائياتها",
     type: "WebPage",
   },
   {
@@ -125,7 +125,7 @@ function updatePage(page) {
     let head = headBlock;
     head = head.replace(/<title[^>]*>[\s\S]*?<\/title>/i, `<title>${escapeHtml(page.title)}</title>`);
     head = meta(head, "description", page.description);
-    head = meta(head, "robots", "index, follow, max-image-preview:large");
+    head = meta(head, "robots", "index, follow, max-image-preview:large, max-snippet:-1");
     head = meta(head, "og:site_name", brand, "property");
     head = meta(head, "og:title", page.title, "property");
     head = meta(head, "og:description", page.description, "property");
@@ -155,9 +155,6 @@ function updatePage(page) {
     `<h1$1>${escapeHtml(page.h1)}</h1>`,
   );
   html = html.replace(/href="index\.html"/g, 'href="/"');
-  html = html.replace(/مباريات اليوم بث مباشر/g, 'نتائج مباريات اليوم');
-  html = html.replace(/matches\.css\?v=[^"']+/g, 'matches.css?v=20261005-seo');
-  html = html.replace(/matches\.js\?v=[^"']+/g, 'matches.js?v=20261005-seo');
   fs.writeFileSync(file, html, "utf8");
 }
 

@@ -26,6 +26,10 @@
     } else if (url.origin === location.origin && /^\/match\/[^/]+\/?$/.test(url.pathname)) {
       name = 'result_open';
       details = { destination: 'match_details' };
+    } else if (link.dataset.appPromotion === 'home' && url.origin === 'https://play.google.com'
+      && url.pathname === '/store/apps/details' && url.searchParams.get('id') === 'com.korascoreai.app') {
+      name = 'app_store_open';
+      details = { destination: 'google_play', placement: 'homepage', app_id: 'com.korascoreai.app' };
     } else return;
     try {
       if (typeof window.gtag === 'function') window.gtag('event', name, {

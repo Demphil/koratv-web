@@ -1,0 +1,38 @@
+.app-promotion {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) 174px;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 22px;
+  margin: 0 0 22px;
+  border: 1px solid rgba(217, 184, 108, 0.36);
+  border-radius: 8px;
+  background: rgba(17, 24, 39, 0.8);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  color: #f1faee;
+  letter-spacing: 0;
+}
+.app-promotion-brand { display: grid; justify-items: center; gap: 4px; min-width: 0; }
+.app-promotion-label { font-size: 11px; line-height: 1.5; color: #c1c9d5; }
+.app-promotion-brand img { display: block; width: 76px; height: 76px; object-fit: contain; }
+.app-promotion-copy { min-width: 0; }
+.app-promotion-name { width: fit-content; margin: 0 0 4px; font-size: 22px; line-height: 1.5; font-weight: 800; color: #d9b86c; }
+.app-promotion-heading { margin: 0; font-size: 16px; line-height: 1.8; font-weight: 700; overflow-wrap: anywhere; }
+.app-promotion-features { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 8px 0 0; padding: 0; list-style: none; color: #cdd5df; font-size: 12px; line-height: 1.8; }
+.app-promotion-features li { position: relative; padding-inline-start: 11px; }
+.app-promotion-features li::before { content: ''; position: absolute; inset-inline-start: 0; top: 0.8em; width: 4px; height: 4px; border-radius: 50%; background: #d9b86c; }
+.app-promotion-link { box-sizing: border-box; display: grid; place-content: center; gap: 1px; min-height: 62px; padding: 8px 16px; border: 1px solid rgba(217, 184, 108, 0.6); border-radius: 6px; background: #f1faee; color: #182033; text-align: center; text-decoration: none; line-height: 1.5; transition: background-color 150ms, border-color 150ms; }
+.app-promotion-link span { font-size: 11px; }
+.app-promotion-link strong { font-size: 18px; font-weight: 800; }
+.app-promotion-link:hover { background: #e4ebdf; border-color: #d9b86c; }
+.app-promotion-link:focus-visible { outline: 3px solid #d9b86c; outline-offset: 4px; }
+@media (max-width: 700px) {
+  .app-promotion { grid-template-columns: 62px minmax(0, 1fr); gap: 10px 14px; padding: 14px; margin-bottom: 16px; }
+  .app-promotion-brand { grid-row: span 2; align-self: start; }
+  .app-promotion-brand img { width: 58px; height: 58px; }
+  .app-promotion-name { font-size: 18px; }
+  .app-promotion-heading { font-size: 14px; line-height: 1.8; }
+  .app-promotion-features { font-size: 11px; gap: 2px 12px; margin-top: 6px; }
+  .app-promotion-link { grid-column: 2; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px; }
+  .app-promotion-link strong { font-size: 15px; }
+}

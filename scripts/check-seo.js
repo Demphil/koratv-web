@@ -40,7 +40,8 @@ for (const page of pages) {
       const organization = schema['@graph'].find(node => node['@type'] === 'Organization');
       const $ = load(html);
       if (website?.name !== 'koratv' || organization?.name !== 'koratv'
-        || website?.url !== `${siteUrl}/` || !website?.alternateName?.includes('KoraTV')) failures.push(`${file}: inconsistent koratv identity`);
+        || website?.url !== `${siteUrl}/` || !website?.alternateName?.includes('KoraTV')
+        || !website?.alternateName?.includes('كورة تي في')) failures.push(`${file}: inconsistent koratv identity`);
       if ($('meta[property="og:site_name"]').attr('content') !== 'koratv'
         || !title.startsWith('koratv |')) failures.push(`${file}: brand missing from metadata`);
       if (page === '/' && !$('h1').text().includes('koratv')) failures.push(`${file}: homepage heading missing brand`);
@@ -91,4 +92,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log(`SEO configuration is consistent for ${siteUrl} (${pages.length} indexed pages).`);
+console.log(`SEO source configuration is consistent for ${siteUrl} (${pages.length} canonical source pages checked; not an indexing confirmation).`);
