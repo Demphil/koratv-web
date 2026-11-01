@@ -91,15 +91,17 @@ DNS/301 handoff still requires restored Namecheap access.
 
 ## Final Verification
 
-- Public release: 1793566900788, followed by bounded public-asset/legacy cleanup.
+- Corrected reference release: 1793568428192, promoted atomically from
+  1793566900788. The scoped updater used 21.8 CPU seconds and peaked at 65.5 MiB;
+  no playback/application service restart was performed. The publisher timer is active.
 - 2049 HTML files including two Google verification documents; 2047 regular HTML
   pages scanned and 1142 indexable pages, with no retired ad tags or old public
   publisher identity/canonical findings. The old Pinterest verification page was
   removed from the new artifact and excluded from future publications.
 - Frontend regression tests after the reference correction: 92 passed.
 - Live SEO sample: 20 pages, 0 errors, 25 advisory title/description-length warnings.
-- The prior live browser loaded all six feature frames and 20 eligible match cards.
-  The corrected reference preview loads the restored engine plus those six frames.
+- The corrected live browser loaded the restored Forecast engine, WebGL, the six
+  other feature frames and 20 eligible match cards.
   Mobile and 4K screenshot samples have substantial canvas pixel variation.
 - Responsive testing included a large/4K viewport and a 390 CSS-pixel viewport;
   manual next/pause controls worked and the frame kept its fixed dimensions.
