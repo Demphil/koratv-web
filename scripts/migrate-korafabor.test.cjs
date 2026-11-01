@@ -3,6 +3,25 @@ const assert = require('node:assert/strict');
 const { load } = require('cheerio');
 const { rewriteHtml, ownedUrl, TITLE, versionModuleImports } = require('./migrate-korafabor.cjs');
 
+test('mobile viewport fix is scoped, repeatable and does not alter match data or advertising', () => {
+  const source = '<head><link rel="stylesheet" href="/assets/css/matches.css"></head><main class="matches-main"><p>Home 2 - 1 Away</p></main>';
+  const first = rewriteHtml(source, 'index.html');
+  const $ = load(rewriteHtml(first, 'index.html'));
+  assert.ok($('html').hasClass('match-viewport'));
+  assert.equal($('link[href*="mobile-viewport.css"]').length, 1);
+  assert.equal($('main p').text(), 'Home 2 - 1 Away');
+  assert.equal($('script[src*="mobile-viewport"]').length, 0);
+  const news = load(rewriteHtml('<head><link rel="stylesheet" href="/assets/css/news.css"></head><main class="news-main"></main>', 'news.html'));
+  assert.equal(news('html').hasClass('match-viewport'), false);
+  assert.equal(news('link[href*="mobile-viewport.css"]').length, 0);
+  const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../assets/css/mobile-viewport.css'), 'utf8');
+  assert.match(css, /background-color: #151c2b/);
+  assert.match(css, /height: 100lvh/);
+  assert.match(css, /background-attachment: scroll/);
+  assert.match(css, /pointer-events: none/);
+  assert.doesNotMatch(css, /overflow(?:-y)?:\s*(?:hidden|clip)|touch-action:\s*none|overscroll-behavior:\s*none/);
+});
+
 test('all public page types use the new cache-versioned Kora Fabor favicon', () => {
   for (const route of ['index.html', 'news.html', 'news/example/index.html', 'archive-entry']) {
     const $ = load(rewriteHtml('<head><link rel="icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/old.png"></head>', route));

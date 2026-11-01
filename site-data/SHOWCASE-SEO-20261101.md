@@ -3,6 +3,25 @@
 Scope: the new public Njalla frontend only. Oracle, Fraja, player advertisements,
 provider bindings, wallets, reports and private administration were not changed.
 
+## Mobile Viewport Correction
+
+`mobile-viewport.css` gives match pages an opaque canvas fallback matching the
+existing #151c2b palette. On small/coarse-pointer screens it moves the unchanged
+gradient to a pointer-transparent fixed layer sized to 100lvh, with a 100vh
+fallback, instead of mobile background-attachment: fixed. Normal page scrolling,
+the fixed header, app advertisement and ad-network scripts are unchanged. News
+pages retain their separate palette. The domain migration injects this scoped
+stylesheet once, so future scheduled publications retain the correction.
+
+Local Chrome responsive checks covered scrolling to the footer and viewport
+growth from 700 to 844 pixels, with no white bottom strip or horizontal overflow.
+Desktop keeps the original computed gradient and fixed attachment. These are
+emulated viewport checks, not confirmation from the owner's physical phone.
+The frontend regression suite passes 93 tests.
+
+Technical references: https://bugzilla.mozilla.org/show_bug.cgi?id=1918219#c4
+and https://www.w3.org/TR/css-backgrounds-3/#special-backgrounds.
+
 ## Approved Media
 
 The owner initially rejected the earlier analyst screenshot and selected

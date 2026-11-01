@@ -118,6 +118,10 @@ function rewriteHtml(html, route) {
   }
   $('link[href^="/assets/css/korafabor-brand.css"]').remove();
   if ($('body .header,.article-header').length) $('head').append('<link rel="stylesheet" href="/assets/css/korafabor-brand.css?v=20261101-logo3">');
+  $('link[href^="/assets/css/mobile-viewport.css"]').remove();
+  const matchViewport = $('.matches-main,.match-detail,link[href*="/assets/css/matches.css"],style[data-source="/assets/css/matches.css"]').length > 0;
+  $('html').toggleClass('match-viewport', matchViewport);
+  if (matchViewport) $('head').append('<link rel="stylesheet" href="/assets/css/mobile-viewport.css?v=20261101-scroll1">');
   if (home) {
     $('title').text(TITLE);
     for (const [attribute, name] of [['name', 'description'], ['property', 'og:description'], ['name', 'twitter:description']]) {
@@ -212,6 +216,7 @@ function migrate(output, root = path.resolve(__dirname, '..')) {
   fs.writeFileSync(path.join(output, 'robots.txt'), robots);
   fs.writeFileSync(path.join(output, 'CNAME'), 'korafabor.pro\n');
   fs.copyFileSync(path.join(root, 'assets/css/korafabor-brand.css'), path.join(output, 'assets/css/korafabor-brand.css'));
+  fs.copyFileSync(path.join(root, 'assets/css/mobile-viewport.css'), path.join(output, 'assets/css/mobile-viewport.css'));
   const publication = assertCompletePublication(root, output, { siteUrl: SITE });
   const $ = load(fs.readFileSync(path.join(output, 'sitemap.xml'), 'utf8'), { xmlMode: true });
   $('loc').each((_, element) => {

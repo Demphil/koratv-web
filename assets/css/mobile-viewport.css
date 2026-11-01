@@ -1,0 +1,36 @@
+html.match-viewport {
+  min-height: 100%;
+  background-color: #151c2b;
+}
+html.match-viewport body {
+  background-color: #151c2b;
+  isolation: isolate;
+  --match-viewport-background:
+    radial-gradient(circle at 18% 10%, rgba(217, 184, 108, 0.12), transparent 28%),
+    radial-gradient(circle at 86% 28%, rgba(140, 54, 87, 0.28), transparent 32%),
+    linear-gradient(135deg, #151c2b 0%, #2c3446 42%, #5b2d43 100%);
+}
+@media (max-width: 700px), (hover: none) and (pointer: coarse) {
+  html.match-viewport body {
+    background-image: none;
+    background-attachment: scroll;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  /* Cover the expanded mobile viewport without fixed-attachment repaint gaps. */
+  html.match-viewport body::after {
+    content: '';
+    position: fixed;
+    inset: 0 0 auto;
+    height: 100vh;
+    height: 100lvh;
+    z-index: -2;
+    pointer-events: none;
+    background: var(--match-viewport-background);
+  }
+  html.match-viewport body::before {
+    bottom: auto;
+    height: 100vh;
+    height: 100lvh;
+  }
+}
