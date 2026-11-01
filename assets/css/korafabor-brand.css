@@ -1,0 +1,3 @@
+.korafabor-wordmark { display: inline-flex; gap: 3px; align-items: center; color: #d9b86c; font-size: 26px; line-height: 1.3; font-weight: 800; letter-spacing: 0; white-space: nowrap; }
+.korafabor-wordmark strong { color: #f1faee; font-weight: 800; }
+@media(max-width:700px) { .korafabor-wordmark { font-size: 17px; } .header .logo { flex: 0 0 auto; } .header .header-title { min-width: 0; margin-inline: 10px; } }

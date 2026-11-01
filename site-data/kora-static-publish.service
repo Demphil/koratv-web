@@ -1,0 +1,27 @@
+[Unit]
+Description=Build and atomically publish KoraFabor without GitHub Actions
+After=network-online.target
+[Service]
+Type=oneshot
+User=kora-static-site
+Group=kora-static-site
+Slice=kora-static-publish.slice
+WorkingDirectory=/var/lib/korafabor-publish/work
+Environment=NODE_OPTIONS=--max-old-space-size=160
+Environment=SITE_BUILD_STATE_DIR=/var/lib/korafabor-publish/state-current
+ExecStart=/usr/bin/flock -n -E 75 /var/lib/korafabor-publish/publish.lock /usr/bin/node /opt/korafabor/korafabor-publish.mjs
+SuccessExitStatus=75
+MemoryHigh=192M
+MemoryMax=256M
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=600
+TimeoutStopSec=10
+UMask=0022
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/korafabor-publish /var/www/korafabor
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=20

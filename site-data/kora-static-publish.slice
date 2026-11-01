@@ -1,0 +1,9 @@
+[Unit]
+Description=Isolated low-priority static website publication
+[Slice]
+MemoryHigh=192M
+MemoryMax=256M
+CPUQuota=15%
+CPUWeight=5
+IOWeight=5
+TasksMax=32

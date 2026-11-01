@@ -1,0 +1,9 @@
+[Unit]
+Description=Bounded half-hourly static KoraFabor refresh
+[Timer]
+OnCalendar=*-*-* *:07,37:00 UTC
+RandomizedDelaySec=90s
+Persistent=true
+Unit=kora-static-publish.service
+[Install]
+WantedBy=timers.target

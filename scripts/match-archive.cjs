@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { load } = require('cheerio');
+const { readBuildState } = require('./build-state.cjs');
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const hash = value => createHash('sha256').update(String(value)).digest('hex');
@@ -50,14 +51,16 @@ function metadata(page, identity = null) {
 }
 
 async function loadArchive(config) {
-  const previous = await fetchText(`${config.siteUrl}/archive/catalog.json?build=${Date.now()}`, true);
+  const read = process.env.SITE_BUILD_STATE_DIR
+    ? url => readBuildState(process.env.SITE_BUILD_STATE_DIR, url, config.siteUrl) : fetchText;
+  const previous = await read(`${config.siteUrl}/archive/catalog.json?build=${Date.now()}`, true);
   if (previous !== null) {
     const data = JSON.parse(previous);
     if (data.version === 2 && Array.isArray(data.shards)) {
       data.pages = [];
       for (const shard of data.shards) {
         if (!/^(?:\d{4}-\d{2}|undated)-[a-f0-9]{16}\.json$/.test(shard.file)) throw new Error('Invalid archive shard');
-        const text = await fetchText(`${config.siteUrl}/archive/data/${shard.file}`);
+        const text = await read(`${config.siteUrl}/archive/data/${shard.file}`);
         if (hash(text) !== shard.hash) throw new Error('Archive shard checksum mismatch');
         const pages = JSON.parse(text);
         if (!Array.isArray(pages) || pages.length !== shard.count) throw new Error('Archive shard count mismatch');
@@ -70,7 +73,7 @@ async function loadArchive(config) {
     return data;
   }
   // Bootstrap from pages that are already public, before the rolling database drops them.
-  const xml = await fetchText(`${config.siteUrl}/sitemap.xml`);
+  const xml = await read(`${config.siteUrl}/sitemap.xml`);
   const $ = load(xml, { xmlMode: true });
   const pages = [];
   const missing = [];
@@ -79,7 +82,7 @@ async function loadArchive(config) {
     if (url.origin !== config.siteUrl || !url.pathname.startsWith('/match/')) continue;
     const slug = decodeURIComponent(url.pathname.split('/')[2] || '');
     if (!safeSlug(slug)) throw new Error('Unsafe sitemap match path');
-    const html = await fetchText(url.href, true);
+    const html = await read(url.href, true);
     if (html === null) { missing.push(url.href); continue; }
     const entry = metadata({ slug, html, lastmod: $(element).find('lastmod').text() });
     pages.push(validateEntry(entry, config));

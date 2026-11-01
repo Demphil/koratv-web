@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { load } = require('cheerio');
+const { readBuildState } = require('./build-state.cjs');
 const { measurementIdFromHomepage, instrumentPublicPages } = require('./public-analytics.cjs');
 
 const SOURCES = [
@@ -137,6 +138,10 @@ function validateCatalog(data, config, now) {
 }
 
 async function loadPrevious(config, now, fetcher, recovery = null) {
+  if (process.env.SITE_BUILD_STATE_DIR) {
+    return validateCatalog(JSON.parse(await readBuildState(process.env.SITE_BUILD_STATE_DIR,
+      config.siteUrl + '/news/catalog.json', config.siteUrl)), config, now);
+  }
   const response = await fetcher(config.siteUrl + '/news/catalog.json', { signal: AbortSignal.timeout(12000), redirect: 'error' });
   if (response.status === 404) {
     if (!recovery) return { articles: [], feeds: [] };

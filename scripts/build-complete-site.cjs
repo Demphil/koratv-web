@@ -5,9 +5,9 @@ const { buildPublicSite } = require('./build-public-site.cjs');
 const { generate } = require('./generate-match-pages.cjs');
 const { generateNews, normalize, articlePath } = require('./news-pages.cjs');
 
-function assertCompletePublication(root, output) {
+function assertCompletePublication(root, output, { siteUrl: siteUrlOverride } = {}) {
   const host = fs.readFileSync(path.join(root, 'CNAME'), 'utf8').trim();
-  const siteUrl = new URL(host.includes('://') ? host : 'https://' + host).origin;
+  const siteUrl = siteUrlOverride || new URL(host.includes('://') ? host : 'https://' + host).origin;
   const required = ['index.html', 'news.html', 'sitemap.xml', 'sitemap-articles.xml',
     'robots.txt', 'news/catalog.json', 'news/feed.json', 'news/archive/index.html'];
   for (const file of required) {
