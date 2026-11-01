@@ -17,7 +17,7 @@ const copy = name => {
 };
 for (const file of fs.readdirSync(root).filter(name => name.endsWith('.html') || /^[a-f0-9]{32}\.txt$/.test(name))) copy(file);
 for (const directory of ['assets', 'abroad', 'at-work', 'low-internet', 'smart-tv', 'content']) copy(directory);
-for (const file of ['CNAME', 'robots.txt', 'sitemap.xml', 'sw.js']) if (fs.existsSync(path.join(root, file))) copy(file);
+for (const file of ['CNAME', 'robots.txt', 'sitemap.xml', 'sw.js', 'BingSiteAuth.xml']) if (fs.existsSync(path.join(root, file))) copy(file);
 for (const file of ['build-public-site.cjs', 'build-complete-site.cjs', 'generate-match-pages.cjs',
   'news-pages.cjs', 'match-archive.cjs', 'prerender-match-list.cjs', 'public-analytics.cjs',
   'migrate-korafabor.cjs', 'build-state.cjs']) copy('scripts/' + file);

@@ -1,3 +1,9 @@
-.korafabor-wordmark { display: inline-flex; gap: 3px; align-items: center; color: #d9b86c; font-size: 26px; line-height: 1.3; font-weight: 800; letter-spacing: 0; white-space: nowrap; }
-.korafabor-wordmark strong { color: #f1faee; font-weight: 800; }
-@media(max-width:700px) { .korafabor-wordmark { font-size: 17px; } .header .logo { flex: 0 0 auto; } .header .header-title { min-width: 0; margin-inline: 10px; } }
+.korafabor-wordmark { display: inline-flex; gap: 8px; align-items: center; color: #e4c67e; font: 900 24px/1.05 Arial, sans-serif; letter-spacing: 0; white-space: nowrap; filter: drop-shadow(0 5px 4px #0007); }
+.korafabor-lettering { position: relative; padding-bottom: 12px; transform: perspective(500px) rotateY(-7deg) rotateX(4deg); text-shadow: 0 1px #8d733f, 0 2px #6e5834, 0 3px #51452d, 0 4px #342e22, 0 5px 1px #10181c; }
+.korafabor-lettering strong { color: #f1faee; font-weight: 900; text-shadow: 0 1px #b1c4bd, 0 2px #7b9390, 0 3px #506762, 0 4px #304340, 0 5px 1px #10181c; }
+.korafabor-lettering small { position: absolute; left: 1px; bottom: -1px; font: 700 8px/1 Arial, sans-serif; color: #b7c4bd; text-shadow: none; }
+.korafabor-emblem { position: relative; display: flex; align-items: center; justify-content: center; flex: 0 0 43px; width: 43px; height: 49px; background: linear-gradient(135deg, #f5e1a8 5%, #a58b50 43%, #f1faee 58%, #628278 90%); clip-path: polygon(50% 0, 96% 16%, 88% 75%, 50% 100%, 12% 75%, 4% 16%); transform: perspective(400px) rotateY(-13deg); }
+.korafabor-emblem::before { content: ''; position: absolute; inset: 2px; background: linear-gradient(140deg, #263e39, #202631 58%, #4a2938); clip-path: inherit; }
+.korafabor-emblem b, .korafabor-emblem i { position: relative; z-index: 1; font: 900 25px/1 Arial, sans-serif; text-shadow: 1px 1px #89703f, 2px 2px #342e22, 3px 3px #0b1517; }
+.korafabor-emblem i { color: #f1faee; margin-left: -8px; margin-top: 11px; font-size: 23px; }
+@media(max-width:700px) { .korafabor-wordmark { font-size: 18px; gap: 5px; } .korafabor-emblem { flex-basis: 30px; width: 30px; height: 36px; } .korafabor-emblem b { font-size: 19px; } .korafabor-emblem i { font-size: 18px; margin-left: -6px; margin-top: 9px; } .korafabor-lettering { padding-bottom: 10px; } .korafabor-lettering small { font-size: 6px; } .header .logo { flex: 0 0 auto; } .header .header-title { min-width: 0; margin-inline: 10px; } }

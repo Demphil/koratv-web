@@ -38,7 +38,7 @@ function versionFrontendModules(output) {
   }
   fs.writeFileSync(filename, $.html());
 }
-const brandText = value => value.replace(/\bkoratv\b|كورا تي في|كورة تي في/gi, BRAND);
+const brandText = value => value.replace(/\bkoratv\.click\b/gi, 'korafabor.pro').replace(/\bkoratv\b|\bkoo?ra live\b|كورا تي في|كورة تي في|كورة لايف/gi, BRAND);
 function ownedUrl(value) {
   if (typeof value !== 'string' || !/^https?:\/\/(?:www\.)?koratv\.click(?:[\/#?]|$)/i.test(value)) return value;
   const url = new URL(value);
@@ -46,16 +46,30 @@ function ownedUrl(value) {
   return SITE + url.pathname + url.search + url.hash;
 }
 function structured(value, key = '') {
-  if (Array.isArray(value)) return value.map(item => structured(item, key));
+  if (Array.isArray(value)) return value.filter(item => key !== 'sameAs' || !['https://www.tiktok.com/@koratv.click', 'https://www.instagram.com/koratv.click'].includes(item)).map(item => structured(item, key));
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, structured(item, name)]));
   if (typeof value !== 'string') return value;
   const rebased = ownedUrl(value);
   return rebased !== value ? rebased : /^(name|description|headline|alternateName|caption)$/.test(key) ? brandText(value) : value;
 }
 function rewriteHtml(html, route) {
+  if (/^google[a-f0-9]+\.html$/.test(route)) return html;
   const $ = load(html);
+  $('meta[name="ezoic-site-verification"],link[rel="dns-prefetch"][href="//quge5.com"],link[rel="dns-prefetch"][href="//nap5k.com"]').remove();
+  $('link[rel="preload"][as="image"][href="/assets/images/logo-header.webp"]').remove();
   for (const element of $('[href],[src]').toArray()) {
     for (const attribute of ['href', 'src']) if ($(element).attr(attribute)) $(element).attr(attribute, ownedUrl($(element).attr(attribute)));
+  }
+  $('a[href="https://www.tiktok.com/@koratv.click"],a[href="https://www.instagram.com/koratv.click"]').remove();
+  const adapter = $('script[src*="/assets/js/monetag-window.js"]');
+  for (const script of $('script').toArray()) {
+    const src = $(script).attr('src') || '';
+    const code = $(script).text();
+    if (src.startsWith('https://quge5.com/88/') || code.includes('https://n6wxm.com/vignette.min.js') || code.includes('https://al5sm.com/tag.min.js') || code.includes('https://nap5k.com/tag.min.js')) $(script).remove();
+  }
+  if (adapter.length) {
+    adapter.attr('data-zones', '12170985').attr('src', '/assets/js/monetag-window.js?v=20261101-profile');
+    adapter.after("<script>(function(s){s.dataset.zone='12170997',s.src='https://n6wxm.com/vignette.min.js'})([document.documentElement,document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script><script>(function(s){s.dataset.zone='12170985',s.src='https://al5sm.com/tag.min.js'})([document.documentElement,document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>");
   }
   $('title').text(brandText($('title').text()));
   for (const element of $('meta[content]').toArray()) {
@@ -63,6 +77,7 @@ function rewriteHtml(html, route) {
     const value = ownedUrl(content);
     $(element).attr('content', value !== content ? value : /^https?:/.test(content) ? content : brandText(content));
   }
+  $('meta[property="og:site_name"]').attr('content', BRAND);
   for (const element of $('meta[http-equiv="refresh"]').toArray()) {
     $(element).attr('content', $(element).attr('content').replace(/https?:\/\/(?:www\.)?koratv\.click(?=[\/#?]|$)/gi, SITE));
   }
@@ -78,12 +93,30 @@ function rewriteHtml(html, route) {
     $(element).text(JSON.stringify(schema).replace(/</g, '\\u003c'));
   }
   $('.header-title').text(home ? TITLE : 'كورة فابور | أخبار كرة القدم والبطولات');
-  if ($('.header .logo a').length) $('.header .logo a').html('<span class="korafabor-wordmark" dir="ltr">Kora<strong>Fabor</strong></span>').attr('aria-label', BRAND);
+  if ($('.header .logo a').length) $('.header .logo a').html('<span class="korafabor-wordmark" dir="ltr"><span class="korafabor-emblem" aria-hidden="true"><b>K</b><i>F</i></span><span class="korafabor-lettering">Kora<strong>Fabor</strong><small>KORAFABOR.PRO</small></span></span>').attr('aria-label', BRAND);
   for (const element of $('.footer-logo a,.article-footer span,.article-brand').toArray()) {
     $(element).text(brandText($(element).text()));
   }
   $('.copyright p').contents().each((_, node) => { if (node.type === 'text') node.data = brandText(node.data); });
-  if ($('body .header,.article-header').length) $('head').append('<link rel="stylesheet" href="/assets/css/korafabor-brand.css?v=20261101">');
+  $('.footer-logo img').attr('src', '/assets/images/korafabor-logo.svg').attr('alt', BRAND);
+  $('link[rel="apple-touch-icon"]').attr('href', '/assets/images/korafabor-favicon.png');
+  for (const element of $('img,link[rel="icon"],link[rel="shortcut icon"]').toArray()) {
+    const attribute = element.name === 'img' ? 'src' : 'href';
+    const value = $(element).attr(attribute) || '';
+    if (/^(?:https:\/\/korafabor\.pro)?\/assets\/images\/(?:logo(?:-header)?\.(?:png|webp)|favicon\.ico)$/.test(value))
+      $(element).attr(attribute, element.name === 'img' ? '/assets/images/korafabor-logo.svg' : '/assets/images/korafabor-favicon.png');
+    if (element.name === 'link' && $(element).attr('href') === '/assets/images/korafabor-favicon.png') $(element).attr('type', 'image/png');
+    if ($(element).attr('alt')) $(element).attr('alt', brandText($(element).attr('alt')));
+  }
+  for (const element of $('meta[property="og:image"],meta[name="twitter:image"]').toArray()) {
+    if (/\/assets\/images\/logo(?:-header)?\.(?:png|webp)$/.test($(element).attr('content') || '')) $(element).attr('content', SITE + '/assets/images/korafabor-social.png');
+  }
+  if ($('meta[property="og:image"]').attr('content') === SITE + '/assets/images/korafabor-social.png') {
+    $('meta[property="og:image:width"],meta[property="og:image:height"]').remove();
+    $('head').append('<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">');
+  }
+  $('link[href^="/assets/css/korafabor-brand.css"]').remove();
+  if ($('body .header,.article-header').length) $('head').append('<link rel="stylesheet" href="/assets/css/korafabor-brand.css?v=20261101-logo3">');
   if (home) {
     $('title').text(TITLE);
     for (const [attribute, name] of [['name', 'description'], ['property', 'og:description'], ['name', 'twitter:description']]) {
@@ -134,9 +167,11 @@ function files(directory) {
 }
 function migrate(output, root = path.resolve(__dirname, '..')) {
   versionFrontendModules(output);
+  for (const file of fs.readdirSync(output).filter(file => /^pinterest-[a-f0-9]+\.html$/i.test(file))) fs.unlinkSync(path.join(output, file));
   const before = files(output);
   const sourceCount = before.filter(file => file.endsWith('.html')).length;
   for (const filename of before.filter(file => file.endsWith('.html'))) {
+    if (/^google[a-f0-9]+\.html$/.test(path.basename(filename))) continue;
     fs.writeFileSync(filename, rewriteHtml(fs.readFileSync(filename, 'utf8'), path.relative(output, filename).split(path.sep).join('/')));
   }
   for (const name of ['sitemap.xml', 'sitemap-articles.xml']) {

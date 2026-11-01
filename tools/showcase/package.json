@@ -1,0 +1,9 @@
+{
+  "name": "korafabor-showcase-build-tools",
+  "private": true,
+  "dependencies": {
+    "esbuild": "0.25.12",
+    "lucide-static": "1.66.0",
+    "three": "0.187.0"
+  }
+}

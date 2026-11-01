@@ -34,3 +34,21 @@ test('module cache versions change only parsed local imports, never ad URLs or u
   assert.match(result, /match-lifecycle\.mjs\?v=20261101-njalla/);
   assert.match(result, /https:\/\/advertiser\.test\/tag\.js\?v=old/);
 });
+
+test('Google verification stays byte-identical and legacy public branding and ad zones are retired', () => {
+  const proof = 'google-site-verification: google4c7e1aa55a5300ab.html\r\n';
+  assert.equal(rewriteHtml(proof, 'google4c7e1aa55a5300ab.html'), proof);
+  const $ = load(rewriteHtml('<head><title>كورة لايف</title><link rel="canonical" href="https://koratv.click/news.html"><script src="/assets/js/monetag-window.js" data-zones="11820367" data-mobile-swap="off" data-components="news"></script><script src="https://quge5.com/88/tag.min.js" data-zone="281844"></script><script>(function(s){s.dataset.zone="11820368",s.src="https://n6wxm.com/vignette.min.js"})(document.createElement("script"))</script></head><footer class="copyright"><p>Copyright <span id="current-year"></span> Koratv.Click</p></footer>', 'news.html'));
+  assert.equal($('script[src*="monetag-window"]').attr('data-zones'), '12170985');
+  assert.doesNotMatch($.html(), /1182036[78]|281844|quge5\.com|كورة لايف|Koratv\.Click/);
+  assert.match($('.copyright').text(), /korafabor\.pro/);
+  assert.equal($('#current-year').length, 1);
+});
+
+test('legacy error and duplicate pages without a window adapter cannot retain old ads', () => {
+  const html = '<head><title>كورة لايف</title><script src="https://quge5.com/88/tag.min.js" data-zone="260051"></script><script>(function(s){s.dataset.zone="11638896",s.src="https://al5sm.com/tag.min.js"})(document.createElement("script"))</script><script>(function(s){s.dataset.zone="11639220",s.src="https://nap5k.com/tag.min.js"})(document.createElement("script"))</script></head><body><header class="header"><div class="logo"><a href="/"></a></div></header></body>';
+  const first = rewriteHtml(html, '404.html');
+  const second = rewriteHtml(first, '404.html');
+  assert.doesNotMatch(second, /11638896|11639220|quge5|nap5k|al5sm/);
+  assert.equal(load(second)('link[href*="korafabor-brand.css"]').length, 1);
+});

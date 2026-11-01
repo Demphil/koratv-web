@@ -13,9 +13,10 @@ test('adapter loads before the original ad tags with this site zones and mobile 
     const adapter = $('script[src*="/assets/js/monetag-window.js"]');
     assert.equal(adapter.length, 1, page);
     assert.equal(adapter.attr('data-mobile-swap'), 'off');
-    assert.equal(adapter.attr('data-zones'), fraja ? '11865231,11865230' : '11820367');
+    assert.equal(adapter.attr('data-zones'), fraja ? '11865231,11865230' : '12170985');
     assert.equal(adapter.attr('data-desktop'), 'chrome-windows');
-    assert.ok(html.indexOf('/assets/js/monetag-window.js') < html.indexOf(fraja ? '/assets/js/site-ads.js' : 'https://quge5.com/88/tag.min.js'));
+    assert.ok(html.indexOf('/assets/js/monetag-window.js') < html.indexOf(fraja ? '/assets/js/site-ads.js' : 'https://al5sm.com/tag.min.js'));
+    if (!fraja) assert.doesNotMatch(html, /1182036[78]|quge5\.com|281844/);
   }
 });
 test('safe UI state is registered directly without synthetic clicks or copying arbitrary inputs', () => {

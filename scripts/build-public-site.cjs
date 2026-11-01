@@ -5,7 +5,7 @@ const { load } = require('cheerio');
 
 const directories = new Set(['assets', 'abroad', 'at-work', 'low-internet', 'smart-tv']);
 const extensions = new Set(['.html', '.css', '.js', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.svg', '.woff', '.woff2']);
-const rootFiles = new Set(['CNAME', 'robots.txt', 'sitemap.xml', 'sw.js']);
+const rootFiles = new Set(['CNAME', 'robots.txt', 'sitemap.xml', 'sw.js', 'BingSiteAuth.xml']);
 const verificationFile = /^(?:[a-f0-9]{32}|hta-code-\d+|ppck-ver-[a-f0-9]+)\.txt$/i;
 const prohibitedAds = /\b(?:adsterra|highrevenueformat|profitableratecpmnetwork|highperformanceformat|profitabledisplaynetwork|topcreativeformat|effectivegatecpm|effectivecreativeformat|profitablecpmrate)\.com\b|\batOptions\s*=/i;
 // Retired aliases previously displayed this same daily results table.
@@ -37,18 +37,19 @@ async function copyPublicDirectory(source, destination) {
     const from = join(source, entry.name);
     const to = join(destination, entry.name);
     if (entry.isDirectory()) await copyPublicDirectory(from, to);
-    else if (entry.isFile() && (extensions.has(extname(entry.name).toLowerCase()) || entry.name === 'OFL.txt')) await cp(from, to);
+    else if (entry.isFile() && (extensions.has(extname(entry.name).toLowerCase()) || ['OFL.txt', 'three-LICENSE.txt', 'lucide-LICENSE.txt'].includes(entry.name))) await cp(from, to);
   }
 }
 
-async function minifyScripts(directory) {
+async function minifyScripts(directory, publicRoot = directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) await minifyScripts(path);
+    if (entry.isDirectory()) await minifyScripts(path, publicRoot);
     else if (/\.(?:html|m?js|css|svg)$/.test(entry.name)) {
       const source = await readFile(path, 'utf8');
       assertNoSecret(source, path);
       if (prohibitedAds.test(source)) throw new Error('Prohibited Adsterra advertising in public asset: ' + path);
+      if (directory === publicRoot && entry.name === 'sw.js') continue;
       if (!/\.(?:m?js)$/.test(entry.name)) continue;
       const result = await minify(source, { compress: false, mangle: { toplevel: false },
         module: entry.name.endsWith('.mjs'), sourceMap: false, format: { comments: false } });
@@ -68,7 +69,7 @@ async function buildPublicSite({ root = process.cwd(), output = join(root, '_sit
     if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory() && directories.has(entry.name)) {
       await copyPublicDirectory(join(root, entry.name), join(output, entry.name));
-    } else if (entry.isFile() && (rootFiles.has(entry.name) || entry.name.endsWith('.html') || verificationFile.test(entry.name))) {
+    } else if (entry.isFile() && (rootFiles.has(entry.name) || (entry.name.endsWith('.html') && !/^pinterest-[a-f0-9]+\.html$/i.test(entry.name)) || verificationFile.test(entry.name))) {
       await cp(join(root, entry.name), join(output, entry.name));
     }
   }

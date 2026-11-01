@@ -1,0 +1,6 @@
+# Preserve provider verification bytes across Windows and Linux checkouts.
+BingSiteAuth.xml -text
+google4c7e1aa55a5300ab.html -text
+sw.js -text
+# Generated Three.js contains upstream multiline GLSL; do not reformat shader data.
+assets/js/app-showcase.js linguist-generated=true -whitespace

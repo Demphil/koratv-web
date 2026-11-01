@@ -36,6 +36,8 @@ test('publication allowlist excludes backend files, maps, credentials, and docs'
     const files = {
       'index.html': '<html>public</html>', 'CNAME': 'example.com',
       'sw.js': 'self.addEventListener("fetch", function(event) { void event; });',
+      'BingSiteAuth.xml': '<?xml version="1.0"?><users><user>PUBLIC-PROOF</user></users>',
+      'google123abc.html': 'google-site-verification: google123abc.html\r\n',
       'assets/js/main.js': '// private author comment\nfunction increment(value) { return value + 1; }\n//# sourceMappingURL=main.js.map',
       'shared/match-lifecycle.mjs': 'export function state(value) { return value; }',
       'shared/match-visibility.mjs': 'export const excluded = false;',
@@ -46,8 +48,9 @@ test('publication allowlist excludes backend files, maps, credentials, and docs'
     };
     for (const [path, value] of Object.entries(files)) await writeFile(join(root, path), value);
     const output = await buildPublicSite({ root });
-    for (const path of ['index.html', 'CNAME', 'sw.js', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs']) await access(join(output, path));
-    for (const path of Object.keys(files).filter(path => !['index.html', 'CNAME', 'sw.js', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs'].includes(path))) {
+    for (const path of ['index.html', 'CNAME', 'sw.js', 'BingSiteAuth.xml', 'google123abc.html', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs']) await access(join(output, path));
+    for (const path of ['sw.js', 'BingSiteAuth.xml', 'google123abc.html']) assert.equal(await readFile(join(output, path), 'utf8'), files[path]);
+    for (const path of Object.keys(files).filter(path => !['index.html', 'CNAME', 'sw.js', 'BingSiteAuth.xml', 'google123abc.html', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs'].includes(path))) {
       await assert.rejects(access(join(output, path)), { code: 'ENOENT' });
     }
     const code = await readFile(join(output, 'assets/js/main.js'), 'utf8');

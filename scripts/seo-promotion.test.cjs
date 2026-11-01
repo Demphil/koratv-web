@@ -55,7 +55,9 @@ test('app display uses its own emerald and coral identity, real preview and offi
   const ad = $('.app-promotion');
   assert.equal(ad.find('.app-promotion-name').text(), 'KoraScoreAi');
   assert.equal(ad.find('.app-promotion-name span').length, 3);
-  assert.equal(ad.find('.app-promotion-stage img').attr('src'), '/assets/images/korascoreai-analyst-preview.webp');
+  assert.equal(ad.find('[data-showcase-frame]').length, 6);
+  assert.equal(ad.find('[data-showcase-frame] img').first().attr('src'), '/assets/images/app-showcase/forecast-540.webp');
+  assert.doesNotMatch(ad.html(), /korascoreai-analyst-preview/);
   assert.equal(ad.find('.app-promotion-link img').attr('src'), '/assets/images/google-play-badge.png');
   assert.equal(ad.find('.app-promotion-reel span').length, 3);
   const css = fs.readFileSync(path.join(root, 'assets/css/app-promotion.css'), 'utf8');
@@ -65,6 +67,6 @@ test('app display uses its own emerald and coral identity, real preview and offi
   assert.match(css, /rotateY/);
   assert.match(css, /prefers-reduced-motion/);
   assert.match(css, /max-width: 700px/);
-  for (const file of ['korascoreai-analyst-preview.webp', 'google-play-badge.png'])
+  for (const file of ['app-showcase/forecast-540.webp', 'google-play-badge.png'])
     assert.ok(fs.statSync(path.join(root, 'assets/images', file)).size < 100000);
 });
