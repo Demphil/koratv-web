@@ -2,6 +2,16 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('cheerio');
 const { rewriteHtml, ownedUrl, TITLE, versionModuleImports } = require('./migrate-korafabor.cjs');
+
+test('all public page types use the new cache-versioned Kora Fabor favicon', () => {
+  for (const route of ['index.html', 'news.html', 'news/example/index.html', 'archive-entry']) {
+    const $ = load(rewriteHtml('<head><link rel="icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/old.png"></head>', route));
+    assert.equal($('link[rel="icon"]').attr('href'), '/assets/images/korafabor-favicon.png?v=20261101-kf2');
+    assert.equal($('link[rel="icon"]').attr('type'), 'image/png');
+    assert.equal($('link[rel="apple-touch-icon"]').attr('href'), $('link[rel="icon"]').attr('href'));
+  }
+  assert.equal(load(rewriteHtml('<head><title>News</title></head>', 'news.html'))('link[rel="icon"]').length, 1);
+});
 test('domain migration changes owned URLs and truthful brand without changing providers or external sources', () => {
   assert.equal(ownedUrl('https://koratv.click/news/a/?x=1#two'), 'https://korafabor.pro/news/a/?x=1#two');
   assert.equal(ownedUrl('https://koratv.click'), 'https://korafabor.pro');

@@ -55,9 +55,10 @@ test('app display uses its own emerald and coral identity, real preview and offi
   const ad = $('.app-promotion');
   assert.equal(ad.find('.app-promotion-name').text(), 'KoraScoreAi');
   assert.equal(ad.find('.app-promotion-name span').length, 3);
-  assert.equal(ad.find('[data-showcase-frame]').length, 6);
-  assert.equal(ad.find('[data-showcase-frame] img').first().attr('src'), '/assets/images/app-showcase/forecast-540.webp');
-  assert.doesNotMatch(ad.html(), /korascoreai-analyst-preview/);
+  assert.equal(ad.find('[data-showcase-frame]').length, 7);
+  assert.equal(ad.find('[data-showcase-frame] img').first().attr('src'), '/assets/images/korascoreai-forecast-engine.webp');
+  assert.equal(ad.find('.app-promotion-display').length, 1);
+  assert.equal(ad.find('dialog,[data-showcase-expand],[data-full]').length, 0);
   assert.equal(ad.find('.app-promotion-link img').attr('src'), '/assets/images/google-play-badge.png');
   assert.equal(ad.find('.app-promotion-reel span').length, 3);
   const css = fs.readFileSync(path.join(root, 'assets/css/app-promotion.css'), 'utf8');
@@ -67,6 +68,16 @@ test('app display uses its own emerald and coral identity, real preview and offi
   assert.match(css, /rotateY/);
   assert.match(css, /prefers-reduced-motion/);
   assert.match(css, /max-width: 700px/);
-  for (const file of ['app-showcase/forecast-540.webp', 'google-play-badge.png'])
+  assert.match(css, /width: 218px; height: 258px/);
+  assert.match(css, /width: 202px; height: 238px/);
+  assert.match(css, /object-fit: contain/);
+  assert.doesNotMatch(css, /showcase-dialog|calc\(\(100% - 45px\) \/ 6\)/);
+  assert.match($('link[rel="icon"]').attr('href'), /korafabor-favicon\.png\?v=/);
+  for (const file of ['korascoreai-forecast-engine.webp', 'app-showcase/forecast-540.webp', 'google-play-badge.png'])
     assert.ok(fs.statSync(path.join(root, 'assets/images', file)).size < 100000);
+  const icon = fs.readFileSync(path.join(root, 'favicon.ico'));
+  assert.equal(icon.readUInt16LE(2), 1);
+  assert.equal(icon.readUInt16LE(4), 1);
+  assert.deepEqual(icon.subarray(22), fs.readFileSync(path.join(root, 'assets/images/korafabor-favicon.png')));
+  assert.deepEqual(icon, fs.readFileSync(path.join(root, 'assets/images/favicon.ico')));
 });

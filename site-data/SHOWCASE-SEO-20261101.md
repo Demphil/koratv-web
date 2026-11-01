@@ -5,7 +5,7 @@ provider bindings, wallets, reports and private administration were not changed.
 
 ## Approved Media
 
-The owner rejected the earlier analyst screenshot and selected
+The owner initially rejected the earlier analyst screenshot and selected
 `D:/Frajatv/docs/social-reels-20261028/publication.html` instead. Six Arabic feature
 frames were extracted from that publication's genuine 1080 x 1920 tour at seconds
 6, 12, 18, 24, 30 and 36. The source video and original app values are unchanged.
@@ -13,11 +13,19 @@ The frames demonstrate Forecast, live scores/statistics, illustrative Radar,
 Insights, report explanations and the saved-report Vault. They are dated examples,
 not a current match, new model execution, guarantee or measured tracking.
 
-The display uses a locally bundled Three.js 0.187.0 scene with six screens on
-desktop and a sequential carousel on phones. It supports previous/next, pause,
-swipe and full-resolution expansion. No video, model request or sports API request
-is used. Rendering is capped at 24 fps, DPR 1.5 and 2.4 million pixels, and pauses
-when hidden/offscreen. Reduced-motion and non-WebGL fallbacks retain usable HTML.
+The latest owner reference explicitly restores the Forecast engine image from the
+earlier single-screen advertisement. It is now first among seven sequential screens.
+The display is fixed at 218 x 258 CSS pixels on desktop and 202 x 238 on phones,
+including at a 3840 CSS-pixel viewport. There is one frame, never a six-screen row,
+and no expansion dialog, zoom control or full-resolution navigation. Screens fit
+inside it without cropping or upscaling the source. The reference's emerald/coral
+identity, small floating labels, tilt and official Google Play badge are retained.
+
+The locally bundled Three.js 0.187.0 renderer redraws only on selection/resize,
+not a continuous GPU loop. The compositor animates the reference frame. Previous,
+next, pause and swipe remain in the compact frame; automatic cycling is every
+seven seconds and pauses offscreen/hidden. Reduced-motion and non-WebGL fallbacks
+retain usable HTML. No video, model request or sports API request is used.
 The original frames are Full HD portrait; a 4K viewport test does not make them
 native 4K photographs. Lucide icons and dependency licenses are shipped locally.
 
@@ -32,6 +40,8 @@ node --test scripts/*.test.cjs
 `scripts/build-public-brand.cjs` generates the new logo aliases, favicon and
 1200 x 630 social image using Sharp. The header's scalable extruded wordmark uses
 the site's gold/ivory identity, separate from the app's emerald/coral identity.
+The KF favicon is also written as real ICO files at `/favicon.ico` and the legacy
+asset alias. All generated HTML icon links use a new cache-versioned PNG URL.
 
 ## Advertisements
 
@@ -86,11 +96,13 @@ DNS/301 handoff still requires restored Namecheap access.
   pages scanned and 1142 indexable pages, with no retired ad tags or old public
   publisher identity/canonical findings. The old Pinterest verification page was
   removed from the new artifact and excluded from future publications.
-- Frontend regression tests: 91 passed.
+- Frontend regression tests after the reference correction: 92 passed.
 - Live SEO sample: 20 pages, 0 errors, 25 advisory title/description-length warnings.
-- The live browser loaded all six frames, WebGL and 20 eligible match cards. The
-  canvas screenshot had substantial pixel variation, not a blank rendering.
+- The prior live browser loaded all six feature frames and 20 eligible match cards.
+  The corrected reference preview loads the restored engine plus those six frames.
+  Mobile and 4K screenshot samples have substantial canvas pixel variation.
 - Responsive testing included a large/4K viewport and a 390 CSS-pixel viewport;
-  manual next/pause/expand controls worked. This is not a physical Android test.
+  manual next/pause controls worked and the frame kept its fixed dimensions.
+  This is not a physical Android test.
 - HTTP checks: verification documents remain byte-identical; sitemaps/robots are
   200; retired duplicate aliases are 301; unknown URLs/rejected preview are 404.

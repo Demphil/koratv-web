@@ -99,7 +99,8 @@ function rewriteHtml(html, route) {
   }
   $('.copyright p').contents().each((_, node) => { if (node.type === 'text') node.data = brandText(node.data); });
   $('.footer-logo img').attr('src', '/assets/images/korafabor-logo.svg').attr('alt', BRAND);
-  $('link[rel="apple-touch-icon"]').attr('href', '/assets/images/korafabor-favicon.png');
+  $('link[rel="icon"],link[rel="shortcut icon"],link[rel="apple-touch-icon"]').attr('href', '/assets/images/korafabor-favicon.png?v=20261101-kf2').attr('type', 'image/png');
+  if (!$('link[rel="icon"]').length) $('head').append('<link rel="icon" type="image/png" href="/assets/images/korafabor-favicon.png?v=20261101-kf2">');
   for (const element of $('img,link[rel="icon"],link[rel="shortcut icon"]').toArray()) {
     const attribute = element.name === 'img' ? 'src' : 'href';
     const value = $(element).attr(attribute) || '';

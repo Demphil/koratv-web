@@ -5,7 +5,7 @@ const { load } = require('cheerio');
 
 const directories = new Set(['assets', 'abroad', 'at-work', 'low-internet', 'smart-tv']);
 const extensions = new Set(['.html', '.css', '.js', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.svg', '.woff', '.woff2']);
-const rootFiles = new Set(['CNAME', 'robots.txt', 'sitemap.xml', 'sw.js', 'BingSiteAuth.xml']);
+const rootFiles = new Set(['CNAME', 'robots.txt', 'sitemap.xml', 'sw.js', 'BingSiteAuth.xml', 'favicon.ico']);
 const verificationFile = /^(?:[a-f0-9]{32}|hta-code-\d+|ppck-ver-[a-f0-9]+)\.txt$/i;
 const prohibitedAds = /\b(?:adsterra|highrevenueformat|profitableratecpmnetwork|highperformanceformat|profitabledisplaynetwork|topcreativeformat|effectivegatecpm|effectivecreativeformat|profitablecpmrate)\.com\b|\batOptions\s*=/i;
 // Retired aliases previously displayed this same daily results table.
