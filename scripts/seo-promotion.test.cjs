@@ -49,3 +49,22 @@ test('SEO maintenance does not downgrade asset versions or overwrite ad and play
   assert.doesNotMatch(source, /matches\\\.js\\\?v=|matches\\\.css\\\?v=/);
   assert.doesNotMatch(source, /html\.replace\(\/مباريات اليوم بث مباشر/);
 });
+
+test('app display uses its own emerald and coral identity, real preview and official store badge', () => {
+  const $ = load(fs.readFileSync(path.join(root, 'index.html'), 'utf8'));
+  const ad = $('.app-promotion');
+  assert.equal(ad.find('.app-promotion-name').text(), 'KoraScoreAi');
+  assert.equal(ad.find('.app-promotion-name span').length, 3);
+  assert.equal(ad.find('.app-promotion-stage img').attr('src'), '/assets/images/korascoreai-analyst-preview.webp');
+  assert.equal(ad.find('.app-promotion-link img').attr('src'), '/assets/images/google-play-badge.png');
+  assert.equal(ad.find('.app-promotion-reel span').length, 3);
+  const css = fs.readFileSync(path.join(root, 'assets/css/app-promotion.css'), 'utf8');
+  assert.match(css, /#23be89/);
+  assert.match(css, /#e94968/);
+  assert.doesNotMatch(css, /#d9b86c/i);
+  assert.match(css, /rotateY/);
+  assert.match(css, /prefers-reduced-motion/);
+  assert.match(css, /max-width: 700px/);
+  for (const file of ['korascoreai-analyst-preview.webp', 'google-play-badge.png'])
+    assert.ok(fs.statSync(path.join(root, 'assets/images', file)).size < 100000);
+});
