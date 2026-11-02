@@ -83,15 +83,14 @@ html.korafabor-theme .section-title {
 }
 html.korafabor-theme .section-title i,
 html.korafabor-theme .match-detail-item i { color: var(--kf-gold); }
-html.korafabor-theme #featured-matches,
-html.korafabor-theme #broadcast-matches {
+html.korafabor-theme #featured-matches {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  gap: 16px;
-  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
 }
 html.korafabor-theme .match-card-link { min-width: 0; }
-html.korafabor-theme .match-card { height: 100%; box-sizing: border-box; }
+html.korafabor-theme .match-card { height: auto; box-sizing: border-box; }
 html.korafabor-theme .prerendered-match { min-height: 170px; display: flex; flex-direction: column; gap: 8px; }
 html.korafabor-theme .prerendered-match a { margin-top: auto; align-self: flex-start; }
 html.korafabor-theme .match-card,

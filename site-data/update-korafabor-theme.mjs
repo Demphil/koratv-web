@@ -29,7 +29,7 @@ async function updatePages(directory) {
       const body = page('body').html();
       page('html').addClass('korafabor-theme');
       page('link[href^="/assets/css/korafabor-theme.css"]').remove();
-      page('head').append('<link rel="stylesheet" href="/' + cssPath + '?v=20261102-gold1">');
+      page('head').append('<link rel="stylesheet" href="/' + cssPath + '?v=20261102-gold2">');
       page('meta[name="theme-color"]').attr('content', '#15191c');
       if (!page('meta[name="theme-color"]').length) page('head').append('<meta name="theme-color" content="#15191c">');
       if (page('body').html() !== body) throw Error('Content changed during theme update');

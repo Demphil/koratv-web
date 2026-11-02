@@ -12,7 +12,7 @@ test('gold and white theme is idempotent across public page types and keeps mobi
     const $ = load(rewriteHtml(first, route));
     assert.ok($('html').hasClass('korafabor-theme'));
     assert.equal($('link[href*="korafabor-theme.css"]').length, 1);
-    assert.equal($('link[rel="stylesheet"]').last().attr('href'), '/assets/css/korafabor-theme.css?v=20261102-gold1');
+    assert.equal($('link[rel="stylesheet"]').last().attr('href'), '/assets/css/korafabor-theme.css?v=20261102-gold2');
     assert.equal($('meta[name="theme-color"]').attr('content'), '#15191c');
     assert.equal($('main h1').text(), 'Home 2 - 1 Away');
   }
@@ -26,6 +26,8 @@ test('site theme leaves app identity, team assets, status badges and streaming b
   assert.match(css, /--kf-gold: #e4c67e/);
   assert.match(css, /--kf-white: #f5f7f4/);
   assert.match(css, /--match-viewport-background: var\(--kf-backdrop\)/);
+  assert.match(css, /#featured-matches\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.doesNotMatch(css, /#featured-matches\s*\{[^}]*auto-fill/);
   assert.match(css, /background-attachment: scroll/);
   assert.doesNotMatch(css, /overflow(?:-y)?:\s*(?:hidden|clip)|touch-action:\s*none/);
 });

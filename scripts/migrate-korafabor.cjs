@@ -124,7 +124,7 @@ function rewriteHtml(html, route) {
   if (matchViewport) $('head').append('<link rel="stylesheet" href="/assets/css/mobile-viewport.css?v=20261101-scroll1">');
   $('html').addClass('korafabor-theme');
   $('link[href^="/assets/css/korafabor-theme.css"]').remove();
-  $('head').append('<link rel="stylesheet" href="/assets/css/korafabor-theme.css?v=20261102-gold1">');
+  $('head').append('<link rel="stylesheet" href="/assets/css/korafabor-theme.css?v=20261102-gold2">');
   $('meta[name="theme-color"]').attr('content', '#15191c');
   if (!$('meta[name="theme-color"]').length) $('head').append('<meta name="theme-color" content="#15191c">');
   if (home) {

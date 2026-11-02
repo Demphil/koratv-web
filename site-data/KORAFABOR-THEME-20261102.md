@@ -3,13 +3,14 @@
 Scope: the public korafabor.pro frontend on Njalla only. No Oracle service,
 provider reservation, media route, Fraja palette, or player advertisement changed.
 
-The domain profile injects `korafabor-theme.css?v=20261102-gold1` after the original
+The domain profile injects `korafabor-theme.css?v=20261102-gold2` after the original
 styles and mobile viewport repair. The isolated theme uses the logo's #e4c67e gold,
 #f5f7f4 white and neutral graphite surfaces. Existing team/news images, semantic
 red/yellow cards, live badges and the KoraScoreAi ad's emerald/coral identity remain.
 
-The header no longer wraps navigation labels on desktop. Featured matches use a
-responsive grid; phone widths retain one column. Sections are unframed, individual
+The header no longer wraps navigation labels on desktop. At the owner's request,
+featured match cards retain their original full-width vertical order on desktop
+and phones, with natural card heights. Sections are unframed, individual
 match/news items keep restrained borders, and controls use gold with dark text.
 News, internal articles, results archives and the footer share the same palette.
 The 100lvh mobile background layer remains active and inherits the new backdrop.
