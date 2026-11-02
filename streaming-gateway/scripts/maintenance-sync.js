@@ -66,11 +66,14 @@ export function buildAvailableRoutes(providerCatalog = {}) {
 }
 
 export function resolveRouteName(targetName, routes) {
+  const exact = routes.find(route => route.catalogName === String(targetName || '').trim());
+  if (exact) return { requestedName: targetName, matchedName: exact.catalogName,
+    matchedAlias: exact.catalogName, providerIds: exact.providerIds, sourceNames: exact.sourceNames };
   const aliasRows = routes.flatMap((route) => route.aliases.map((alias) => ({ alias, route })));
   const normalizedTarget = normalizeBroadcastChannel(targetName);
   const matchedAlias = findChannelNameMatch(normalizedTarget, aliasRows.map((row) => row.alias));
   if (!matchedAlias) return null;
-  const matches = aliasRows.filter((row) => row.alias === matchedAlias);
+  const matches = [...new Map(aliasRows.filter(row => row.alias === matchedAlias).map(row => [row.route.catalogName, row])).values()];
   if (matches.length !== 1) return null;
   const route = matches[0].route;
   return {

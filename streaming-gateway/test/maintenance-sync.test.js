@@ -5,6 +5,20 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildAvailableRoutes, resolveRouteName, runMaintenanceSync } from '../scripts/maintenance-sync.js';
 
+test('exact canonical channel wins over overlapping supplier aliases', () => {
+  const routes = [
+    { catalogName: 'beIN SPORTS HD 3', aliases: ['beIN SPORTS HD 3', 'beIN SPORTS 3'], providerIds: ['I'], sourceNames: { I: 'AR beIN Sports 3 4K' } },
+    { catalogName: 'beIN SPORTS 3', aliases: ['beIN SPORTS 3', 'beIN SPORTS HD 3'], providerIds: ['A'], sourceNames: { A: 'beIN SPORTS HD 3' } },
+  ];
+  assert.deepEqual(resolveRouteName('beIN SPORTS HD 3', routes).providerIds, ['I']);
+  assert.equal(resolveRouteName('beIN SPORTS HD 3', routes).matchedName, 'beIN SPORTS HD 3');
+});
+
+test('duplicate aliases for the same canonical route are not an ambiguity', () => {
+  const route = { catalogName: 'MBC Action', aliases: ['MBC Action HD', 'MBC Action HD'], providerIds: ['I'], sourceNames: { I: 'MBC Action HD' } };
+  assert.equal(resolveRouteName('MBC Action HD', [route]).matchedName, 'MBC Action');
+});
+
 test('route matcher ignores quality labels while preserving channel numbers', () => {
   const routes = buildAvailableRoutes({
     providers: { A: { enabled: true }, B: { enabled: true } },
