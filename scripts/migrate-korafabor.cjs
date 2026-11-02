@@ -122,6 +122,11 @@ function rewriteHtml(html, route) {
   const matchViewport = $('.matches-main,.match-detail,link[href*="/assets/css/matches.css"],style[data-source="/assets/css/matches.css"]').length > 0;
   $('html').toggleClass('match-viewport', matchViewport);
   if (matchViewport) $('head').append('<link rel="stylesheet" href="/assets/css/mobile-viewport.css?v=20261101-scroll1">');
+  $('html').addClass('korafabor-theme');
+  $('link[href^="/assets/css/korafabor-theme.css"]').remove();
+  $('head').append('<link rel="stylesheet" href="/assets/css/korafabor-theme.css?v=20261102-gold1">');
+  $('meta[name="theme-color"]').attr('content', '#15191c');
+  if (!$('meta[name="theme-color"]').length) $('head').append('<meta name="theme-color" content="#15191c">');
   if (home) {
     $('title').text(TITLE);
     for (const [attribute, name] of [['name', 'description'], ['property', 'og:description'], ['name', 'twitter:description']]) {
@@ -217,6 +222,7 @@ function migrate(output, root = path.resolve(__dirname, '..')) {
   fs.writeFileSync(path.join(output, 'CNAME'), 'korafabor.pro\n');
   fs.copyFileSync(path.join(root, 'assets/css/korafabor-brand.css'), path.join(output, 'assets/css/korafabor-brand.css'));
   fs.copyFileSync(path.join(root, 'assets/css/mobile-viewport.css'), path.join(output, 'assets/css/mobile-viewport.css'));
+  fs.copyFileSync(path.join(root, 'assets/css/korafabor-theme.css'), path.join(output, 'assets/css/korafabor-theme.css'));
   const publication = assertCompletePublication(root, output, { siteUrl: SITE });
   const $ = load(fs.readFileSync(path.join(output, 'sitemap.xml'), 'utf8'), { xmlMode: true });
   $('loc').each((_, element) => {
