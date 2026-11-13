@@ -1,5 +1,6 @@
 import { sourceMatchState, nextMoroccoMidnight } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
 import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs?v=20261013-youth-exclusion';
+import { loadWebsiteMatchFeed, normalizeWebsiteMatch } from '../../shared/public-match-feed.mjs?v=20261113-njalla-feed';
 
 // --- 1. Cache Configuration ---
 
@@ -7,6 +8,7 @@ const CACHE_EXPIRY_MS = 20 * 1000;
 const SNAPSHOT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const MATCHES_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
+const MATCHES_FEED_ORIGIN = window.__MATCHES_FEED_ORIGIN__ || 'https://stream-api.koratv.click';
 
 const CACHE_KEY_TODAY = 'matches_cache_today_v2';
 
@@ -158,41 +160,17 @@ let stagingMatchesPending = false;
 let stagingMatchesDay = '';
 
 function normalizeStagingMatch(match) {
-  if (isEuropeanYouthLeague(match.league)) return null;
-  const homeName = typeof match.homeTeam === 'object' ? match.homeTeam.name : match.homeTeam;
-  const awayName = typeof match.awayTeam === 'object' ? match.awayTeam.name : match.awayTeam;
-  const scheduledAt = match.scheduledAt || '';
-  const homeLogo = typeof match.homeTeam === 'object' ? match.homeTeam.logo : match.homeLogo;
-  const awayLogo = typeof match.awayTeam === 'object' ? match.awayTeam.logo : match.awayLogo;
-  const channelName = cleanApiText(match.channelName || match.channel || match.payload?.channel || '');
-  if (!homeName || !awayName || !scheduledAt) return null;
-  if (String(homeName).trim().toLocaleLowerCase('ar') === String(awayName).trim().toLocaleLowerCase('ar')) return null;
-  const dateParts = zonedParts(new Date(scheduledAt), MOROCCO_TIME_ZONE);
-  return {
-    ...match,
-    matchId: match.match_id || match.matchId || stableMatchId(homeName, awayName, scheduledAt),
-    homeTeam: { name: homeName, logo: homeLogo || '' },
-    awayTeam: { name: awayName, logo: awayLogo || '' },
-    scheduledAt,
-    time: cleanApiText(match.time, `${String(dateParts.hour).padStart(2, '0')}:${String(dateParts.minute).padStart(2, '0')}`),
-    rawMinutes: dateParts.hour * 60 + dateParts.minute,
-    score: cleanApiScore(match.score),
-    league: match.league || '',
-    streams: [],
-    channelName,
-    channel: channelName,
-    broadcastPaused: match.broadcastPaused === true || match.resourceStatus === 'PAUSED',
-    sourceReady: match.resourceStatus !== 'PAUSED' && match.broadcastPaused !== true && match.sourceReady === true,
-    sourceAvailable: match.resourceStatus !== 'PAUSED' && match.broadcastPaused !== true && (match.sourceAvailable === true || Boolean(channelName)),
-    playbackState: match.playbackState || '',
-    isLive: Boolean(match.isLive),
-    commentator: match.commentator || '',
-    liveMinute: match.liveMinute != null && Number.isFinite(Number(match.liveMinute)) ? Number(match.liveMinute) : null,
-    liveExtraMinute: Math.max(0, Number(match.liveExtraMinute) || 0),
-    yellowCards: match.yellowCards || null,
-    redCards: match.redCards || null,
-    goals: Array.isArray(match.goals) ? match.goals : []
-  };
+  const normalized = normalizeWebsiteMatch(match);
+  if (!normalized) return null;
+  const dateParts = zonedParts(new Date(normalized.scheduledAt), MOROCCO_TIME_ZONE);
+  normalized.matchId ||= stableMatchId(normalized.homeTeam.name, normalized.awayTeam.name, normalized.scheduledAt);
+  normalized.time = cleanApiText(normalized.time,
+    `${String(dateParts.hour).padStart(2, '0')}:${String(dateParts.minute).padStart(2, '0')}`);
+  normalized.rawMinutes = dateParts.hour * 60 + dateParts.minute;
+  normalized.score = cleanApiScore(normalized.score);
+  normalized.liveMinute = normalized.liveMinute != null && Number.isFinite(Number(normalized.liveMinute))
+    ? Number(normalized.liveMinute) : null;
+  return normalized;
 }
 
 async function getStagingMatches({ force = false } = {}) {
@@ -205,15 +183,8 @@ async function getStagingMatches({ force = false } = {}) {
   }
   if (!stagingMatchesPromise) {
     stagingMatchesPending = true;
-    const endpoint = force
-      ? `${MATCHES_API_ORIGIN}/api/matches?t=${Date.now()}`
-      : `${MATCHES_API_ORIGIN}/api/matches`;
-    const request = fetch(endpoint, { cache: force ? 'no-store' : 'default', signal: AbortSignal.timeout(8000) })
-      .then((response) => {
-        if (!response.ok) throw new Error(`Status: ${response.status}`);
-        return response.json();
-      })
-      .then((body) => (Array.isArray(body.matches) ? body.matches : []).map(normalizeStagingMatch).filter(Boolean))
+    const request = loadWebsiteMatchFeed(MATCHES_API_ORIGIN, { force, snapshotOrigin: MATCHES_FEED_ORIGIN })
+      .then(matches => matches.map(normalizeStagingMatch).filter(Boolean))
       .then((matches) => {
         if (stagingMatchesPromise === request) stagingMatchesExpiresAt = Date.now() + CACHE_EXPIRY_MS;
         return matches;
@@ -470,3 +441,4 @@ function isValidImageUrl(value) {
     return false;
   }
 }
+

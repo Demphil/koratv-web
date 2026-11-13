@@ -8,7 +8,7 @@ import {
   getMoroccoDay,
   getMoroccoDateKey,
   getNextMoroccoDayDelay
-} from './api.js?v=20261017-media-pause';
+} from './api.js?v=20261113-njalla-feed';
 import { frontendMatchState, sourceMatchState } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
 
 const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';

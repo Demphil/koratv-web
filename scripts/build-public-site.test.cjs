@@ -13,6 +13,7 @@ test('homepage embeds only its local first-paint CSS and preserves font licensin
     await writeFile(join(root, 'CNAME'), 'example.com');
     await writeFile(join(root, 'shared/match-lifecycle.mjs'), 'export const live = true;');
     await writeFile(join(root, 'shared/match-visibility.mjs'), 'export const excluded = false;');
+    await writeFile(join(root, 'shared/public-match-feed.mjs'), 'export const source = "njalla";');
     await writeFile(join(root, 'assets/css/matches.css'), '.team { color: green; }');
     await writeFile(join(root, 'assets/fonts/OFL.txt'), 'SIL OPEN FONT LICENSE');
     await writeFile(join(root, 'assets/fonts/private.txt'), 'not a public font license');
@@ -23,6 +24,7 @@ test('homepage embeds only its local first-paint CSS and preserves font licensin
     assert.doesNotMatch(html, /href="\/assets\/css\/matches.css/);
     assert.match(html, /media="print"/);
     assert.match(await readFile(join(output, 'assets/fonts/OFL.txt'), 'utf8'), /FONT LICENSE/);
+    assert.match(await readFile(join(output, 'shared/public-match-feed.mjs'), 'utf8'), /njalla/);
     await assert.rejects(access(join(output, 'assets/fonts/private.txt')));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
