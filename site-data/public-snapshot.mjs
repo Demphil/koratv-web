@@ -6,7 +6,7 @@ const logo = value => {
 };
 export function publicMetadataRow(row) {
   const p = row.payload || {};
-  const payload = Object.fromEntries(['score', 'status', 'time', 'homeTeamEnglish', 'awayTeamEnglish', 'leagueCountry']
+  const payload = Object.fromEntries(['score', 'status', 'time', 'homeTeamEnglish', 'awayTeamEnglish', 'leagueCountry', 'channel']
     .filter(key => typeof p[key] === 'string').map(key => [key, text(p[key])]));
   for (const key of ['isLive', 'isFinished']) if (typeof p[key] === 'boolean') payload[key] = p[key];
   for (const key of ['liveMinute', 'liveExtraMinute', 'sourceFixtureId', 'leagueId', 'homeTeamId', 'awayTeamId']) {
@@ -26,9 +26,11 @@ export function publicMetadataRow(row) {
   payload.events = (Array.isArray(p.events) ? p.events : []).slice(0, 80).map(item => ({
     player: text(item.player), type: text(item.type), detail: text(item.detail), minute: text(String(item.minute ?? ''), 12),
   }));
+  const channels = Array.isArray(p.channels) ? p.channels.slice(0, 12).map(value => text(value, 80)).filter(Boolean) : [];
   return { id: text(row.id, 200), match_id: text(row.match_id, 200), source: text(row.source, 40),
     home_team: text(row.home_team), away_team: text(row.away_team), league: text(row.league),
-    kickoff_time: row.kickoff_time, updated_at: row.updated_at, active: row.active === true, payload };
+    kickoff_time: row.kickoff_time, updated_at: row.updated_at, active: row.active === true,
+    channel: text(row.channel), payload: { ...payload, ...(channels.length ? { channels } : {}) } };
 }
 
 export async function writePublicSnapshot(client, { directory = '/var/lib/koratv-site-publish' } = {}) {
