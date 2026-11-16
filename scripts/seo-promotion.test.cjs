@@ -72,12 +72,12 @@ test('app display uses its own emerald and coral identity, real preview and offi
   assert.match(css, /width: 202px; height: 238px/);
   assert.match(css, /object-fit: contain/);
   assert.doesNotMatch(css, /showcase-dialog|calc\(\(100% - 45px\) \/ 6\)/);
-  assert.match($('link[rel="icon"]').attr('href'), /korafabor-favicon\.png\?v=/);
+  assert.match($('link[rel="icon"]').attr('href'), /koratv-favicon\.png\?v=/);
   for (const file of ['korascoreai-forecast-engine.webp', 'app-showcase/forecast-540.webp', 'google-play-badge.png'])
     assert.ok(fs.statSync(path.join(root, 'assets/images', file)).size < 100000);
   const icon = fs.readFileSync(path.join(root, 'favicon.ico'));
   assert.equal(icon.readUInt16LE(2), 1);
   assert.equal(icon.readUInt16LE(4), 1);
-  assert.deepEqual(icon.subarray(22), fs.readFileSync(path.join(root, 'assets/images/korafabor-favicon.png')));
+  assert.deepEqual(icon.subarray(22), fs.readFileSync(path.join(root, 'assets/images/koratv-favicon.png')));
   assert.deepEqual(icon, fs.readFileSync(path.join(root, 'assets/images/favicon.ico')));
 });
