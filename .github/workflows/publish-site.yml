@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      SITE_MATCHES_SNAPSHOT_URL: https://stream-api.koratv.click/site-metadata/matches.json
+      SITE_MATCHES_SNAPSHOT_URL: https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
