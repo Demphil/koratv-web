@@ -43,6 +43,7 @@ test('publication allowlist excludes backend files, maps, credentials, and docs'
       'assets/js/main.js': '// private author comment\nfunction increment(value) { return value + 1; }\n//# sourceMappingURL=main.js.map',
       'shared/match-lifecycle.mjs': 'export function state(value) { return value; }',
       'shared/match-visibility.mjs': 'export const excluded = false;',
+      'shared/public-match-feed.mjs': 'export const feed = true;',
       'assets/js/main.js.map': '{"sourcesContent":["original"]}', 'assets/js/proxy.php': '<?php secret();',
       'shared/private.mjs': 'secret()', '.env': 'SECRET=x', 'package.json': '{}',
       'secure-streaming/server.js': 'secret()', 'streaming-gateway/app.js': 'secret()',
@@ -50,9 +51,9 @@ test('publication allowlist excludes backend files, maps, credentials, and docs'
     };
     for (const [path, value] of Object.entries(files)) await writeFile(join(root, path), value);
     const output = await buildPublicSite({ root });
-    for (const path of ['index.html', 'CNAME', 'sw.js', 'BingSiteAuth.xml', 'google123abc.html', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs']) await access(join(output, path));
+    for (const path of ['index.html', 'CNAME', 'sw.js', 'BingSiteAuth.xml', 'google123abc.html', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs', 'shared/public-match-feed.mjs']) await access(join(output, path));
     for (const path of ['sw.js', 'BingSiteAuth.xml', 'google123abc.html']) assert.equal(await readFile(join(output, path), 'utf8'), files[path]);
-    for (const path of Object.keys(files).filter(path => !['index.html', 'CNAME', 'sw.js', 'BingSiteAuth.xml', 'google123abc.html', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs'].includes(path))) {
+    for (const path of Object.keys(files).filter(path => !['index.html', 'CNAME', 'sw.js', 'BingSiteAuth.xml', 'google123abc.html', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs', 'shared/public-match-feed.mjs'].includes(path))) {
       await assert.rejects(access(join(output, path)), { code: 'ENOENT' });
     }
     const code = await readFile(join(output, 'assets/js/main.js'), 'utf8');
@@ -77,6 +78,7 @@ test('publication rejects Adsterra tags in HTML and nested scripts but preserves
     await mkdir(join(root, 'assets/js'), { recursive: true });
     await writeFile(join(root, 'shared/match-lifecycle.mjs'), 'export const live = true;');
     await writeFile(join(root, 'shared/match-visibility.mjs'), 'export const excluded = false;');
+    await writeFile(join(root, 'shared/public-match-feed.mjs'), 'export const feed = true;');
     const index = join(root, 'index.html');
     for (const tag of ['<script src="https://pl31377260.profitableratecpmnetwork.com/tag.js"></script>', '<script src="https://www.highrevenueformat.com/invoke.js"></script>', '<script>atOptions = { key: "test" };</script>']) {
       await writeFile(index, tag);
