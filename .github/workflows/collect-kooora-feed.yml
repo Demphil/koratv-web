@@ -1,0 +1,43 @@
+name: Collect public Kooora match feed
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: public-kooora-feed
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --fund=false
+      - name: Test and collect today's and tomorrow's Kooora matches
+        run: |
+          node --test scripts/collect-kooora-public-feed.test.mjs
+          node scripts/collect-kooora-public-feed.mjs
+      - name: Publish only the sanitized match feed
+        run: |
+          cp site-data/generated/matches.json "$RUNNER_TEMP/matches.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan generated-match-feed
+          git rm -rf .
+          git clean -fdx
+          mkdir -p site-metadata
+          cp "$RUNNER_TEMP/matches.json" site-metadata/matches.json
+          git add site-metadata/matches.json
+          git commit -m "Publish sanitized Kooora match feed"
+          git push --force origin HEAD:public-match-feed
+

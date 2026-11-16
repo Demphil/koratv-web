@@ -1,7 +1,7 @@
 import { sourceMatchState } from './match-lifecycle.mjs';
 import { isEuropeanYouthLeague } from './match-visibility.mjs';
 
-const MAX_SNAPSHOT_AGE_MS = 10 * 60_000;
+const MAX_SNAPSHOT_AGE_MS = 30 * 60_000;
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 
 function nameOf(value) {
@@ -87,20 +87,31 @@ function safeOrigin(value, label) {
   } catch { throw new Error(`Invalid ${label} origin`); }
 }
 
+function safeSnapshotUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:' || url.hostname !== 'raw.githubusercontent.com'
+      || url.username || url.password
+      || url.pathname !== '/Demphil/koratv-web/public-match-feed/site-metadata/matches.json') throw new Error();
+    return url.href;
+  } catch { throw new Error('Invalid public GitHub match-feed URL'); }
+}
+
 export async function loadWebsiteMatchFeed(apiOrigin, {
-  snapshotOrigin = apiOrigin, fetchImpl = fetch, force = false, now = Date.now(),
+  snapshotUrl = 'https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json',
+  fetchImpl = fetch, force = false, now = Date.now(),
 } = {}) {
   const apiBase = safeOrigin(apiOrigin, 'match API');
-  const snapshotBase = safeOrigin(snapshotOrigin, 'Njalla snapshot');
+  const snapshotTarget = new URL(safeSnapshotUrl(snapshotUrl));
   const cache = force ? 'no-store' : 'default';
   const suffix = force ? `?t=${now}` : '';
   let snapshotError;
 
   try {
-    const response = await fetchImpl(`${snapshotBase}/site-metadata/matches.json${suffix}`, {
+    const response = await fetchImpl(`${snapshotTarget.href}${suffix}`, {
       cache, credentials: 'omit', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(5000),
     });
-    if (!response.ok) throw new Error(`Njalla snapshot status ${response.status}`);
+    if (!response.ok) throw new Error(`Static match feed status ${response.status}`);
     const matches = parsePublicMatchSnapshot(await response.json(), { now });
     return matches;
   } catch (error) { snapshotError = error; }
@@ -113,7 +124,7 @@ export async function loadWebsiteMatchFeed(apiOrigin, {
     const body = await response.json();
     return (Array.isArray(body.matches) ? body.matches : []).map(normalizeWebsiteMatch).filter(Boolean);
   } catch (error) {
-    if (snapshotError) throw new Error(`Njalla snapshot failed (${snapshotError.message}); API fallback failed (${error.message})`);
+    if (snapshotError) throw new Error(`Static match feed failed (${snapshotError.message}); API fallback failed (${error.message})`);
     throw error;
   }
 }

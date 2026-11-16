@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadWebsiteMatchFeed, normalizeWebsiteMatch, parsePublicMatchSnapshot } from '../shared/public-match-feed.mjs';
 
-test('fresh Njalla snapshots become lightweight Kooora website cards', () => {
+test('fresh static snapshots become lightweight Kooora website cards', () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const matches = parsePublicMatchSnapshot({ version: 1, generatedAt: new Date(now - 30_000).toISOString(), matches: [
     { id: 'fixture-1', match_id: 'fixture-1', source: 'kooora', active: true,
@@ -27,7 +27,7 @@ test('snapshot freshness, bounds, and youth-competition exclusion fail closed', 
   const now = Date.parse('2026-11-13T18:00:00Z');
   const base = { version: 1, generatedAt: new Date(now).toISOString(), matches: [] };
   assert.deepEqual(parsePublicMatchSnapshot(base, { now }), []);
-  assert.throws(() => parsePublicMatchSnapshot({ ...base, generatedAt: new Date(now - 11 * 60_000).toISOString() }, { now }), /stale/);
+  assert.throws(() => parsePublicMatchSnapshot({ ...base, generatedAt: new Date(now - 31 * 60_000).toISOString() }, { now }), /stale/);
   assert.throws(() => parsePublicMatchSnapshot({ ...base, matches: Array(5001).fill({}) }, { now }), /Invalid/);
 
   const youth = normalizeWebsiteMatch({ source: 'kooora', home_team: 'Real Madrid U19', away_team: 'Roma U19',
@@ -48,27 +48,29 @@ test('the compatibility feed normalizer also accepts the former API summary shap
   assert.equal(match.playbackState, '');
 });
 
-test('the Njalla snapshot is the primary read and the legacy endpoint is only a fallback', async () => {
+test('the static snapshot is the primary read and the legacy endpoint is only a fallback', async () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const calls = [];
   const match = { id: 'kooora-1', match_id: 'kooora-1', source: 'kooora', active: true, home_team: 'Home', away_team: 'Away',
     league: 'الدوري الإنجليزي الممتاز', kickoff_time: '2026-11-13T20:00:00Z', payload: { status: 'FIXTURE' } };
-  const rows = await loadWebsiteMatchFeed('https://feed.example/', { now, force: true, fetchImpl: async (url, options) => {
+  const feedUrl = 'https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json';
+  const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click/', { now, force: true, snapshotUrl: feedUrl, fetchImpl: async (url, options) => {
     calls.push([url, options]);
     return Response.json({ version: 1, generatedAt: new Date(now).toISOString(), matches: [match] });
   } });
   assert.equal(rows[0].matchId, 'kooora-1');
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], `https://feed.example/site-metadata/matches.json?t=${now}`);
+  assert.equal(calls[0][0], `${feedUrl}?t=${now}`);
   assert.equal(calls[0][1].credentials, 'omit');
   assert.equal(calls[0][1].cache, 'no-store');
 });
 
-test('the public Njalla feed is independent from the website API origin', async () => {
+test('the public GitHub feed is independent from the website API origin', async () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const calls = [];
-  const rows = await loadWebsiteMatchFeed('https://korafabor.pro', {
-    snapshotOrigin: 'https://stream-api.koratv.click', now,
+  const feedUrl = 'https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json';
+  const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', {
+    snapshotUrl: feedUrl, now,
     fetchImpl: async url => {
       calls.push(url);
       return Response.json({ version: 1, generatedAt: new Date(now).toISOString(), matches: [
@@ -77,32 +79,38 @@ test('the public Njalla feed is independent from the website API origin', async 
       ] });
     },
   });
-  assert.deepEqual(calls.map(url => new URL(url).origin), ['https://stream-api.koratv.click']);
+  assert.deepEqual(calls, [feedUrl]);
   assert.equal(rows[0].matchId, 'central-feed');
 });
 
 test('a valid empty snapshot does not send avoidable traffic to the legacy API', async () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const calls = [];
-  const rows = await loadWebsiteMatchFeed('https://feed.example', { now, fetchImpl: async url => {
+  const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl: async url => {
     calls.push(url);
     return Response.json({ version: 1, generatedAt: new Date(now).toISOString(), matches: [] });
   } });
   assert.deepEqual(rows, []);
-  assert.deepEqual(calls.map(url => new URL(url).pathname), ['/site-metadata/matches.json']);
+  assert.deepEqual(calls, ['https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json']);
 });
 
-test('the legacy API is used only when the Njalla snapshot request fails', async () => {
+test('the legacy API is used only when the static snapshot request fails', async () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const calls = [];
-  const rows = await loadWebsiteMatchFeed('https://feed.example', { now, fetchImpl: async url => {
+  const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl: async url => {
     calls.push(url);
-    return url.endsWith('/site-metadata/matches.json')
+    return url.includes('/site-metadata/matches.json')
       ? new Response('', { status: 503 })
       : Response.json({ matches: [{ matchId: 'fallback', homeTeam: 'Home', awayTeam: 'Away',
         scheduledAt: '2026-11-13T20:00:00Z', status: 'FIXTURE' }] });
   } });
   assert.equal(rows[0].matchId, 'fallback');
-  assert.deepEqual(calls.map(url => new URL(url).pathname), ['/site-metadata/matches.json', '/api/matches']);
+  assert.deepEqual(calls.map(url => url.startsWith('https://raw.githubusercontent.com/') ? '/site-metadata/matches.json' : new URL(url).pathname), ['/site-metadata/matches.json', '/api/matches']);
+});
+
+test('only the public raw GitHub feed URL is accepted', async () => {
+  await assert.rejects(loadWebsiteMatchFeed('https://stream-api.koratv.click', {
+    snapshotUrl: 'https://example.com/site-metadata/matches.json',
+  }), /Invalid public GitHub match-feed URL/);
 });
 

@@ -1,0 +1,30 @@
+name: Public match feed tests
+
+on:
+  pull_request:
+    paths:
+      - "assets/js/api.js"
+      - "scripts/collect-kooora-public-feed.mjs"
+      - "scripts/collect-kooora-public-feed.test.mjs"
+      - "scripts/public-match-feed.test.mjs"
+      - "shared/public-match-feed.mjs"
+      - "site-data/public-snapshot.mjs"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --fund=false
+      - run: node --test scripts/collect-kooora-public-feed.test.mjs scripts/public-match-feed.test.mjs scripts/build-public-site.test.cjs
+

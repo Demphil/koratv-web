@@ -1,6 +1,6 @@
 import { sourceMatchState, nextMoroccoMidnight } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
 import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs?v=20261013-youth-exclusion';
-import { loadWebsiteMatchFeed, normalizeWebsiteMatch } from '../../shared/public-match-feed.mjs?v=20261113-njalla-feed';
+import { loadWebsiteMatchFeed, normalizeWebsiteMatch } from '../../shared/public-match-feed.mjs?v=20261116-github-kooora';
 
 // --- 1. Cache Configuration ---
 
@@ -8,7 +8,8 @@ const CACHE_EXPIRY_MS = 20 * 1000;
 const SNAPSHOT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const MATCHES_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
-const MATCHES_FEED_ORIGIN = window.__MATCHES_FEED_ORIGIN__ || 'https://stream-api.koratv.click';
+const MATCHES_FEED_URL = window.__MATCHES_FEED_URL__
+  || 'https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json';
 
 const CACHE_KEY_TODAY = 'matches_cache_today_v2';
 
@@ -183,7 +184,7 @@ async function getStagingMatches({ force = false } = {}) {
   }
   if (!stagingMatchesPromise) {
     stagingMatchesPending = true;
-    const request = loadWebsiteMatchFeed(MATCHES_API_ORIGIN, { force, snapshotOrigin: MATCHES_FEED_ORIGIN })
+    const request = loadWebsiteMatchFeed(MATCHES_API_ORIGIN, { force, snapshotUrl: MATCHES_FEED_URL })
       .then(matches => matches.map(normalizeStagingMatch).filter(Boolean))
       .then((matches) => {
         if (stagingMatchesPromise === request) stagingMatchesExpiresAt = Date.now() + CACHE_EXPIRY_MS;
