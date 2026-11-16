@@ -51,47 +51,80 @@ test('the compatibility feed normalizer also accepts the former API summary shap
 test('the static snapshot is the primary read and the legacy endpoint is only a fallback', async () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const calls = [];
+  const sha = 'a'.repeat(40);
   const match = { id: 'kooora-1', match_id: 'kooora-1', source: 'kooora', active: true, home_team: 'Home', away_team: 'Away',
     league: 'الدوري الإنجليزي الممتاز', kickoff_time: '2026-11-13T20:00:00Z', payload: { status: 'FIXTURE' } };
   const feedUrl = 'https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json';
   const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click/', { now, force: true, snapshotUrl: feedUrl, fetchImpl: async (url, options) => {
     calls.push([url, options]);
+    if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
+      return Response.json({ ref: 'refs/heads/public-match-feed', object: { sha, type: 'commit' } });
+    }
     return Response.json({ version: 1, generatedAt: new Date(now).toISOString(), matches: [match] });
   } });
   assert.equal(rows[0].matchId, 'kooora-1');
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], `${feedUrl}?t=${now}`);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0][0], 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed');
   assert.equal(calls[0][1].credentials, 'omit');
   assert.equal(calls[0][1].cache, 'no-store');
+  assert.equal(calls[1][0], feedUrl.replace('/public-match-feed/', `/${sha}/`));
+  assert.equal(calls[1][1].cache, 'no-store');
 });
 
 test('the public GitHub feed is independent from the website API origin', async () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const calls = [];
+  const sha = 'b'.repeat(40);
   const feedUrl = 'https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json';
   const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', {
     snapshotUrl: feedUrl, now,
     fetchImpl: async url => {
       calls.push(url);
+      if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
+        return Response.json({ ref: 'refs/heads/public-match-feed', object: { sha, type: 'commit' } });
+      }
       return Response.json({ version: 1, generatedAt: new Date(now).toISOString(), matches: [
         { id: 'central-feed', source: 'kooora', active: true, home_team: 'Home', away_team: 'Away',
           league: 'International Friendlies', kickoff_time: '2026-11-13T20:00:00Z', payload: {} },
       ] });
     },
   });
-  assert.deepEqual(calls, [feedUrl]);
+  assert.deepEqual(calls, ['https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed', feedUrl.replace('/public-match-feed/', `/${sha}/`)]);
   assert.equal(rows[0].matchId, 'central-feed');
 });
 
 test('a valid empty snapshot does not send avoidable traffic to the legacy API', async () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const calls = [];
+  const sha = 'c'.repeat(40);
   const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl: async url => {
     calls.push(url);
+    if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
+      return Response.json({ ref: 'refs/heads/public-match-feed', object: { sha, type: 'commit' } });
+    }
     return Response.json({ version: 1, generatedAt: new Date(now).toISOString(), matches: [] });
   } });
   assert.deepEqual(rows, []);
-  assert.deepEqual(calls, ['https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json']);
+  assert.deepEqual(calls, ['https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed',
+    `https://raw.githubusercontent.com/Demphil/koratv-web/${sha}/site-metadata/matches.json`]);
+});
+
+test('a resolved feed commit is reused for ten minutes within the page session', async () => {
+  const now = Date.parse('2026-11-13T18:00:00Z');
+  const sha = 'd'.repeat(40);
+  const calls = [];
+  const fetchImpl = async url => {
+    calls.push(url);
+    if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
+      return Response.json({ ref: 'refs/heads/public-match-feed', object: { sha, type: 'commit' } });
+    }
+    return Response.json({ version: 1, generatedAt: new Date(now).toISOString(), matches: [] });
+  };
+
+  await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl });
+  await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now: now + 60_000, fetchImpl });
+  assert.equal(calls.filter(url => url.includes('/git/ref/')).length, 1);
+  assert.equal(calls.filter(url => url.includes(`/${sha}/site-metadata/`)).length, 2);
 });
 
 test('the legacy API is used only when the static snapshot request fails', async () => {
@@ -99,13 +132,18 @@ test('the legacy API is used only when the static snapshot request fails', async
   const calls = [];
   const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl: async url => {
     calls.push(url);
+    if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
+      return new Response('', { status: 503 });
+    }
     return url.includes('/site-metadata/matches.json')
       ? new Response('', { status: 503 })
       : Response.json({ matches: [{ matchId: 'fallback', homeTeam: 'Home', awayTeam: 'Away',
         scheduledAt: '2026-11-13T20:00:00Z', status: 'FIXTURE' }] });
   } });
   assert.equal(rows[0].matchId, 'fallback');
-  assert.deepEqual(calls.map(url => url.startsWith('https://raw.githubusercontent.com/') ? '/site-metadata/matches.json' : new URL(url).pathname), ['/site-metadata/matches.json', '/api/matches']);
+  assert.deepEqual(calls.map(url => new URL(url).pathname), [
+    '/repos/Demphil/koratv-web/git/ref/heads/public-match-feed', '/Demphil/koratv-web/public-match-feed/site-metadata/matches.json', '/api/matches',
+  ]);
 });
 
 test('only the public raw GitHub feed URL is accepted', async () => {
