@@ -5,6 +5,22 @@ const path = require('node:path');
 const { load } = require('cheerio');
 const root = path.resolve(__dirname, '..');
 
+test('home and news use the green KoraTV shield instead of the legacy rectangular logo', () => {
+  for (const file of ['index.html', 'news.html']) {
+    const $ = load(fs.readFileSync(path.join(root, file), 'utf8'));
+    const logo = $('.header .logo img');
+    assert.equal(logo.length, 1);
+    assert.equal(logo.attr('src'), '/assets/images/koratv-logo.svg?v=20261116-shield');
+    assert.equal(logo.attr('width'), '230');
+    assert.equal(logo.attr('height'), '56');
+    assert.match(logo.attr('alt'), /KoraTV/);
+  }
+  const svg = fs.readFileSync(path.join(root, 'assets/images/koratv-logo.svg'), 'utf8');
+  assert.match(svg, /<title id="title">KoraTV<\/title>/);
+  assert.match(svg, /id="shield"/);
+  assert.match(svg, /id="emerald"/);
+});
+
 test('homepage has one consistent brand graph, useful title and no competitor identities', () => {
   const $ = load(fs.readFileSync(path.join(root, 'index.html'), 'utf8'));
   assert.equal($('h1').length, 1);
