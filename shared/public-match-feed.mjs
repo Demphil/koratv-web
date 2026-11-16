@@ -87,14 +87,65 @@ function safeOrigin(value, label) {
   } catch { throw new Error(`Invalid ${label} origin`); }
 }
 
+const FEED_REF_URL = 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed';
+const FEED_REF_CACHE_KEY = 'public_kooora_feed_ref_v1';
+const FEED_REF_CACHE_TTL_MS = 10 * 60_000;
+const feedRefMemoryCache = new WeakMap();
+
 function safeSnapshotUrl(value) {
   try {
     const url = new URL(String(value || ''));
     if (url.protocol !== 'https:' || url.hostname !== 'raw.githubusercontent.com'
       || url.username || url.password
       || url.pathname !== '/Demphil/koratv-web/public-match-feed/site-metadata/matches.json') throw new Error();
-    return url.href;
+    return url;
   } catch { throw new Error('Invalid public GitHub match-feed URL'); }
+}
+
+function readCachedFeedRef(fetchImpl, now) {
+  const memory = feedRefMemoryCache.get(fetchImpl);
+  if (memory && memory.expiresAt > now) return memory.sha;
+  try {
+    const stored = JSON.parse(localStorage.getItem(FEED_REF_CACHE_KEY) || 'null');
+    if (/^[a-f0-9]{40}$/i.test(stored?.sha || '') && stored.expiresAt > now) {
+      feedRefMemoryCache.set(fetchImpl, stored);
+      return stored.sha;
+    }
+  } catch {}
+  return '';
+}
+
+async function resolveImmutableSnapshotUrl(snapshotTarget, { fetchImpl, force, now }) {
+  if (!force) {
+    const cachedSha = readCachedFeedRef(fetchImpl, now);
+    if (cachedSha) return new URL(snapshotTarget.href.replace('/public-match-feed/', `/${cachedSha}/`));
+  }
+
+  const response = await fetchImpl(FEED_REF_URL, {
+    cache: 'no-store', credentials: 'omit', headers: { Accept: 'application/vnd.github+json' },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!response.ok) throw new Error(`GitHub feed version status ${response.status}`);
+  const ref = await response.json();
+  const sha = ref?.object?.sha;
+  if (ref?.ref !== 'refs/heads/public-match-feed' || ref?.object?.type !== 'commit' || !/^[a-f0-9]{40}$/i.test(sha || '')) {
+    throw new Error('Invalid GitHub feed version');
+  }
+
+  const cached = { sha, expiresAt: now + FEED_REF_CACHE_TTL_MS };
+  feedRefMemoryCache.set(fetchImpl, cached);
+  try { localStorage.setItem(FEED_REF_CACHE_KEY, JSON.stringify(cached)); } catch {}
+  return new URL(snapshotTarget.href.replace('/public-match-feed/', `/${sha}/`));
+}
+
+async function fetchSnapshot(target, { fetchImpl, force, now, mutable = false }) {
+  const suffix = force && mutable ? `?t=${now}` : '';
+  const response = await fetchImpl(`${target.href}${suffix}`, {
+    cache: force ? 'no-store' : 'default', credentials: 'omit',
+    headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(5000),
+  });
+  if (!response.ok) throw new Error(`Static match feed status ${response.status}`);
+  return parsePublicMatchSnapshot(await response.json(), { now });
 }
 
 export async function loadWebsiteMatchFeed(apiOrigin, {
@@ -102,23 +153,21 @@ export async function loadWebsiteMatchFeed(apiOrigin, {
   fetchImpl = fetch, force = false, now = Date.now(),
 } = {}) {
   const apiBase = safeOrigin(apiOrigin, 'match API');
-  const snapshotTarget = new URL(safeSnapshotUrl(snapshotUrl));
-  const cache = force ? 'no-store' : 'default';
-  const suffix = force ? `?t=${now}` : '';
+  const snapshotTarget = safeSnapshotUrl(snapshotUrl);
   let snapshotError;
 
   try {
-    const response = await fetchImpl(`${snapshotTarget.href}${suffix}`, {
-      cache, credentials: 'omit', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) throw new Error(`Static match feed status ${response.status}`);
-    const matches = parsePublicMatchSnapshot(await response.json(), { now });
-    return matches;
+    const immutableTarget = await resolveImmutableSnapshotUrl(snapshotTarget, { fetchImpl, force, now });
+    return await fetchSnapshot(immutableTarget, { fetchImpl, force, now });
   } catch (error) { snapshotError = error; }
 
   try {
-    const response = await fetchImpl(`${apiBase}/api/matches${suffix}`, {
-      cache, credentials: 'omit', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000),
+    return await fetchSnapshot(snapshotTarget, { fetchImpl, force, now, mutable: true });
+  } catch (error) { snapshotError = new Error(`${snapshotError.message}; mutable snapshot failed (${error.message})`); }
+
+  try {
+    const response = await fetchImpl(`${apiBase}/api/matches${force ? `?t=${now}` : ''}`, {
+      cache: force ? 'no-store' : 'default', credentials: 'omit', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) throw new Error(`Match API status ${response.status}`);
     const body = await response.json();
