@@ -1,0 +1,14 @@
+#featured-matches.matches-grid { display: grid; grid-template-columns: minmax(0, 1fr) !important; gap: 12px; }
+#featured-matches.matches-grid > * { min-width: 0; }
+.prerendered-match.match-card { min-height: 0; height: auto; gap: 12px; }
+.prerendered-match h3.teams { margin: 0; font-size: inherit; align-items: center; }
+.prerendered-match .team { min-width: 0; }
+.prerendered-match .team img { flex: 0 0 50px; object-fit: contain; }
+.prerendered-match .team-name { margin: 0; }
+.prerendered-match .match-info { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.prerendered-match .prerendered-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; font-size: 13px; }
+.prerendered-match .prerendered-meta a { margin: 0; align-self: auto; }
+.prerendered-match > p { margin: 0; font-size: 13px; }
+@media (max-width: 600px) {
+  .prerendered-match .prerendered-meta { font-size: 12px; }
+}

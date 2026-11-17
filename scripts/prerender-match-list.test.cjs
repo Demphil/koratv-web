@@ -40,7 +40,12 @@ test('no stale live label, guessed ending, HTML injection, or private payload is
   const row = { ...fixture, home_team: '<script>alert(1)</script>', channel: '<img onerror="x">',
     payload: { status: '2H', isFinished: true, score: '2 - 0', providerUrl: 'SECRET_PROVIDER_URL' } };
   const html = prerenderHomepage(markup, [row], () => 'safe', new Date('2026-10-05T10:00:00Z'));
-  assert.doesNotMatch(html, /SECRET_PROVIDER_URL|النتيجة النهائية|<script>alert|<img onerror/);
+  assert.doesNotMatch(html, /SECRET_PROVIDER_URL|النتيجة النهائية/);
+  const $ = load(html);
+  assert.equal($('script:not([type="module"])').length, 0);
+  assert.equal($('#featured-matches img').length, 2);
+  assert.equal($('#featured-matches .team-name').first().text(), row.home_team);
+  assert.ok($('img').toArray().every(node => $(node).attr('onerror') === "this.onerror=null;this.src='/assets/images/default-logo.jpg';"));
   assert.match(html, /النتيجة عند تحديث الجدول/);
   assert.match(html, /&lt;script&gt;/);
 });
@@ -49,6 +54,19 @@ test('empty daily snapshot keeps the ordinary loading state without fabricated m
   const html = prerenderHomepage(markup, [], () => 'none', new Date('2026-10-05T10:00:00Z'));
   assert.equal(load(html)('#loading').length, 1);
   assert.equal(load(html)('.prerendered-match').length, 0);
+});
+
+test('initial schedule uses the ordinary team layout with safe real logos and a local fallback', () => {
+  const row = { ...fixture, payload: { status: 'NS', homeLogo: 'https://cdn.example/egypt.png', awayLogo: 'javascript:alert(1)' } };
+  const $ = load(prerenderHomepage(markup, [row], () => 'logos', new Date('2026-10-05T10:00:00Z')));
+  const card = $('#featured-matches .prerendered-match.match-card');
+  assert.equal(card.find('.teams .team').length, 2);
+  assert.equal(card.find('.team img').eq(0).attr('src'), 'https://cdn.example/egypt.png');
+  assert.equal(card.find('.team img').eq(1).attr('src'), '/assets/images/default-logo.jpg');
+  assert.equal(card.find('.team img').eq(0).attr('width'), '50');
+  assert.equal(card.find('.team img').eq(0).attr('alt'), fixture.home_team);
+  assert.equal(card.find('.match-info .time').text(), '19:00');
+  assert.doesNotMatch($.html(), /javascript:/);
 });
 
 test('public schedule links only to statistics pages and never serializes playback resources', () => {

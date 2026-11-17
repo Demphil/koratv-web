@@ -122,7 +122,7 @@ test('a resolved feed commit is reused for ten minutes within the page session',
   };
 
   await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl });
-  await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now: now + 60_000, fetchImpl });
+  await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now: now + 60_000, force: true, fetchImpl });
   assert.equal(calls.filter(url => url.includes('/git/ref/')).length, 1);
   assert.equal(calls.filter(url => url.includes(`/${sha}/site-metadata/`)).length, 2);
 });
@@ -142,7 +142,7 @@ test('the legacy API is used only when the static snapshot request fails', async
   } });
   assert.equal(rows[0].matchId, 'fallback');
   assert.deepEqual(calls.map(url => new URL(url).pathname), [
-    '/repos/Demphil/koratv-web/git/ref/heads/public-match-feed', '/Demphil/koratv-web/public-match-feed/site-metadata/matches.json', '/api/matches',
+    '/repos/Demphil/koratv-web/git/ref/heads/public-match-feed', '/Demphil/koratv-web/public-match-feed/site-metadata/matches.json', '/site-metadata/matches.json', '/api/matches',
   ]);
 });
 
@@ -150,5 +150,23 @@ test('only the public raw GitHub feed URL is accepted', async () => {
   await assert.rejects(loadWebsiteMatchFeed('https://stream-api.koratv.click', {
     snapshotUrl: 'https://example.com/site-metadata/matches.json',
   }), /Invalid public GitHub match-feed URL/);
+});
+
+test('fresh lightweight metadata replaces a stale GitHub feed without calling the streaming API', async () => {
+  const now = Date.parse('2026-11-17T18:00:00Z');
+  const calls = [];
+  const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, force: true, fetchImpl: async url => {
+    calls.push(url);
+    if (url.includes('/git/ref/')) return new Response('', { status: 503 });
+    const generatedAt = url.startsWith('https://raw.githubusercontent.com/') ? now - 3600_000 : now;
+    return Response.json({ version: 1, generatedAt: new Date(generatedAt).toISOString(), matches: [{
+      id: 'fresh-metadata', source: 'kooora', home_team: 'Home', away_team: 'Away',
+      kickoff_time: '2026-11-17T20:00:00Z', payload: { homeLogo: 'https://cdn.example/home.png' }
+    }] });
+  } });
+  assert.equal(rows[0].matchId, 'fresh-metadata');
+  assert.equal(rows[0].homeTeam.logo, 'https://cdn.example/home.png');
+  assert.equal(calls.at(-1), 'https://stream-api.koratv.click/site-metadata/matches.json');
+  assert.equal(calls.some(url => new URL(url).pathname === '/api/matches'), false);
 });
 

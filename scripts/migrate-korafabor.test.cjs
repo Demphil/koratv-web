@@ -3,6 +3,13 @@ const assert = require('node:assert/strict');
 const { load } = require('cheerio');
 const { rewriteHtml, ownedUrl, TITLE, versionModuleImports } = require('./migrate-korafabor.cjs');
 
+test('KoraFabor yellow identity cannot inherit the KoraTV green override', () => {
+  const $ = load(rewriteHtml('<head><link rel="stylesheet" href="/assets/css/koratv-green-pages.css?v=old"><style data-source="/assets/css/koratv-green-pages.css">body{background:green!important}</style></head><body><header class="header"></header></body>', 'index.html'));
+  assert.equal($('[href*="koratv-green-pages.css"],style[data-source*="koratv-green-pages.css"]').length, 0);
+  assert.match($('link[href*="korafabor-theme.css"]').attr('href'), /20261117-yellow1/);
+  assert.equal($('meta[name="theme-color"]').attr('content'), '#f9d447');
+});
+
 test('mobile viewport fix is scoped, repeatable and does not alter match data or advertising', () => {
   const source = '<head><link rel="stylesheet" href="/assets/css/matches.css"></head><main class="matches-main"><p>Home 2 - 1 Away</p></main>';
   const first = rewriteHtml(source, 'index.html');
@@ -60,7 +67,7 @@ test('rebranding preserves the live footer year hook and supplies share metadata
 });
 test('module cache versions change only parsed local imports, never ad URLs or unrelated strings', () => {
   const result = versionModuleImports("import { x } from '../../shared/match-lifecycle.mjs?v=old'; const ad='https://advertiser.test/tag.js?v=old';");
-  assert.match(result, /match-lifecycle\.mjs\?v=20261101-njalla/);
+  assert.match(result, /match-lifecycle\.mjs\?v=20261117-logo-feed/);
   assert.match(result, /https:\/\/advertiser\.test\/tag\.js\?v=old/);
 });
 

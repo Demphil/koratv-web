@@ -21,12 +21,21 @@ function renderScheduleCard(row, slug) {
   }).format(new Date(kickoff));
   const state = sourceMatchState(payload);
   const score = /^\d+\s*-\s*\d+$/.test(String(payload.score || '')) ? payload.score : '';
-  return `<article class="prerendered-match" data-fixture-day="${dateKey(kickoff)}">
-  <h3>${escapeHtml(row.home_team)} <span>ضد</span> ${escapeHtml(row.away_team)}</h3>
-  <p>${escapeHtml(row.league || 'كرة القدم')}</p>
-  <time datetime="${escapeHtml(new Date(kickoff).toISOString())}">${escapeHtml(time)} · توقيت المغرب</time>
+  const logo = value => {
+    try { const url = new URL(value); if (url.protocol === 'https:' && !url.username && !url.password) return escapeHtml(url.href); } catch {}
+    return '/assets/images/default-logo.jpg';
+  };
+  const clock = new Intl.DateTimeFormat('ar-MA-u-nu-latn', {
+    timeZone: 'Africa/Casablanca', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).format(new Date(kickoff));
+  return `<article class="prerendered-match match-card" data-fixture-day="${dateKey(kickoff)}">
+  <h3 class="teams" aria-label="${escapeHtml(row.home_team)} ضد ${escapeHtml(row.away_team)}">
+    <span class="team"><img src="${logo(payload.homeLogo || payload.homeTeam?.logo)}" alt="${escapeHtml(row.home_team)}" width="50" height="50" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='/assets/images/default-logo.jpg';"><span class="team-name">${escapeHtml(row.home_team)}</span></span>
+    <span class="match-info"><span class="score" dir="ltr">${escapeHtml(score || 'VS')}</span><time class="time" datetime="${escapeHtml(new Date(kickoff).toISOString())}" title="${escapeHtml(time)} · توقيت المغرب">${escapeHtml(clock)}</time></span>
+    <span class="team"><img src="${logo(payload.awayLogo || payload.awayTeam?.logo)}" alt="${escapeHtml(row.away_team)}" width="50" height="50" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='/assets/images/default-logo.jpg';"><span class="team-name">${escapeHtml(row.away_team)}</span></span>
+  </h3>
+  <div class="prerendered-meta"><span>${escapeHtml(row.league || 'كرة القدم')}</span><a href="/match/${encodeURIComponent(slug)}/">نتيجة المباراة وإحصائياتها</a></div>
   ${score ? `<p>${state === 'ended' ? 'النتيجة النهائية' : 'النتيجة عند تحديث الجدول'}: <b dir="ltr">${escapeHtml(score)}</b></p>` : ''}
-  <a href="/match/${encodeURIComponent(slug)}/">نتيجة المباراة وإحصائياتها</a>
 </article>`;
 }
 

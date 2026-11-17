@@ -10,7 +10,7 @@ const SITE = 'https://korafabor.pro';
 const BRAND = 'كورة فابور';
 const TITLE = 'كورة فابور | kora fabor - مباريات اليوم بث مباشر';
 const DESCRIPTION = 'كورة فابور korafabor.pro لمتابعة مباريات اليوم، النتائج المباشرة والإحصائيات ومواعيد اللقاءات بتوقيت المغرب، مع أخبار كرة القدم وروابط المشاهدة المتاحة.';
-const MODULE_VERSION = '20261101-njalla';
+const MODULE_VERSION = '20261117-logo-feed';
 function versionModuleImports(source) {
   const program = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
   const edits = [];
@@ -55,6 +55,7 @@ function structured(value, key = '') {
 function rewriteHtml(html, route) {
   if (/^google[a-f0-9]+\.html$/.test(route)) return html;
   const $ = load(html);
+  $('link[href*="/assets/css/koratv-green-pages.css"],style[data-source="/assets/css/koratv-green-pages.css"]').remove();
   $('meta[name="ezoic-site-verification"],link[rel="dns-prefetch"][href="//quge5.com"],link[rel="dns-prefetch"][href="//nap5k.com"]').remove();
   $('link[rel="preload"][as="image"][href="/assets/images/logo-header.webp"]').remove();
   for (const element of $('[href],[src]').toArray()) {
@@ -124,9 +125,9 @@ function rewriteHtml(html, route) {
   if (matchViewport) $('head').append('<link rel="stylesheet" href="/assets/css/mobile-viewport.css?v=20261101-scroll1">');
   $('html').addClass('korafabor-theme');
   $('link[href^="/assets/css/korafabor-theme.css"]').remove();
-  $('head').append('<link rel="stylesheet" href="/assets/css/korafabor-theme.css?v=20261102-gold2">');
-  $('meta[name="theme-color"]').attr('content', '#15191c');
-  if (!$('meta[name="theme-color"]').length) $('head').append('<meta name="theme-color" content="#15191c">');
+  $('head').append('<link rel="stylesheet" href="/assets/css/korafabor-theme.css?v=20261117-yellow1">');
+  $('meta[name="theme-color"]').attr('content', '#f9d447');
+  if (!$('meta[name="theme-color"]').length) $('head').append('<meta name="theme-color" content="#f9d447">');
   if (home) {
     $('title').text(TITLE);
     for (const [attribute, name] of [['name', 'description'], ['property', 'og:description'], ['name', 'twitter:description']]) {

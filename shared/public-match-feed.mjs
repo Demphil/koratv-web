@@ -116,10 +116,8 @@ function readCachedFeedRef(fetchImpl, now) {
 }
 
 async function resolveImmutableSnapshotUrl(snapshotTarget, { fetchImpl, force, now }) {
-  if (!force) {
-    const cachedSha = readCachedFeedRef(fetchImpl, now);
-    if (cachedSha) return new URL(snapshotTarget.href.replace('/public-match-feed/', `/${cachedSha}/`));
-  }
+  const cachedSha = readCachedFeedRef(fetchImpl, now);
+  if (cachedSha) return new URL(snapshotTarget.href.replace('/public-match-feed/', `/${cachedSha}/`));
 
   const response = await fetchImpl(FEED_REF_URL, {
     cache: 'no-store', credentials: 'omit', headers: { Accept: 'application/vnd.github+json' },
@@ -164,6 +162,10 @@ export async function loadWebsiteMatchFeed(apiOrigin, {
   try {
     return await fetchSnapshot(snapshotTarget, { fetchImpl, force, now, mutable: true });
   } catch (error) { snapshotError = new Error(`${snapshotError.message}; mutable snapshot failed (${error.message})`); }
+
+  try {
+    return await fetchSnapshot(new URL('/site-metadata/matches.json', apiBase), { fetchImpl, force, now });
+  } catch (error) { snapshotError = new Error(`${snapshotError.message}; metadata snapshot failed (${error.message})`); }
 
   try {
     const response = await fetchImpl(`${apiBase}/api/matches${force ? `?t=${now}` : ''}`, {
