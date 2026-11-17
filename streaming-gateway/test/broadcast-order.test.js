@@ -32,7 +32,7 @@ for (const file of ['../../assets/js/matches.js', '../../../foottv6/assets/js/ma
       { id: 'newest', playbackState: 'live', resourceStatus: 'ASSIGNED', broadcastRank: 8, scheduledAt: '2026-10-04T15:01:00Z' },
       { id: 'far-future', playbackState: 'upcoming', resourceStatus: 'SCHEDULED', scheduledAt: '2026-10-04T20:00:00Z' },
     ];
-    assert.deepEqual(matches.sort((a,b) => compare(a,b,now)).map(match => match.id), ['newest', 'second', 'shared-ready', 'paused', 'manual-first', 'preparation-window', 'far-future', 'unassigned', 'ended']);
+    assert.deepEqual(matches.sort((a,b) => compare(a,b,now)).map(match => match.id), ['newest', 'manual-first', 'second', 'shared-ready', 'paused', 'preparation-window', 'far-future', 'unassigned', 'ended']);
     assert.equal(compare({ playbackState: 'live' }, { playbackState: 'live' }), 0);
     const scoreBlock = text.slice(text.indexOf('function matchCompletenessScore('), text.indexOf('function dedupeMatches('));
     const score = vm.runInNewContext(scoreBlock + ';matchCompletenessScore', { cardsTotal: () => 0 });

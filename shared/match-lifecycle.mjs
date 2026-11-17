@@ -2,7 +2,7 @@ const endedStatuses = new Set(['RESULT', 'FINISHED', 'ENDED', 'FULL TIME', 'FT',
 const liveStatuses = new Set(['LIVE', '1H', 'HT', '2H', 'ET', 'BT', 'P', 'INT', 'SUSP', 'IN PLAY', 'IN PROGRESS', 'HALF TIME', 'مباشر', 'جارية']);
 const waitingStatuses = new Set(['FIXTURE', 'NS', 'TBD', 'NOT STARTED', 'SCHEDULED']);
 const unavailableStatuses = new Set(['PST', 'POSTPONED', 'CANC', 'CANCELLED', 'CANCELED', 'ABD', 'ABANDONED', 'AWD', 'WO']);
-export const DEFAULT_STREAM_OPENS_BEFORE_MINUTES = 35;
+export const DEFAULT_STREAM_OPENS_BEFORE_MINUTES = 30;
 
 export function nextMoroccoMidnight(reference = Date.now()) {
   const parts = value => Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
@@ -50,6 +50,10 @@ export function frontendMatchState(match, diffMinutes) {
   const state = sourceMatchState(match);
   if (state === 'live' || state === 'ended') return state;
   if (state === 'unavailable') return 'upcoming';
-  if (['live', 'ended', 'upcoming'].includes(match.playbackState)) return match.playbackState;
-  return match.isLive === true || diffMinutes <= 0 ? 'live' : 'upcoming';
+  if (match.playbackState === 'ended') return 'ended';
+  // A cached "upcoming" state must not keep the preparation window closed.
+  if (Number.isFinite(diffMinutes)) {
+    return diffMinutes <= DEFAULT_STREAM_OPENS_BEFORE_MINUTES ? 'live' : 'upcoming';
+  }
+  return match.playbackState === 'live' ? 'live' : 'upcoming';
 }
