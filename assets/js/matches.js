@@ -398,14 +398,20 @@ function renderSection(container, matches, message) {
 
 function compareBroadcastPriority(a, b, now = new Date()) {
   const start = match => matchStartDate(match)?.getTime() || 0;
-  const phase = match => sourceMatchState(match) === 'upcoming' && start(match) > now.getTime()
-    ? 'upcoming' : frontendMatchState(match, (start(match) - now.getTime()) / 60000);
-  const group = match => phase(match) === 'ended' ? 5
-    : phase(match) === 'live' && (match.broadcastPaused === true || match.resourceStatus === 'PAUSED') ? 1
-    : (match.resourceStatus === 'WAITING' && match.sourceReady !== true)
-      || (phase(match) === 'live' && match.resourceStatus !== 'ASSIGNED' && match.sourceReady !== true) ? 4
-    : phase(match) === 'live' ? 0
-    : start(match) <= now.getTime() + 60 * 60000 ? 2 : 3;
+  const phase = match => {
+    const state = sourceMatchState(match);
+    if (['live', 'ended', 'unavailable'].includes(state)) return state;
+    const playback = frontendMatchState(match, (start(match) - now.getTime()) / 60000);
+    if (playback === 'ended') return 'ended';
+    return start(match) > now.getTime() ? 'upcoming' : playback;
+  };
+  const group = match => {
+    const state = phase(match);
+    if (state === 'ended') return 5;
+    if (state === 'unavailable') return 4;
+    if (state === 'live') return match.broadcastPaused === true || match.resourceStatus === 'PAUSED' ? 1 : 0;
+    return start(match) <= now.getTime() + 60 * 60000 ? 2 : 3;
+  };
   const difference = group(a) - group(b);
   if (difference) return difference;
   const timeDifference = group(a) === 0 ? start(b) - start(a) : start(a) - start(b);

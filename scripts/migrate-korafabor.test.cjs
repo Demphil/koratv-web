@@ -6,7 +6,7 @@ const { rewriteHtml, ownedUrl, TITLE, versionModuleImports } = require('./migrat
 test('KoraFabor yellow identity cannot inherit the KoraTV green override', () => {
   const $ = load(rewriteHtml('<head><link rel="stylesheet" href="/assets/css/koratv-green-pages.css?v=old"><style data-source="/assets/css/koratv-green-pages.css">body{background:green!important}</style></head><body><header class="header"></header></body>', 'index.html'));
   assert.equal($('[href*="koratv-green-pages.css"],style[data-source*="koratv-green-pages.css"]').length, 0);
-  assert.match($('link[href*="korafabor-theme.css"]').attr('href'), /20261117-yellow1/);
+  assert.match($('link[href*="korafabor-theme.css"]').attr('href'), /20261117-glass1/);
   assert.equal($('meta[name="theme-color"]').attr('content'), '#f9d447');
 });
 
@@ -67,7 +67,7 @@ test('rebranding preserves the live footer year hook and supplies share metadata
 });
 test('module cache versions change only parsed local imports, never ad URLs or unrelated strings', () => {
   const result = versionModuleImports("import { x } from '../../shared/match-lifecycle.mjs?v=old'; const ad='https://advertiser.test/tag.js?v=old';");
-  assert.match(result, /match-lifecycle\.mjs\?v=20261117-open30/);
+  assert.match(result, /match-lifecycle\.mjs\?v=20261117-live-first/);
   assert.match(result, /https:\/\/advertiser\.test\/tag\.js\?v=old/);
 });
 

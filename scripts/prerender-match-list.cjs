@@ -46,7 +46,8 @@ function prerenderHomepage(html, rows, matchSlug, now = new Date()) {
   const tomorrow = new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
   const groups = { today: [], tomorrow: [] };
   const phase = row => sourceMatchState(row.payload || {}) === 'live' ? 0
-    : sourceMatchState(row.payload || {}) === 'ended' ? 2 : 1;
+    : sourceMatchState(row.payload || {}) === 'ended' ? 3
+    : sourceMatchState(row.payload || {}) === 'unavailable' ? 2 : 1;
   const ordered = [...rows].sort((a, b) => phase(a) - phase(b)
     || (phase(a) === 0 ? -1 : 1) * (Date.parse(a.kickoff_time) - Date.parse(b.kickoff_time)));
   for (const row of ordered) {

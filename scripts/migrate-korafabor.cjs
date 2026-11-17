@@ -10,7 +10,7 @@ const SITE = 'https://korafabor.pro';
 const BRAND = 'كورة فابور';
 const TITLE = 'كورة فابور | kora fabor - مباريات اليوم بث مباشر';
 const DESCRIPTION = 'كورة فابور korafabor.pro لمتابعة مباريات اليوم، النتائج المباشرة والإحصائيات ومواعيد اللقاءات بتوقيت المغرب، مع أخبار كرة القدم وروابط المشاهدة المتاحة.';
-const MODULE_VERSION = '20261117-open30';
+const MODULE_VERSION = '20261117-live-first';
 function versionModuleImports(source) {
   const program = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
   const edits = [];
@@ -125,7 +125,7 @@ function rewriteHtml(html, route) {
   if (matchViewport) $('head').append('<link rel="stylesheet" href="/assets/css/mobile-viewport.css?v=20261101-scroll1">');
   $('html').addClass('korafabor-theme');
   $('link[href^="/assets/css/korafabor-theme.css"]').remove();
-  $('head').append('<link rel="stylesheet" href="/assets/css/korafabor-theme.css?v=20261117-yellow1">');
+  $('head').append('<link rel="stylesheet" href="/assets/css/korafabor-theme.css?v=20261117-glass1">');
   $('meta[name="theme-color"]').attr('content', '#f9d447');
   if (!$('meta[name="theme-color"]').length) $('head').append('<meta name="theme-color" content="#f9d447">');
   if (home) {

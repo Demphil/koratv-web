@@ -96,28 +96,36 @@ html.korafabor-theme .prerendered-match { min-height: 170px; display: flex; flex
 html.korafabor-theme .prerendered-match a { margin-top: auto; align-self: flex-start; }
 html.korafabor-theme .match-card,
 html.korafabor-theme .prerendered-match {
-  color: var(--kf-white);
-  background: linear-gradient(145deg, #24292d, #1b1f22);
-  border: 1px solid var(--kf-line);
+  color: #171b19;
+  background: linear-gradient(135deg, #ffffff2e, #ffffff0a 65%), #0000001a;
+  border: 1px solid #ffffff73;
   border-radius: 8px;
-  box-shadow: inset 0 1px #ffffff08, 0 5px 15px #0002;
+  box-shadow: inset 0 1px #ffffff70, inset 0 -1px #0000000d, 0 6px 18px #00000014;
+  -webkit-backdrop-filter: blur(12px) saturate(112%);
+  backdrop-filter: blur(12px) saturate(112%);
 }
-html.korafabor-theme .match-card::before { background: linear-gradient(120deg, #ffffff08, transparent 45%); opacity: 1; }
-html.korafabor-theme .match-card.is-live { border-color: var(--kf-gold-line); box-shadow: inset 3px 0 var(--kf-gold), 0 5px 15px #0002; }
-html.korafabor-theme .match-card:hover { border-color: var(--kf-gold); transform: translateY(-2px); box-shadow: 0 8px 20px #0004; }
-html.korafabor-theme .score,
-html.korafabor-theme .live-stat-score,
-html.korafabor-theme .league-info,
-html.korafabor-theme .match-scorers i { color: var(--kf-gold-bright); }
-html.korafabor-theme .time,
-html.korafabor-theme .live-stat { background: #121619b3; }
+html.korafabor-theme .match-card::before { background: linear-gradient(120deg, #ffffff1a, transparent 45%); opacity: 1; }
+html.korafabor-theme .match-card.is-live { border-color: #171b1970; box-shadow: inset 3px 0 #171b19b3, 0 6px 18px #0000001a; }
+html.korafabor-theme .match-card.is-ended { opacity: 1; }
+html.korafabor-theme .match-card:hover { border-color: #ffffffb3; transform: translateY(-2px); box-shadow: inset 0 1px #ffffff80, 0 9px 22px #00000024; }
+html.korafabor-theme .match-card .team-name,
+html.korafabor-theme .match-card .score,
+html.korafabor-theme .match-card .live-stat-score,
+html.korafabor-theme .match-card .live-detail-panel strong,
+html.korafabor-theme .match-card .league-info,
+html.korafabor-theme .match-card .match-scorers i,
+html.korafabor-theme .match-card .soon-text-blink { color: #171b19; }
+html.korafabor-theme .match-card .time,
+html.korafabor-theme .match-card .live-stat { background: #0000000f; color: #171b19; }
+html.korafabor-theme .match-card .live-data-strip { border-color: #171b1926; }
 html.korafabor-theme .live-detail-panel {
-  background: #14181ba6;
-  border: 1px solid var(--kf-line);
+  background: #0000000f;
+  border: 1px solid #ffffff40;
   box-shadow: none;
 }
-html.korafabor-theme .live-detail-panel small { color: var(--kf-muted); }
-html.korafabor-theme .match-scorers span { background: #ffffff0a; color: var(--kf-white); }
+html.korafabor-theme .live-detail-panel small { color: #343d31; }
+html.korafabor-theme .match-scorers span { background: #ffffff24; color: #171b19; }
+html.korafabor-theme .prerendered-meta a { color: #253421; }
 html.korafabor-theme .matches-tabs { border-color: #171b1938; }
 html.korafabor-theme .tab-btn { color: #343d32; }
 html.korafabor-theme .tab-btn.active { color: #101511; border-color: #101511; }

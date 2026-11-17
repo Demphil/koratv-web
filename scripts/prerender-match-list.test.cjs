@@ -56,6 +56,15 @@ test('empty daily snapshot keeps the ordinary loading state without fabricated m
   assert.equal(load(html)('.prerendered-match').length, 0);
 });
 
+test('initial visible cards put live games before soon, later, unavailable and finished games', () => {
+  const row = (name, time, status) => ({ ...fixture, home_team: name, kickoff_time: `2026-10-05T${time}:00Z`, payload: { status } });
+  const rows = [row('Ended', '13:00', 'FT'), row('Later', '20:00', 'NS'), row('Soon', '18:15', 'NS'),
+    row('Live', '17:30', '1H'), row('Postponed', '10:00', 'PST')];
+  const $ = load(prerenderHomepage(markup, rows, () => 'fixture', new Date('2026-10-05T18:00:00Z')));
+  assert.deepEqual($('#featured-matches .team-name').toArray().filter((_, index) => index % 2 === 0).map(node => $(node).text()),
+    ['Live', 'Soon', 'Later', 'Postponed', 'Ended']);
+});
+
 test('initial schedule uses the ordinary team layout with safe real logos and a local fallback', () => {
   const row = { ...fixture, payload: { status: 'NS', homeLogo: 'https://cdn.example/egypt.png', awayLogo: 'javascript:alert(1)' } };
   const $ = load(prerenderHomepage(markup, [row], () => 'logos', new Date('2026-10-05T10:00:00Z')));
