@@ -179,7 +179,9 @@ function siteConfig(root) {
   const host = fs.readFileSync(path.join(root, 'CNAME'), 'utf8').trim();
   const siteUrl = new URL(host.includes('://') ? host : 'https://' + host).origin;
   const fraja = new URL(siteUrl).hostname === 'fraja.online';
-  return { siteUrl, brand: fraja ? 'Fraja | فرجة' : 'koratv', logo: fraja ? '/assets/images/fraja-logo.svg' : '/assets/images/logo-header.webp' };
+  return { siteUrl, brand: fraja ? 'Fraja | فرجة' : 'koratv',
+    logo: fraja ? '/assets/images/fraja-logo.svg' : '/assets/images/logo-header.webp',
+    favicon: fraja ? '/assets/images/fraja-logo.svg' : '/assets/images/koratv-mark.svg?v=20261114-koratv-green' };
 }
 
 const articlePath = article => '/news/' + encodeURIComponent(article.slug) + '/';
@@ -202,7 +204,7 @@ function shell(config, title, description, canonical, body, extra = '') {
   return ['<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(title) + ' | ' + esc(config.brand) + '</title>',
     '<meta name="description" content="' + esc(description) + '"><link rel="canonical" href="' + esc(canonical) + '">',
-    '<link rel="icon" href="' + esc(config.logo) + '"><link rel="stylesheet" href="/assets/css/fonts.css">',
+    '<link rel="icon" href="' + esc(config.favicon || config.logo) + '"><link rel="stylesheet" href="/assets/css/fonts.css">',
     '<link rel="stylesheet" href="/assets/css/news.css"><link rel="stylesheet" href="/assets/css/article.css?v=20261018">',
     '<meta property="og:site_name" content="' + esc(config.brand) + '"><meta property="og:title" content="' + esc(title) + '">',
     '<meta property="og:description" content="' + esc(description) + '"><meta property="og:url" content="' + esc(canonical) + '">',
@@ -292,9 +294,11 @@ function writeNews(output, config, articles, feeds) {
       $('#news-hero-title').text('أخبار كرة القدم والبطولات');
       $('#breaking-news').html(articles.slice(0, 3).map(article => renderCard(article, true)).join(''));
       $('#sports-news').html(articles.slice(3, 12).map(article => renderCard(article)).join(''));
-      $('.footer-extra-links').remove();
-      $('.footer-logo a').attr('href', '/').text(config.brand);
-      $('.copyright p').text('© ' + new Date().getUTCFullYear() + ' ' + config.brand);
+      if (!$('.footer-extra-links[data-site-footer]').length) {
+        $('.footer-extra-links').remove();
+        $('.footer-logo a').attr('href', '/').text(config.brand);
+        $('.copyright p').text('© ' + new Date().getUTCFullYear() + ' ' + config.brand);
+      }
       $('.news-archive-link').remove();
       $('main').append('<a class="news-archive-link" href="/news/archive/">أرشيف الأخبار الرياضية</a>');
     }

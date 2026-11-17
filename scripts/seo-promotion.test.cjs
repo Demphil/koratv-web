@@ -2,8 +2,25 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { load } = require('cheerio');
 const root = path.resolve(__dirname, '..');
+
+test('both pages keep the Njalla shield favicon and the same four footer columns', () => {
+  const home = load(fs.readFileSync(path.join(root, 'index.html'), 'utf8'));
+  const news = load(fs.readFileSync(path.join(root, 'news.html'), 'utf8'));
+  for (const $ of [home, news]) {
+    assert.equal($('link[rel="icon"]').attr('href'), '/assets/images/koratv-mark.svg?v=20261114-koratv-green');
+    assert.equal($('link[rel="icon"]').attr('type'), 'image/svg+xml');
+    assert.equal($('.footer-extra-links[data-site-footer] .footer-widget').length, 4);
+    assert.equal($('#current-year').length, 1);
+  }
+  const footerItems = $ => $('.footer-extra-links h3,.footer-extra-links a').toArray().map(node => $(node).text());
+  assert.deepEqual(footerItems(news), footerItems(home));
+  assert.ok(news('.footer-extra-links a[href^="/#"]').length > 0);
+  const svg = fs.readFileSync(path.join(root, 'assets/images/koratv-mark.svg'), 'utf8').replace(/\r\n/g, '\n');
+  assert.equal(createHash('sha256').update(svg).digest('hex'), '38de21c08117aefcb6a0cdb606bc20227d4ea770c93e4cad8a61f612e9157f1f');
+});
 
 test('home and news use the green KoraTV shield instead of the legacy rectangular logo', () => {
   for (const file of ['index.html', 'news.html']) {
@@ -88,7 +105,7 @@ test('app display uses its own emerald and coral identity, real preview and offi
   assert.match(css, /width: 202px; height: 238px/);
   assert.match(css, /object-fit: contain/);
   assert.doesNotMatch(css, /showcase-dialog|calc\(\(100% - 45px\) \/ 6\)/);
-  assert.match($('link[rel="icon"]').attr('href'), /koratv-favicon\.png\?v=/);
+  assert.match($('link[rel="icon"]').attr('href'), /koratv-mark\.svg\?v=20261114-koratv-green/);
   for (const file of ['korascoreai-forecast-engine.webp', 'app-showcase/forecast-540.webp', 'google-play-badge.png'])
     assert.ok(fs.statSync(path.join(root, 'assets/images', file)).size < 100000);
   const icon = fs.readFileSync(path.join(root, 'favicon.ico'));

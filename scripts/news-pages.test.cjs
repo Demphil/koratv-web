@@ -175,6 +175,32 @@ test('generation needs no streaming credentials and applies the existing analyti
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('news publication preserves the restored site footer and its live year hook', () => {
+  const { root, output } = fixture();
+  try {
+    const source = fs.readFileSync(path.join(__dirname, '../news.html'), 'utf8');
+    fs.writeFileSync(path.join(output, 'news.html'), source);
+    const before = load(source);
+    writeNews(output, config, mergeArticles([], [brief()], seed, now), []);
+    const after = load(fs.readFileSync(path.join(output, 'news.html'), 'utf8'));
+    assert.equal(after('footer').html(), before('footer').html());
+    assert.equal(after('.footer-widget').length, 4);
+    assert.equal(after('#current-year').length, 1);
+    const article = renderArticle(brief(), { ...config, favicon: '/assets/images/koratv-mark.svg' }, []);
+    assert.equal(load(article)('link[rel=icon]').attr('href'), '/assets/images/koratv-mark.svg');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('news publication still removes unapproved legacy keyword footer lists', () => {
+  const { root, output } = fixture();
+  try {
+    const file = path.join(output, 'news.html');
+    fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('</body>', '<footer><div class="footer-extra-links"><a href="/yalla-live.html">Legacy</a></div></footer></body>'));
+    writeNews(output, config, mergeArticles([], [brief()], seed, now), []);
+    assert.equal(load(fs.readFileSync(file, 'utf8'))('.footer-extra-links').length, 0);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 function client(fetcher) {
   const grid = { innerHTML: 'SERVER_RENDERED_NEWS' };
   const elements = { 'sports-news': grid };
