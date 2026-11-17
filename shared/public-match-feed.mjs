@@ -154,6 +154,13 @@ export async function loadWebsiteMatchFeed(apiOrigin, {
   const snapshotTarget = safeSnapshotUrl(snapshotUrl);
   let snapshotError;
 
+  // Live polls use the small cached public file, not an old pinned Git commit or the streaming API.
+  if (force) {
+    try {
+      return await fetchSnapshot(new URL('/site-metadata/matches.json', apiBase), { fetchImpl, force, now });
+    } catch (error) { snapshotError = error; }
+  }
+
   try {
     const immutableTarget = await resolveImmutableSnapshotUrl(snapshotTarget, { fetchImpl, force, now });
     return await fetchSnapshot(immutableTarget, { fetchImpl, force, now });

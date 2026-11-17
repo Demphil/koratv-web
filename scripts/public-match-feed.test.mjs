@@ -48,7 +48,7 @@ test('the compatibility feed normalizer also accepts the former API summary shap
   assert.equal(match.playbackState, '');
 });
 
-test('the static snapshot is the primary read and the legacy endpoint is only a fallback', async () => {
+test('live polls read fresh static metadata without querying GitHub or the streaming API', async () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const calls = [];
   const sha = 'a'.repeat(40);
@@ -63,12 +63,10 @@ test('the static snapshot is the primary read and the legacy endpoint is only a 
     return Response.json({ version: 1, generatedAt: new Date(now).toISOString(), matches: [match] });
   } });
   assert.equal(rows[0].matchId, 'kooora-1');
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0][0], 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'https://stream-api.koratv.click/site-metadata/matches.json');
   assert.equal(calls[0][1].credentials, 'omit');
   assert.equal(calls[0][1].cache, 'no-store');
-  assert.equal(calls[1][0], feedUrl.replace('/public-match-feed/', `/${sha}/`));
-  assert.equal(calls[1][1].cache, 'no-store');
 });
 
 test('the public GitHub feed is independent from the website API origin', async () => {
@@ -115,6 +113,7 @@ test('a resolved feed commit is reused for ten minutes within the page session',
   const calls = [];
   const fetchImpl = async url => {
     calls.push(url);
+    if (url === 'https://stream-api.koratv.click/site-metadata/matches.json') return new Response('', { status: 503 });
     if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
       return Response.json({ ref: 'refs/heads/public-match-feed', object: { sha, type: 'commit' } });
     }

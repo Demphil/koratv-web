@@ -67,7 +67,7 @@ test('rebranding preserves the live footer year hook and supplies share metadata
 });
 test('module cache versions change only parsed local imports, never ad URLs or unrelated strings', () => {
   const result = versionModuleImports("import { x } from '../../shared/match-lifecycle.mjs?v=old'; const ad='https://advertiser.test/tag.js?v=old';");
-  assert.match(result, /match-lifecycle\.mjs\?v=20261117-live-first/);
+  assert.match(result, /match-lifecycle\.mjs\?v=20261117-auto-order/);
   assert.match(result, /https:\/\/advertiser\.test\/tag\.js\?v=old/);
 });
 

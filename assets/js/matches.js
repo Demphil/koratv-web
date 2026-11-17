@@ -8,7 +8,7 @@ import {
   getMoroccoDay,
   getMoroccoDateKey,
   getNextMoroccoDayDelay
-} from './api.js?v=20261117-logo-feed';
+} from './api.js?v=20261117-auto-order';
 import { frontendMatchState, sourceMatchState } from '../../shared/match-lifecycle.mjs?v=20261117-open30';
 
 const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
@@ -386,14 +386,21 @@ function renderSection(container, matches, message) {
     return;
   }
 
-  const existing = new Map([...container.children].map(element => [element.dataset.renderSignature, element]));
+  const existing = new Map([...container.children].map(element => [element.dataset.matchIdentity, element]));
   const elements = nextMatches.map(match => {
+    const id = matchIdentity(match);
     const key = matchRenderSignature(match);
-    const element = existing.get(key) || createMatchElement(match);
+    const previous = existing.get(id);
+    const element = previous?.dataset.renderSignature === key ? previous : createMatchElement(match);
+    element.dataset.matchIdentity = id;
     element.dataset.renderSignature = key;
     return element;
   });
-  container.replaceChildren(...elements);
+  const keep = new Set(elements);
+  for (const child of [...container.children]) if (!keep.has(child)) child.remove();
+  elements.forEach((element, index) => {
+    if (container.children[index] !== element) container.insertBefore(element, container.children[index] || null);
+  });
 }
 
 function compareBroadcastPriority(a, b, now = new Date()) {
@@ -424,6 +431,21 @@ function compareBroadcastPriority(a, b, now = new Date()) {
 }
 
 let displayedMatches;
+let matchBoundaryTimer;
+
+function scheduleMatchBoundary() {
+  clearTimeout(matchBoundaryTimer);
+  if (!displayedMatches) return;
+  const now = Date.now();
+  const boundaries = [...displayedMatches.today, ...displayedMatches.tomorrow].flatMap(match => {
+    const kickoff = matchStartDate(match)?.getTime();
+    return Number.isFinite(kickoff) ? [kickoff - 60 * 60000, kickoff - 30 * 60000, kickoff] : [];
+  }).filter(time => time > now);
+  if (!boundaries.length) return;
+  matchBoundaryTimer = setTimeout(() => {
+    if (!document.hidden && displayedMatches) renderMatchCollections(displayedMatches.today, displayedMatches.tomorrow);
+  }, Math.max(25, Math.min(2147483647, Math.min(...boundaries) - now + 25)));
+}
 
 function renderMatchCollections(rawTodayMatches, rawTomorrowMatches) {
   displayedMatches = { today: rawTodayMatches, tomorrow: rawTomorrowMatches };
@@ -452,6 +474,7 @@ function renderMatchCollections(rawTodayMatches, rawTomorrowMatches) {
   renderSection(DOM.broadcastContainer, trueTodayMatches, 'لا توجد مواجهات اليوم.');
   renderSection(DOM.todayContainer, trueTodayMatches, 'لا توجد مواجهات اليوم.');
   renderSection(DOM.tomorrowContainer, trueTomorrowMatches, 'لا توجد مواجهات غداً.');
+  scheduleMatchBoundary();
 }
 
 async function loadAndRenderMatches(options = {}) {
@@ -494,8 +517,11 @@ function startLiveRefresh() {
         }, getNextMoroccoDayDelay());
     };
     scheduleRollover();
-    window.addEventListener('pagehide', () => clearTimeout(rolloverTimer));
-    window.addEventListener('pageshow', event => { if (event.persisted) { checkDayChange(); scheduleRollover(); } });
+    window.addEventListener('pagehide', () => { clearTimeout(rolloverTimer); clearTimeout(matchBoundaryTimer); });
+    window.addEventListener('pageshow', event => { if (event.persisted) {
+      checkDayChange(); scheduleRollover();
+      if (displayedMatches) renderMatchCollections(displayedMatches.today, displayedMatches.tomorrow);
+    } });
     const updates = new EventSource(`${STREAM_API_ORIGIN}/api/broadcast-events`);
     let revision;
     updates.addEventListener('control', event => {
@@ -520,6 +546,7 @@ function startLiveRefresh() {
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
             checkDayChange();
+            if (displayedMatches) renderMatchCollections(displayedMatches.today, displayedMatches.tomorrow);
             loadAndRenderMatches({ force: true }).catch(error => {
                 console.warn('[MATCHES] resume refresh failed:', error);
             });
