@@ -15,6 +15,13 @@ test('the frontend opens at 30 minutes even when cached metadata says upcoming',
   }
 });
 
+test('the default wait dialog cannot show the retired 20-minute promise', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../assets/js/matches.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(html + source, /20 دقيقة|بعشرين دقيقة/);
+  assert.match(html, /قبل البداية بـ 30 دقيقة/);
+});
+
 test('finished and unavailable matches stay closed during the preparation window', () => {
   for (const status of ['FT', 'RESULT', 'PEN']) {
     assert.equal(frontendMatchState({ status, playbackState: 'live' }, 20), 'ended');
