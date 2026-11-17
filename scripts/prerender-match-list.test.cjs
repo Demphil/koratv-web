@@ -65,7 +65,10 @@ test('initial schedule uses the ordinary team layout with safe real logos and a 
   assert.equal(card.find('.team img').eq(1).attr('src'), '/assets/images/default-logo.jpg');
   assert.equal(card.find('.team img').eq(0).attr('width'), '50');
   assert.equal(card.find('.team img').eq(0).attr('alt'), fixture.home_team);
-  assert.equal(card.find('.match-info .time').text(), '19:00');
+  const expectedClock = new Intl.DateTimeFormat('ar-MA-u-nu-latn', {
+    timeZone: 'Africa/Casablanca', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).format(new Date(row.kickoff_time));
+  assert.equal(card.find('.match-info .time').text(), expectedClock);
   assert.doesNotMatch($.html(), /javascript:/);
 });
 
