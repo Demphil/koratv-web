@@ -64,6 +64,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -115,6 +116,31 @@ jobs:
         with:
           name: github-pages-${{ github.run_attempt }}
           path: _site
+
+      - name: Confirm uploaded website artifact is available
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_ARTIFACT: github-pages-${{ github.run_attempt }}
+        run: |
+          node <<'NODE'
+          const endpoint = `${process.env.GITHUB_API_URL}/repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}/artifacts`;
+          (async () => {
+            for (let attempt = 0; attempt < 20; attempt++) {
+              const response = await fetch(endpoint, {
+                headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json' },
+                signal: AbortSignal.timeout(10000)
+              });
+              if (!response.ok) throw new Error(`Artifact check returned HTTP ${response.status}`);
+              const body = await response.json();
+              if (body.artifacts?.some(item => item.name === process.env.EXPECTED_ARTIFACT && !item.expired)) {
+                console.log('Website artifact is ready for deployment.');
+                return;
+              }
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+            throw new Error('Uploaded website artifact is not visible yet; the existing website is unchanged.');
+          })().catch(error => { console.error(error.message); process.exitCode = 1; });
+          NODE
 
       - name: Publish website
         id: deployment
