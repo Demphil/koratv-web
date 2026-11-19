@@ -169,3 +169,45 @@ test('fresh lightweight metadata replaces a stale GitHub feed without calling th
   assert.equal(calls.some(url => new URL(url).pathname === '/api/matches'), false);
 });
 
+test('a delayed feed preserves the schedule and confirmed results when every fresh source is unavailable', async () => {
+  const now = Date.parse('2026-11-19T19:00:00Z');
+  const rows = [
+    { id: 'stale-live', source: 'kooora', home_team: 'Home', away_team: 'Away', kickoff_time: '2026-11-19T18:00:00Z',
+      payload: { status: 'LIVE', isLive: true, score: '1 - 0', liveMinute: 40, homeLogo: 'https://cdn.example/home.png' } },
+    { id: 'ended', source: 'kooora', home_team: 'Final Home', away_team: 'Final Away', kickoff_time: '2026-11-19T13:00:00Z',
+      payload: { status: 'RESULT', score: '2 - 1', isFinished: true } },
+  ];
+  const matches = await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl: async url => {
+    if (url.includes('/git/ref/')) return new Response('', { status: 503 });
+    if (url.startsWith('https://raw.githubusercontent.com/')) return Response.json({ version: 1, generatedAt: new Date(now - 2 * 3600000).toISOString(), matches: rows });
+    return new Response('', { status: 503 });
+  } });
+  const live = matches.find(row => row.matchId === 'stale-live'), ended = matches.find(row => row.matchId === 'ended');
+  assert.equal(live.scheduleOnly, true); assert.equal(live.status, 'FIXTURE'); assert.equal(live.isLive, false);
+  assert.equal(live.playbackState, 'upcoming'); assert.equal(live.score, 'VS'); assert.equal(live.liveMinute, null);
+  assert.equal(normalizeWebsiteMatch(live).isLive, false);
+  assert.equal(live.homeTeam.logo, 'https://cdn.example/home.png');
+  assert.equal(ended.status, 'RESULT'); assert.equal(ended.score, '2 - 1'); assert.equal(ended.sourceReady, false);
+});
+
+test('fresh metadata still takes priority over the delayed schedule fallback', async () => {
+  const now = Date.parse('2026-11-19T19:00:00Z');
+  const fixture = { id: 'match', source: 'kooora', home_team: 'Home', away_team: 'Away', kickoff_time: '2026-11-19T18:00:00Z' };
+  const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl: async url => {
+    if (url.includes('/git/ref/')) return new Response('', { status: 503 });
+    const fresh = url.startsWith('https://stream-api.koratv.click/');
+    return Response.json({ version: 1, generatedAt: new Date(now - (fresh ? 0 : 2 * 3600000)).toISOString(),
+      matches: [{ ...fixture, payload: { status: 'LIVE', score: fresh ? '2 - 0' : '1 - 0' } }] });
+  } });
+  assert.equal(rows[0].score, '2 - 0'); assert.notEqual(rows[0].scheduleOnly, true);
+});
+
+test('the schedule fallback never accepts an unbounded old snapshot', async () => {
+  const now = Date.parse('2026-11-19T19:00:00Z');
+  await assert.rejects(loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl: async url => {
+    if (url.startsWith('https://raw.githubusercontent.com/')) return Response.json({ version: 1, generatedAt: new Date(now - 49 * 3600000).toISOString(),
+      matches: [{ id: 'old', source: 'kooora', home_team: 'Home', away_team: 'Away', kickoff_time: '2026-11-19T18:00:00Z' }] });
+    return new Response('', { status: 503 });
+  } }), /stale/);
+});
+

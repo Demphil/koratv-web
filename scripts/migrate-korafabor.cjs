@@ -10,7 +10,7 @@ const SITE = 'https://korafabor.pro';
 const BRAND = 'كورة فابور';
 const TITLE = 'كورة فابور | kora fabor - مباريات اليوم بث مباشر';
 const DESCRIPTION = 'كورة فابور korafabor.pro لمتابعة مباريات اليوم، النتائج المباشرة والإحصائيات ومواعيد اللقاءات بتوقيت المغرب، مع أخبار كرة القدم وروابط المشاهدة المتاحة.';
-const MODULE_VERSION = '20261117-auto-order';
+const MODULE_VERSION = '20261119-feed-resilience';
 function versionModuleImports(source) {
   const program = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
   const edits = [];

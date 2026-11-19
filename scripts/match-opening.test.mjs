@@ -58,4 +58,7 @@ test('the rendered card links to the player before kickoff, not to the wait dial
   assert.match(renderAt(29), /href="https:\/\/fabor\.sbs\/739184\.html\?match=123"/);
   assert.doesNotMatch(renderAt(29), /href="#wait-modal"/);
   assert.match(renderAt(31), /href="#wait-modal"/);
+  const stale = render({ ...match, scheduleOnly: true, status: 'LIVE', scheduledAt: new Date(Date.now() - 60000).toISOString() });
+  assert.match(stale, /data-disabled-reason="status_pending"/);
+  assert.doesNotMatch(stale, /data-secure-match-id=/);
 });

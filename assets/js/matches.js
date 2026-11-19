@@ -8,7 +8,7 @@ import {
   getMoroccoDay,
   getMoroccoDateKey,
   getNextMoroccoDayDelay
-} from './api.js?v=20261117-auto-order';
+} from './api.js?v=20261119-feed-resilience';
 import { frontendMatchState, sourceMatchState } from '../../shared/match-lifecycle.mjs?v=20261117-open30';
 
 const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
@@ -184,16 +184,18 @@ function renderMatch(match) {
       diffMins = 9999; 
   }
 
-  const lifecycleState = frontendMatchState(match, diffMins);
+  const lifecycleState = match.scheduleOnly === true ? 'upcoming' : frontendMatchState(match, diffMins);
   match = { ...match, playbackState: lifecycleState };
   const isEnded = lifecycleState === 'ended';
   const isLive = lifecycleState === 'live';
   const isPaused = match.broadcastPaused === true || match.resourceStatus === 'PAUSED';
   const isSoon = diffMins > 0 && diffMins <= 60; 
   const hasKnownSource = match.sourceAvailable === true || Boolean(match.channelName);
-  const canOpenSecurePlayer = (isLive || isPaused) && !isEnded;
+  const canOpenSecurePlayer = (isLive || isPaused) && !isEnded && match.scheduleOnly !== true;
   const disabledReason = isEnded
     ? 'ended'
+    : match.scheduleOnly === true
+      ? 'status_pending'
     : !isLive
       ? 'upcoming'
       : !hasKnownSource
@@ -224,6 +226,8 @@ function renderMatch(match) {
       statusBadge = '<span class="live-badge ended">انتهت</span>';
       timeText = match.score && match.score !== 'VS' ? `<span class="live-score">${scoreMarkup(match.score)}</span>` : 'انتهت';
       matchStatusClass = 'is-ended';
+  } else if (match.scheduleOnly === true) {
+      statusBadge = '<span class="live-badge soon">الموعد</span>';
   } else if (isPaused) {
       statusBadge = '<span class="live-badge ended">البث موقوف</span>';
       matchStatusClass = 'is-paused';
@@ -339,6 +343,7 @@ function setupSecurePlayerLinks() {
     event.preventDefault();
     const messages = {
       upcoming: 'سيُفتح البث قبل بداية المباراة بثلاثين دقيقة.',
+      status_pending: 'جاري تحديث حالة المباراة. الموعد ظاهر في البطاقة وستتحدث الحالة تلقائيًا عند وصول البيانات.',
       ended: 'انتهت المباراة وتم إغلاق البث.',
       channel_unavailable: 'لم تُحدد القناة الناقلة بعد.',
       source_unavailable: 'القناة معروفة لكن مصدر التشغيل لم يجهز بعد. سيتم تحديثها تلقائياً.'
@@ -355,6 +360,7 @@ function matchRenderSignature(match) {
     match.time || '',
     match.score || '',
     match.playbackState || '',
+    match.scheduleOnly === true,
     match.liveExtraMinute || 0,
     frontendMatchState(match, minutesUntilStart),
     minutesUntilStart > 0 && minutesUntilStart <= 60,
@@ -407,6 +413,7 @@ function compareBroadcastPriority(a, b, now = new Date()) {
   const start = match => matchStartDate(match)?.getTime() || 0;
   const phase = match => {
     const state = sourceMatchState(match);
+    if (match.scheduleOnly === true && state !== 'ended') return 'upcoming';
     if (['live', 'ended', 'unavailable'].includes(state)) return state;
     const playback = frontendMatchState(match, (start(match) - now.getTime()) / 60000);
     if (playback === 'ended') return 'ended';

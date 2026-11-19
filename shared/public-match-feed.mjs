@@ -2,6 +2,7 @@ import { sourceMatchState } from './match-lifecycle.mjs';
 import { isEuropeanYouthLeague } from './match-visibility.mjs';
 
 const MAX_SNAPSHOT_AGE_MS = 30 * 60_000;
+const MAX_SCHEDULE_AGE_MS = 48 * 60 * 60_000;
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 
 function nameOf(value) {
@@ -136,14 +137,32 @@ async function resolveImmutableSnapshotUrl(snapshotTarget, { fetchImpl, force, n
   return new URL(snapshotTarget.href.replace('/public-match-feed/', `/${sha}/`));
 }
 
-async function fetchSnapshot(target, { fetchImpl, force, now, mutable = false }) {
+async function fetchSnapshot(target, { fetchImpl, force, now, mutable = false, onStaleSchedule }) {
   const suffix = force && mutable ? `?t=${now}` : '';
   const response = await fetchImpl(`${target.href}${suffix}`, {
     cache: force ? 'no-store' : 'default', credentials: 'omit',
     headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(5000),
   });
   if (!response.ok) throw new Error(`Static match feed status ${response.status}`);
-  return parsePublicMatchSnapshot(await response.json(), { now });
+  const body = await response.json();
+  try { return parsePublicMatchSnapshot(body, { now }); }
+  catch (error) {
+    if (onStaleSchedule) {
+      try {
+        const rows = parsePublicMatchSnapshot(body, { now, maxAgeMs: MAX_SCHEDULE_AGE_MS });
+        const matches = rows.map(row => sourceMatchState(row) === 'ended'
+          ? { ...row, snapshotStale: true, sourceReady: false }
+          : { ...row, snapshotStale: true, scheduleOnly: true, status: 'FIXTURE', playbackState: 'upcoming',
+            isLive: false, isFinished: false, broadcastPaused: false, resourceStatus: undefined,
+            sourceReady: false, sourceAvailable: false, score: 'VS', liveMinute: null, liveExtraMinute: 0,
+            yellowCards: null, redCards: null, goals: [],
+            payload: { ...row.payload, status: 'FIXTURE', isLive: false, isFinished: false, score: 'VS',
+              liveMinute: null, liveExtraMinute: 0, yellowCards: null, redCards: null, goals: [], events: [], statistics: [] } });
+        if (matches.length) onStaleSchedule(matches, Date.parse(body.generatedAt));
+      } catch {}
+    }
+    throw error;
+  }
 }
 
 export async function loadWebsiteMatchFeed(apiOrigin, {
@@ -153,25 +172,29 @@ export async function loadWebsiteMatchFeed(apiOrigin, {
   const apiBase = safeOrigin(apiOrigin, 'match API');
   const snapshotTarget = safeSnapshotUrl(snapshotUrl);
   let snapshotError;
+  let scheduleFallback;
+  const onStaleSchedule = (matches, generatedAt) => {
+    if (!scheduleFallback || generatedAt > scheduleFallback.generatedAt) scheduleFallback = { matches, generatedAt };
+  };
 
   // Live polls use the small cached public file, not an old pinned Git commit or the streaming API.
   if (force) {
     try {
-      return await fetchSnapshot(new URL('/site-metadata/matches.json', apiBase), { fetchImpl, force, now });
+      return await fetchSnapshot(new URL('/site-metadata/matches.json', apiBase), { fetchImpl, force, now, onStaleSchedule });
     } catch (error) { snapshotError = error; }
   }
 
   try {
     const immutableTarget = await resolveImmutableSnapshotUrl(snapshotTarget, { fetchImpl, force, now });
-    return await fetchSnapshot(immutableTarget, { fetchImpl, force, now });
+    return await fetchSnapshot(immutableTarget, { fetchImpl, force, now, onStaleSchedule });
   } catch (error) { snapshotError = error; }
 
   try {
-    return await fetchSnapshot(snapshotTarget, { fetchImpl, force, now, mutable: true });
+    return await fetchSnapshot(snapshotTarget, { fetchImpl, force, now, mutable: true, onStaleSchedule });
   } catch (error) { snapshotError = new Error(`${snapshotError.message}; mutable snapshot failed (${error.message})`); }
 
   try {
-    return await fetchSnapshot(new URL('/site-metadata/matches.json', apiBase), { fetchImpl, force, now });
+    return await fetchSnapshot(new URL('/site-metadata/matches.json', apiBase), { fetchImpl, force, now, onStaleSchedule });
   } catch (error) { snapshotError = new Error(`${snapshotError.message}; metadata snapshot failed (${error.message})`); }
 
   try {
@@ -182,6 +205,7 @@ export async function loadWebsiteMatchFeed(apiOrigin, {
     const body = await response.json();
     return (Array.isArray(body.matches) ? body.matches : []).map(normalizeWebsiteMatch).filter(Boolean);
   } catch (error) {
+    if (scheduleFallback) return scheduleFallback.matches;
     if (snapshotError) throw new Error(`Static match feed failed (${snapshotError.message}); API fallback failed (${error.message})`);
     throw error;
   }
