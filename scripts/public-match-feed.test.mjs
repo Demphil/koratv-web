@@ -2,6 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadWebsiteMatchFeed, normalizeWebsiteMatch, parsePublicMatchSnapshot } from '../shared/public-match-feed.mjs';
 
+test('the AWS public metadata fallback is separate from the retired playback API', async () => {
+  const now = Date.parse('2026-11-27T18:00:00Z'), calls = [];
+  const matches = await loadWebsiteMatchFeed('https://stream-api.koratv.click', {
+    metadataOrigin: 'https://aws-stream.koratv.click', now, force: true,
+    fetchImpl: async url => {
+      calls.push(url);
+      if (url === 'https://aws-stream.koratv.click/site-metadata/matches.json') return Response.json({
+        version: 1, generatedAt: new Date(now).toISOString(), matches: [{ id: 'backup', source: 'kooora', active: true,
+          home_team: 'Home', away_team: 'Away', kickoff_time: '2026-11-27T19:45:00Z', payload: {} }],
+      });
+      return new Response('', { status: 503 });
+    },
+  });
+  assert.equal(matches[0].matchId, 'backup');
+  assert.equal(calls.some(url => url.startsWith('https://stream-api.koratv.click')), false);
+});
+
 test('fresh static snapshots become lightweight Kooora website cards', () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const matches = parsePublicMatchSnapshot({ version: 1, generatedAt: new Date(now - 30_000).toISOString(), matches: [

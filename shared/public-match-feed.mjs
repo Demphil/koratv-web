@@ -169,9 +169,10 @@ async function fetchSnapshot(target, { fetchImpl, force, now, mutable = false, o
 
 export async function loadWebsiteMatchFeed(apiOrigin, {
   snapshotUrl = 'https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json',
-  fetchImpl = fetch, force = false, now = Date.now(),
+  fetchImpl = fetch, force = false, now = Date.now(), metadataOrigin = apiOrigin,
 } = {}) {
   const apiBase = safeOrigin(apiOrigin, 'match API');
+  const metadataBase = safeOrigin(metadataOrigin, 'match metadata');
   const snapshotTarget = safeSnapshotUrl(snapshotUrl);
   let snapshotError;
   let scheduleFallback;
@@ -196,7 +197,7 @@ export async function loadWebsiteMatchFeed(apiOrigin, {
   } catch (error) { snapshotError = new Error(`${snapshotError.message}; mutable snapshot failed (${error.message})`); }
 
   try {
-    return await fetchSnapshot(new URL('/site-metadata/matches.json', apiBase), { fetchImpl, force, now, onStaleSchedule });
+    return await fetchSnapshot(new URL('/site-metadata/matches.json', metadataBase), { fetchImpl, force, now, onStaleSchedule });
   } catch (error) { snapshotError = new Error(`${snapshotError.message}; metadata snapshot failed (${error.message})`); }
 
   try {

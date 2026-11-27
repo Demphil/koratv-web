@@ -1,6 +1,6 @@
 import { sourceMatchState, nextMoroccoMidnight } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
 import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs?v=20261013-youth-exclusion';
-import { loadWebsiteMatchFeed, normalizeWebsiteMatch } from '../../shared/public-match-feed.mjs?v=20261127-aws-selected';
+import { loadWebsiteMatchFeed, normalizeWebsiteMatch } from '../../shared/public-match-feed.mjs?v=20261127-feed-backup';
 
 // --- 1. Cache Configuration ---
 
@@ -184,7 +184,8 @@ async function getStagingMatches({ force = false } = {}) {
   }
   if (!stagingMatchesPromise) {
     stagingMatchesPending = true;
-    const request = loadWebsiteMatchFeed(MATCHES_API_ORIGIN, { force, snapshotUrl: MATCHES_FEED_URL })
+    const request = loadWebsiteMatchFeed(MATCHES_API_ORIGIN, { force, snapshotUrl: MATCHES_FEED_URL,
+      metadataOrigin: 'https://aws-stream.koratv.click' })
       .then(matches => matches.map(normalizeStagingMatch).filter(Boolean))
       .then((matches) => {
         if (stagingMatchesPromise === request) stagingMatchesExpiresAt = Date.now() + CACHE_EXPIRY_MS;
