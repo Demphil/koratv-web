@@ -5,11 +5,12 @@ const { load } = require('cheerio');
 const { parse } = require('acorn');
 const { validateEntry } = require('./match-archive.cjs');
 const { assertCompletePublication } = require('./build-complete-site.cjs');
+const { HOME_TITLE, HOME_DESCRIPTION, applyKoraFaborSeo } = require('./korafabor-seo.cjs');
 const OLD = 'https://koratv.click';
 const SITE = 'https://korafabor.pro';
 const BRAND = 'كورة فابور';
-const TITLE = 'كورة فابور | kora fabor - مباريات اليوم بث مباشر';
-const DESCRIPTION = 'كورة فابور korafabor.pro لمتابعة مباريات اليوم، النتائج المباشرة والإحصائيات ومواعيد اللقاءات بتوقيت المغرب، مع أخبار كرة القدم وروابط المشاهدة المتاحة.';
+const TITLE = HOME_TITLE;
+const DESCRIPTION = HOME_DESCRIPTION;
 const MODULE_VERSION = '20261127-feed-backup';
 function versionModuleImports(source) {
   const program = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
@@ -52,7 +53,7 @@ function structured(value, key = '') {
   const rebased = ownedUrl(value);
   return rebased !== value ? rebased : /^(name|description|headline|alternateName|caption)$/.test(key) ? brandText(value) : value;
 }
-function rewriteHtml(html, route) {
+function rewriteHtml(html, route, options = {}) {
   if (/^google[a-f0-9]+\.html$/.test(route)) return html;
   const $ = load(html);
   $('link[href*="/assets/css/koratv-green-pages.css"],style[data-source="/assets/css/koratv-green-pages.css"]').remove();
@@ -165,6 +166,7 @@ function rewriteHtml(html, route) {
       promotion.attr('href', destination.href);
     }
   }
+  applyKoraFaborSeo($, { route, ...options });
   const canonical = $('link[rel="canonical"]').attr('href');
   if (canonical && new URL(canonical, SITE).origin !== SITE) throw Error('Wrong migrated canonical');
   return $.html();

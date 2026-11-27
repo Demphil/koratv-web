@@ -2,6 +2,86 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('cheerio');
 const { rewriteHtml, ownedUrl, TITLE, versionModuleImports } = require('./migrate-korafabor.cjs');
+const { HOME_TITLE, HOME_HEADING, HOME_DESCRIPTION } = require('./korafabor-seo.cjs');
+const { matchPage, matchSlug } = require('./generate-match-pages.cjs');
+const { publicMatchId } = require('../shared/public-match-id.mjs');
+
+test('KoraFabor home specializes in live matches with consistent search and share metadata', () => {
+  const source = '<head><title>koratv</title><meta name="keywords" content="old"><link rel="canonical" href="https://koratv.click/"><script type="application/ld+json">{"@graph":[{"@type":"WebPage","name":"old"},{"@type":"WebSite","name":"koratv"}]}</script></head><header class="header"><h1 class="header-title">old</h1><nav class="nav"><a href="/">old</a></nav></header><section class="featured-section"><h2 class="section-title"><i class="fas fa-tv"></i>old</h2></section>';
+  const first = rewriteHtml(source, 'index.html');
+  const $ = load(rewriteHtml(first, 'index.html'));
+  assert.equal($('title').text(), HOME_TITLE);
+  assert.equal($('h1').text(), HOME_HEADING);
+  assert.equal($('.section-title').text().trim(), 'مباريات اليوم بث مباشر');
+  assert.equal($('.section-title i').length, 1);
+  assert.equal($('.nav a').text(), 'مباريات اليوم بث مباشر');
+  for (const selector of ['meta[name="description"]', 'meta[property="og:description"]', 'meta[name="twitter:description"]']) {
+    assert.equal($(selector).length, 1);
+    assert.equal($(selector).attr('content'), HOME_DESCRIPTION);
+  }
+  assert.equal($('meta[property="og:title"]').attr('content'), HOME_TITLE);
+  assert.equal($('meta[name="twitter:title"]').attr('content'), HOME_TITLE);
+  assert.equal($('meta[name="keywords"]').length, 0);
+  assert.equal($('link[rel="canonical"]').attr('href'), 'https://korafabor.pro/');
+  const graph = JSON.parse($('script[type="application/ld+json"]').text())['@graph'];
+  assert.equal(graph[0].name, HOME_TITLE);
+  assert.equal(graph[0].description, HOME_DESCRIPTION);
+  assert.equal(graph[1].description, HOME_DESCRIPTION);
+  assert.doesNotMatch(HOME_TITLE + HOME_DESCRIPTION, /يلا شوت|كورة لايف|بدون تقطيع|4K|مجانا/);
+});
+
+const selectedFixture = {
+  match_id: 'kooora_2026-11-27_بريست_vs_باريس', home_team: 'بريست', away_team: 'باريس',
+  league: 'الدوري الفرنسي', kickoff_time: '2026-11-27T19:45:00Z',
+  payload: { status: '1H', score: '0 - 0' }
+};
+const seoNow = new Date('2026-11-27T20:00:00Z');
+const fixtureRoute = row => `match/${matchSlug(row)}/index.html`;
+const fixtureHtml = row => matchPage(row, { siteUrl: 'https://koratv.click', brand: 'koratv' }).html;
+
+test('selected live match has accurate live intent and the existing public player URL only', () => {
+  const first = rewriteHtml(fixtureHtml(selectedFixture), fixtureRoute(selectedFixture), { now: seoNow });
+  const $ = load(rewriteHtml(first, fixtureRoute(selectedFixture), { now: seoNow }));
+  assert.equal($('title').text(), 'بث مباشر مباراة بريست ضد باريس | كورة فابور');
+  assert.equal($('h1').text(), 'بث مباشر مباراة بريست ضد باريس');
+  assert.equal($('.korafabor-watch-link').length, 1);
+  assert.equal($('.korafabor-watch-link').attr('href'), `https://fabor.sbs/739184.html?match=${publicMatchId(selectedFixture.match_id)}`);
+  assert.match($('.scoreline').text(), /0 - 0/);
+  const graph = JSON.parse($('script[type="application/ld+json"]').text())['@graph'];
+  assert.equal(graph[0].name, $('title').text());
+  assert.equal(graph[0].description, $('meta[name="description"]').attr('content'));
+  assert.ok(!graph.some(node => ['VideoObject', 'BroadcastEvent'].includes(node['@type'])));
+});
+
+test('selected upcoming match describes its broadcast schedule without claiming to be live', () => {
+  const row = { ...selectedFixture, payload: { status: 'NS' } };
+  const $ = load(rewriteHtml(fixtureHtml(row), fixtureRoute(row), { now: seoNow }));
+  assert.equal($('title').text(), 'موعد بث مباراة بريست ضد باريس والقنوات الناقلة | كورة فابور');
+  assert.equal($('h1').text(), 'بريست ضد باريس');
+  assert.equal($('.korafabor-watch-link').length, 0);
+});
+
+test('ended, unselected, stale-day and archived fixtures keep their original result intent', () => {
+  for (const [row, route, now] of [
+    [{ ...selectedFixture, payload: { status: 'FT', score: '2 - 1' } }, fixtureRoute(selectedFixture), seoNow],
+    [{ ...selectedFixture, match_id: 'other-live-fixture' }, null, seoNow],
+    [selectedFixture, fixtureRoute(selectedFixture), new Date('2026-11-28T01:00:00Z')],
+    [selectedFixture, 'archive-entry', seoNow]
+  ]) {
+    const $ = load(rewriteHtml(fixtureHtml(row), route || fixtureRoute(row), { now }));
+    assert.equal($('title').text(), 'بريست ضد باريس: الموعد والنتيجة والإحصاءات | كورة فابور');
+    assert.equal($('h1').text(), 'بريست ضد باريس');
+    assert.equal($('.korafabor-watch-link').length, 0);
+  }
+});
+
+test('live SEO changes do not rewrite news titles or article schema', () => {
+  const source = '<head><title>خبر رياضي | koratv</title><meta name="description" content="تفاصيل الخبر"><script type="application/ld+json">{"@type":"NewsArticle","headline":"خبر رياضي","description":"تفاصيل الخبر"}</script></head><main><h1>خبر رياضي</h1></main>';
+  const $ = load(rewriteHtml(source, 'news/example/index.html'));
+  assert.equal($('title').text(), 'خبر رياضي | كورة فابور');
+  assert.equal($('meta[name="description"]').attr('content'), 'تفاصيل الخبر');
+  assert.equal(JSON.parse($('script[type="application/ld+json"]').text()).headline, 'خبر رياضي');
+});
 
 test('KoraFabor yellow identity cannot inherit the KoraTV green override', () => {
   const $ = load(rewriteHtml('<head><link rel="stylesheet" href="/assets/css/koratv-green-pages.css?v=old"><style data-source="/assets/css/koratv-green-pages.css">body{background:green!important}</style></head><body><header class="header"></header></body>', 'index.html'));
