@@ -13,6 +13,36 @@ of the website schedule and the immediate fallback for names, logos and results.
 
 ## Request budget
 
+### Active Shared-Key Policy
+
+The saved API-Football key was found in `D:/Frajatv/supabase/.env`. The verified
+Oracle recovery archive is present under `D:/KoraScoreAi-Recovery-20261103/Latest-verified`;
+its encrypted original and DPAPI file were not modified or fully restored.
+
+The application has central Forecast reservations, so the saved provider key is
+NOT copied to AWS or used through an independent local quota counter. AWS uses
+only the application's existing public `sports` resource `liveFixtures`, a read-only
+cache path. This mode cannot call provider endpoints, bypass the shared authority
+or spend additional API-Football requests. The direct key is empty in AWS settings.
+
+Cache discovery is reused for ten minutes. Missing detail fields may appear when
+the application collector fills its own cache; this integration does not force a
+refresh. Incomplete final records can be reread at most every thirty minutes within
+the application's six-hour live/final cache window. Recently selected contexts are
+retained for 48 hours across midnight schedule rotation, with their original
+schedule timestamp preserved. Unknown fields are not fabricated.
+
+The public player can read a sanitized GitHub snapshot, including while its
+custom-domain certificate is pending. Its public-repository workflow runs every
+ten minutes; unchanged data is not committed more than once per six hours. No
+application keys, customer data, private API key or admin credentials enter it.
+Workflow scheduling and CDN freshness are not real-time guarantees.
+
+### Inactive Dedicated-Key Profile
+
+The following limits remain available only for a separately authorized dedicated
+website key. They are NOT the active policy for the application's shared key.
+
 | Operation | Policy |
 | --- | --- |
 | Fixture discovery | One date query, cached for six hours and reused across selected fixtures |
@@ -66,8 +96,16 @@ aborts pending work.
 
 ## Activation status
 
-The current AWS and KoraTV configuration files did not contain an API-Football key.
-The deployed task therefore publishes truthful Kooora fallback data and spends zero
-API-Football requests. The user was asked for the location of the private settings
-file, not its contents. Full provider activation and real API detail verification
-remain gated on the correct key and plan/season coverage. No key is committed.
+The shared app-cache mode matched all four selected fixtures and supplied their
+real API-Football IDs, logos, referee and venue. Venezia-Bologna also supplied
+statistics, events and lineups; the other three did not have those fields in the
+read-only cache at verification. No upstream refresh was forced to fill the gaps.
+Public desktop/mobile readback showed `API-Football` and the application-cache
+label, with no video calls or page errors in the metadata-only QA browser.
+
+The original saved Supabase URL no longer resolves, so an attempted read-only
+account-counter comparison could not complete. No quota mutation or provider
+request was made by that failed diagnostic. Zero additional provider requests is
+enforced by the active adapter's fixed cache-only endpoint and lack of a provider
+key on AWS, not a claim that other application activity leaves its global counter
+unchanged.

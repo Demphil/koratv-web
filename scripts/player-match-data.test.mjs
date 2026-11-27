@@ -92,3 +92,26 @@ test('reversed provider orientation does not swap team logos, scores or statisti
   assert.equal(match.homeTeamId, 106); assert.equal(match.score, '1 - 0');
   assert.match(match.homeLogo, /106\.png$/); assert.equal(match.statistics[0].statistics[0].value, '55%');
 });
+
+test('selected finished match context survives the source midnight rollover but expires after 48 hours', async () => {
+  const ended = { ...row, payload: { ...row.payload, status: 'RESULT', isFinished: true } };
+  const first = await refreshMatchData({ snapshot: snapshot(now, [ended]), now });
+  const later = now + 4 * 3600000;
+  const retained = await refreshMatchData({ snapshot: snapshot(later, []), state: first.state, now: later });
+  const match = retained.publicData.matches[publicMatchId(row.match_id)];
+  assert.equal(match.homeTeam, row.home_team); assert.equal(match.playbackState, 'ended');
+  assert.equal(match.score, row.payload.score); assert.equal(match.snapshotStale, true);
+  const expired = await refreshMatchData({ snapshot: snapshot(now + 49 * 3600000, []), state: retained.state, now: now + 49 * 3600000 });
+  assert.deepEqual(expired.publicData.matches, {});
+});
+
+test('cache-only discovery retries an initially missing fixture without a six-hour negative cache', async () => {
+  let available = false, calls = 0;
+  const client = { mode: 'app-cache-only', request: async () => { calls++; return available ? [fixture] : []; } };
+  const first = await refreshMatchData({ snapshot: snapshot(), now, client });
+  available = true;
+  const later = now + 11 * 60000;
+  const second = await refreshMatchData({ snapshot: snapshot(later), state: first.state, now: later, client });
+  assert.equal(calls, 3); assert.equal(second.diagnostics.matched, 1);
+  assert.equal(second.publicData.matches[publicMatchId(row.match_id)].sourceMode, 'app-cache-only');
+});

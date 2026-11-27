@@ -7,6 +7,7 @@ import { SELECTED_BROADCAST_IDS } from '../shared/broadcast-selection.mjs';
 import { publicMatchId } from '../shared/public-match-id.mjs';
 import { sameFixture, teamIdentity } from '../shared/match-broadcasts.mjs';
 import { sourceMatchState } from '../shared/match-lifecycle.mjs';
+import { createAppCacheClient } from './player-app-cache.mjs';
 
 const MINUTE = 60000;
 const aliases = new Map([
@@ -58,6 +59,7 @@ function baseMatch(row, generatedAt, now) {
 export function mergeFixture(base, entry, now) {
   const f = entry.fixture, side = key => f.teams[entry.reverse ? key === 'home' ? 'away' : 'home' : key];
   const state = sourceMatchState({ status: f.fixture.status?.short });
+  const sharedCache = entry.sourceMode === 'app-cache-only';
   const fresh = entry.final || now - entry.checkedAt <= 20 * MINUTE;
   const regresses = base.playbackState === 'ended' && state !== 'ended'
     || base.playbackState === 'live' && state === 'upcoming';
@@ -86,7 +88,7 @@ export function mergeFixture(base, entry, now) {
     ...base, dataSource: 'api-football', sourceFixtureId: f.fixture.id,
     homeTeamId: home.id, awayTeamId: away.id, homeTeamEnglish: text(home.name), awayTeamEnglish: text(away.name),
     homeLogo: safeImage(home.logo) || base.homeLogo, awayLogo: safeImage(away.logo) || base.awayLogo,
-    ...(fresh && !regresses ? { playbackState: state, liveMinute: number(f.fixture.status?.elapsed),
+    ...(fresh && !regresses && !sharedCache ? { playbackState: state, liveMinute: number(f.fixture.status?.elapsed),
       liveExtraMinute: number(f.fixture.status?.extra) || 0,
       score: number(scoreHome) != null && number(scoreAway) != null ? `${scoreHome} - ${scoreAway}` : 'VS' } : {}),
     referee: text(f.fixture.referee), venue: text(f.fixture.venue?.name), venueCity: text(f.fixture.venue?.city),
@@ -96,7 +98,8 @@ export function mergeFixture(base, entry, now) {
     yellowCards: cardCount('Yellow Cards'), redCards: cardCount('Red Cards'),
     eventDetailsLoaded: Array.isArray(f.events), detailsState: fresh ? 'ready' : 'stale',
     detailStates: { lineups: lineups.some(item => item.startXI.length) ? 'ready' : 'pending' },
-    detailsUpdatedAt: new Date(entry.checkedAt).toISOString(), detailsStale: !fresh
+    detailsUpdatedAt: new Date(entry.checkedAt).toISOString(), detailsStale: !fresh || sharedCache,
+    sourceMode: entry.sourceMode || 'direct'
   };
 }
 
@@ -107,24 +110,34 @@ export async function refreshMatchData({ snapshot, state = {}, client = null, no
     throw new Error('Invalid or expired local schedule');
   }
   const selected = new Set(selectedIds.slice(0, 20));
-  const rows = snapshot.matches.filter(row => row.source === 'kooora' && selected.has(row.match_id)
+  const currentRows = snapshot.matches.filter(row => row.source === 'kooora' && selected.has(row.match_id)
     && row.home_team && row.away_team && Number.isFinite(Date.parse(row.kickoff_time)));
-  state = { entries: state.entries || {}, discovery: state.discovery || {}, failures: state.failures || {} };
+  state = { entries: state.entries || {}, discovery: state.discovery || {}, failures: state.failures || {}, selectedRows: state.selectedRows || {} };
+  for (const row of currentRows) state.selectedRows[row.match_id] = { ...row, scheduleSnapshotAt: snapshot.generatedAt };
+  state.selectedRows = Object.fromEntries(Object.entries(state.selectedRows).filter(([id, row]) => selected.has(id)
+    && Number.isFinite(Date.parse(row.kickoff_time)) && Math.abs(now - Date.parse(row.kickoff_time)) <= 48 * 60 * MINUTE));
+  const rows = Object.values(state.selectedRows);
   const output = {}, diagnostics = { selected: rows.length, apiConfigured: Boolean(client), matched: 0, errors: 0 };
   for (const row of rows) {
     const id = row.match_id, kickoff = Date.parse(row.kickoff_time), day = new Date(kickoff).toISOString().slice(0, 10);
+    const contextAt = Date.parse(row.scheduleSnapshotAt) || generatedAt;
     let entry = state.entries[id];
     const inWindow = now >= kickoff - 6 * 60 * MINUTE && now <= kickoff + 24 * 60 * MINUTE;
     const failureExpired = !(state.failures[id] > now);
-    const wantsDetails = now >= kickoff - 30 * MINUTE && (!entry?.final || !entry?.detailed)
+    const shared = client?.mode === 'app-cache-only';
+    const incompleteFinal = shared && entry?.final && now - kickoff <= 6 * 60 * MINUTE
+      && ['statistics', 'lineups', 'events'].some(field => !Array.isArray(entry.fixture[field]))
+      && now - entry.checkedAt >= 30 * MINUTE;
+    const wantsDetails = incompleteFinal || now >= kickoff - 30 * MINUTE && (!entry?.final || !entry?.detailed)
       && (!entry?.detailed || now >= kickoff && now - entry.checkedAt >= 10 * MINUTE);
-    if (client && now - generatedAt <= 30 * MINUTE && inWindow && failureExpired && (!entry || wantsDetails)) {
+    if (client && (client.mode === 'app-cache-only' || now - contextAt <= 30 * MINUTE) && inWindow && failureExpired && (!entry || wantsDetails)) {
       try {
         let found = entry && { fixture: entry.fixture, reverse: entry.reverse };
         if (!found) {
           let discovery = state.discovery[day];
-          if (!discovery || now - discovery.checkedAt >= 6 * 60 * MINUTE) {
-            const fixtures = await client.request('/fixtures', { date: day, timezone: 'UTC' }, { ttlMs: 6 * 60 * MINUTE });
+          const discoveryTtl = shared ? 10 * MINUTE : 6 * 60 * MINUTE;
+          if (!discovery || now - discovery.checkedAt >= discoveryTtl) {
+            const fixtures = await client.request('/fixtures', { date: day, timezone: 'UTC' }, { ttlMs: discoveryTtl });
             discovery = state.discovery[day] = { checkedAt: now, fixtures };
           }
           found = resolveFixture(row, discovery.fixtures);
@@ -136,14 +149,14 @@ export async function refreshMatchData({ snapshot, state = {}, client = null, no
           found = verified;
         }
         if (found) {
-          entry = state.entries[id] = { ...found, checkedAt: now, detailed: wantsDetails,
+          entry = state.entries[id] = { ...found, checkedAt: now, detailed: wantsDetails, sourceMode: client.mode || 'direct',
             final: wantsDetails && sourceMatchState({ status: found.fixture.fixture.status?.short }) === 'ended' };
         }
       } catch {
         diagnostics.errors++; state.failures[id] = now + 15 * MINUTE;
       }
     }
-    const base = baseMatch(row, generatedAt, now);
+    const base = baseMatch(row, contextAt, now);
     if (entry) diagnostics.matched++;
     output[base.publicMatchId] = entry ? mergeFixture(base, entry, now) : { ...base, detailsState: client ? 'unmatched_fixture' : 'not_configured' };
   }
@@ -169,7 +182,9 @@ async function atomicJson(filename, data, mode) {
 async function main() {
   const env = process.env, directory = env.PLAYER_MATCH_DATA_DIR || '/var/lib/koratv-match-data';
   const key = env.API_FOOTBALL_KEY || '';
-  const client = key ? createApiFootballClient({ key, baseUrl: 'https://v3.football.api-sports.io',
+  const client = env.PLAYER_MATCH_APP_ORIGIN ? createAppCacheClient({ origin: env.PLAYER_MATCH_APP_ORIGIN,
+    publicKey: env.PLAYER_MATCH_APP_PUBLIC_KEY, cacheDir: join(directory, 'shared-app-cache') })
+    : key ? createApiFootballClient({ key, baseUrl: 'https://v3.football.api-sports.io',
     cacheDir: join(directory, 'api-cache'), dailyBudget: Math.min(60, Math.max(1, Number(env.PLAYER_API_DAILY_BUDGET || 60))),
     quotaReserve: Math.max(20, Number(env.PLAYER_API_QUOTA_RESERVE || 20)),
     minIntervalMs: 6500, timeoutMs: 8000, retries: 0 }) : null;
