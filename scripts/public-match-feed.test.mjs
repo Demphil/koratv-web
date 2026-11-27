@@ -48,7 +48,7 @@ test('the compatibility feed normalizer also accepts the former API summary shap
   assert.equal(match.playbackState, '');
 });
 
-test('live polls read fresh static metadata without querying GitHub or the streaming API', async () => {
+test('live polls read the public GitHub file without touching the retired streaming host', async () => {
   const now = Date.parse('2026-11-13T18:00:00Z');
   const calls = [];
   const sha = 'a'.repeat(40);
@@ -64,7 +64,7 @@ test('live polls read fresh static metadata without querying GitHub or the strea
   } });
   assert.equal(rows[0].matchId, 'kooora-1');
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], 'https://stream-api.koratv.click/site-metadata/matches.json');
+  assert.equal(calls[0][0], `${feedUrl}?t=${now}`);
   assert.equal(calls[0][1].credentials, 'omit');
   assert.equal(calls[0][1].cache, 'no-store');
 });
@@ -123,7 +123,7 @@ test('a resolved feed commit is reused for ten minutes within the page session',
   await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl });
   await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now: now + 60_000, force: true, fetchImpl });
   assert.equal(calls.filter(url => url.includes('/git/ref/')).length, 1);
-  assert.equal(calls.filter(url => url.includes(`/${sha}/site-metadata/`)).length, 2);
+  assert.equal(calls.filter(url => url.includes(`/${sha}/site-metadata/`)).length, 1);
 });
 
 test('the legacy API is used only when the static snapshot request fails', async () => {

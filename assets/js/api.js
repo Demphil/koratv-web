@@ -1,6 +1,6 @@
 import { sourceMatchState, nextMoroccoMidnight } from '../../shared/match-lifecycle.mjs?v=20261004-day-retention';
 import { isEuropeanYouthLeague } from '../../shared/match-visibility.mjs?v=20261013-youth-exclusion';
-import { loadWebsiteMatchFeed, normalizeWebsiteMatch } from '../../shared/public-match-feed.mjs?v=20261119-feed-resilience';
+import { loadWebsiteMatchFeed, normalizeWebsiteMatch } from '../../shared/public-match-feed.mjs?v=20261127-aws-selected';
 
 // --- 1. Cache Configuration ---
 

@@ -29,7 +29,7 @@ test('every Pages workflow uses the same complete build, including scheduled met
   });
   assert.deepEqual(publishers.sort(), ['publish-site.yml', 'sync-data.yml']);
   const scheduled = publishers.filter(file => /^  schedule:/m.test(fs.readFileSync(path.join(workflowDir, file), 'utf8')));
-  assert.deepEqual(scheduled, ['sync-data.yml']);
+  assert.deepEqual(scheduled.sort(), ['publish-site.yml', 'sync-data.yml']);
   for (const file of publishers) {
     const text = fs.readFileSync(path.join(workflowDir, file), 'utf8');
     assert.match(text, /node scripts\/build-complete-site\.cjs/, file);

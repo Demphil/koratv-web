@@ -14,6 +14,7 @@ test('homepage embeds only its local first-paint CSS and preserves font licensin
     await writeFile(join(root, 'shared/match-lifecycle.mjs'), 'export const live = true;');
     await writeFile(join(root, 'shared/match-visibility.mjs'), 'export const excluded = false;');
     await writeFile(join(root, 'shared/public-match-feed.mjs'), 'export const source = "njalla";');
+    await writeFile(join(root, 'shared/broadcast-selection.mjs'), 'export const selected = [];');
     await writeFile(join(root, 'assets/css/matches.css'), '.team { color: green; }');
     await writeFile(join(root, 'assets/fonts/OFL.txt'), 'SIL OPEN FONT LICENSE');
     await writeFile(join(root, 'assets/fonts/private.txt'), 'not a public font license');
@@ -44,6 +45,7 @@ test('publication allowlist excludes backend files, maps, credentials, and docs'
       'shared/match-lifecycle.mjs': 'export function state(value) { return value; }',
       'shared/match-visibility.mjs': 'export const excluded = false;',
       'shared/public-match-feed.mjs': 'export const feed = true;',
+      'shared/broadcast-selection.mjs': 'export const selected = [];',
       'assets/js/main.js.map': '{"sourcesContent":["original"]}', 'assets/js/proxy.php': '<?php secret();',
       'shared/private.mjs': 'secret()', '.env': 'SECRET=x', 'package.json': '{}',
       'secure-streaming/server.js': 'secret()', 'streaming-gateway/app.js': 'secret()',
@@ -51,9 +53,9 @@ test('publication allowlist excludes backend files, maps, credentials, and docs'
     };
     for (const [path, value] of Object.entries(files)) await writeFile(join(root, path), value);
     const output = await buildPublicSite({ root });
-    for (const path of ['index.html', 'CNAME', 'sw.js', 'BingSiteAuth.xml', 'google123abc.html', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs', 'shared/public-match-feed.mjs']) await access(join(output, path));
+    for (const path of ['index.html', 'CNAME', 'sw.js', 'BingSiteAuth.xml', 'google123abc.html', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs', 'shared/public-match-feed.mjs', 'shared/broadcast-selection.mjs']) await access(join(output, path));
     for (const path of ['sw.js', 'BingSiteAuth.xml', 'google123abc.html']) assert.equal(await readFile(join(output, path), 'utf8'), files[path]);
-    for (const path of Object.keys(files).filter(path => !['index.html', 'CNAME', 'sw.js', 'BingSiteAuth.xml', 'google123abc.html', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs', 'shared/public-match-feed.mjs'].includes(path))) {
+    for (const path of Object.keys(files).filter(path => !['index.html', 'CNAME', 'sw.js', 'BingSiteAuth.xml', 'google123abc.html', 'assets/js/main.js', 'shared/match-lifecycle.mjs', 'shared/match-visibility.mjs', 'shared/public-match-feed.mjs', 'shared/broadcast-selection.mjs'].includes(path))) {
       await assert.rejects(access(join(output, path)), { code: 'ENOENT' });
     }
     const code = await readFile(join(output, 'assets/js/main.js'), 'utf8');
@@ -79,6 +81,7 @@ test('publication rejects Adsterra tags in HTML and nested scripts but preserves
     await writeFile(join(root, 'shared/match-lifecycle.mjs'), 'export const live = true;');
     await writeFile(join(root, 'shared/match-visibility.mjs'), 'export const excluded = false;');
     await writeFile(join(root, 'shared/public-match-feed.mjs'), 'export const feed = true;');
+    await writeFile(join(root, 'shared/broadcast-selection.mjs'), 'export const selected = [];');
     const index = join(root, 'index.html');
     for (const tag of ['<script src="https://pl31377260.profitableratecpmnetwork.com/tag.js"></script>', '<script src="https://www.highrevenueformat.com/invoke.js"></script>', '<script>atOptions = { key: "test" };</script>']) {
       await writeFile(index, tag);

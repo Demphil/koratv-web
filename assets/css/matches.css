@@ -975,3 +975,12 @@ html.crawler-view .match-card-link {
     font-size: 12px;
   }
 }
+.match-watch-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  font-weight: 700;
+  color: inherit;
+}

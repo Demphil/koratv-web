@@ -78,6 +78,7 @@ async function buildPublicSite({ root = process.cwd(), output = join(root, '_sit
   await cp(join(root, 'shared/match-lifecycle.mjs'), join(output, 'shared/match-lifecycle.mjs'));
   await cp(join(root, 'shared/match-visibility.mjs'), join(output, 'shared/match-visibility.mjs'));
   await cp(join(root, 'shared/public-match-feed.mjs'), join(output, 'shared/public-match-feed.mjs'));
+  await cp(join(root, 'shared/broadcast-selection.mjs'), join(output, 'shared/broadcast-selection.mjs'));
   await minifyScripts(output);
   // Keep first-paint styles in the document, without extra network round trips.
   const homepage = join(output, 'index.html');

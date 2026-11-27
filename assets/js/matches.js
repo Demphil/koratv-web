@@ -8,7 +8,7 @@ import {
   getMoroccoDay,
   getMoroccoDateKey,
   getNextMoroccoDayDelay
-} from './api.js?v=20261119-feed-resilience';
+} from './api.js?v=20261127-aws-selected';
 import { frontendMatchState, sourceMatchState } from '../../shared/match-lifecycle.mjs?v=20261117-open30';
 
 const STREAM_API_ORIGIN = window.__MATCHES_API_ORIGIN__ || 'https://stream-api.koratv.click';
@@ -184,17 +184,19 @@ function renderMatch(match) {
       diffMins = 9999; 
   }
 
-  const lifecycleState = match.scheduleOnly === true ? 'upcoming' : frontendMatchState(match, diffMins);
+  const selectedWindow = match.selectedForBroadcast === true && Number.isFinite(diffMins)
+    && diffMins <= 30 && diffMins >= -180 && sourceMatchState(match) !== 'unavailable';
+  const lifecycleState = match.scheduleOnly === true && !selectedWindow ? 'upcoming' : frontendMatchState(match, diffMins);
   match = { ...match, playbackState: lifecycleState };
   const isEnded = lifecycleState === 'ended';
   const isLive = lifecycleState === 'live';
   const isPaused = match.broadcastPaused === true || match.resourceStatus === 'PAUSED';
   const isSoon = diffMins > 0 && diffMins <= 60; 
   const hasKnownSource = match.sourceAvailable === true || Boolean(match.channelName);
-  const canOpenSecurePlayer = (isLive || isPaused) && !isEnded && match.scheduleOnly !== true;
+  const canOpenSecurePlayer = (isLive || isPaused) && !isEnded && (match.scheduleOnly !== true || selectedWindow);
   const disabledReason = isEnded
     ? 'ended'
-    : match.scheduleOnly === true
+    : match.scheduleOnly === true && !selectedWindow
       ? 'status_pending'
     : !isLive
       ? 'upcoming'
@@ -226,7 +228,7 @@ function renderMatch(match) {
       statusBadge = '<span class="live-badge ended">انتهت</span>';
       timeText = match.score && match.score !== 'VS' ? `<span class="live-score">${scoreMarkup(match.score)}</span>` : 'انتهت';
       matchStatusClass = 'is-ended';
-  } else if (match.scheduleOnly === true) {
+  } else if (match.scheduleOnly === true && !selectedWindow) {
       statusBadge = '<span class="live-badge soon">الموعد</span>';
   } else if (isPaused) {
       statusBadge = '<span class="live-badge ended">البث موقوف</span>';
@@ -262,6 +264,7 @@ function renderMatch(match) {
           </div>
         </div>
         ${renderLiveData(match, matchDate, isLive)}
+        ${canOpenSecurePlayer && match.selectedForBroadcast ? '<span class="match-watch-action"><i class="fas fa-play" aria-hidden="true"></i> مشاهدة</span>' : ''}
       </article>
     </a>
   `;

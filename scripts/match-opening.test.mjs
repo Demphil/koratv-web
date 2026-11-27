@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { DEFAULT_STREAM_OPENS_BEFORE_MINUTES, frontendMatchState, matchPlaybackState } from '../shared/match-lifecycle.mjs';
+import { DEFAULT_STREAM_OPENS_BEFORE_MINUTES, frontendMatchState, matchPlaybackState, sourceMatchState } from '../shared/match-lifecycle.mjs';
 
 test('the frontend opens at 30 minutes even when cached metadata says upcoming', () => {
   assert.equal(DEFAULT_STREAM_OPENS_BEFORE_MINUTES, 30);
@@ -47,7 +47,7 @@ test('the rendered card links to the player before kickoff, not to the wait dial
   const source = readFileSync(new URL('../assets/js/matches.js', import.meta.url), 'utf8');
   const block = source.slice(source.indexOf('function renderMatch('), source.indexOf('function normalizeMatchName('));
   const render = vm.runInNewContext(`${block};renderMatch`, {
-    frontendMatchState, matchStartDate: match => new Date(match.scheduledAt),
+    frontendMatchState, sourceMatchState, matchStartDate: match => new Date(match.scheduledAt),
     opaqueWatchId: () => '123', playerUrlForMatch: () => 'https://fabor.sbs/739184.html?match=123',
     scoreMarkup: value => value, cleanScore: value => value, cleanText: value => value || '',
     renderLiveData: () => '', renderApiFootballMap: () => '',
@@ -61,4 +61,14 @@ test('the rendered card links to the player before kickoff, not to the wait dial
   const stale = render({ ...match, scheduleOnly: true, status: 'LIVE', scheduledAt: new Date(Date.now() - 60000).toISOString() });
   assert.match(stale, /data-disabled-reason="status_pending"/);
   assert.doesNotMatch(stale, /data-secure-match-id=/);
+  const selected = render({ ...match, selectedForBroadcast: true, scheduleOnly: true,
+    scheduledAt: new Date(Date.now() + 29 * 60000).toISOString() });
+  assert.match(selected, /data-secure-match-id=/);
+  assert.match(selected, /match-watch-action/);
+  const tooEarly = render({ ...match, selectedForBroadcast: true, scheduleOnly: true,
+    scheduledAt: new Date(Date.now() + 31 * 60000).toISOString() });
+  assert.doesNotMatch(tooEarly, /data-secure-match-id=/);
+  const finished = render({ ...match, selectedForBroadcast: true, status: 'RESULT',
+    scheduledAt: new Date(Date.now() - 90 * 60000).toISOString() });
+  assert.doesNotMatch(finished, /data-secure-match-id=/);
 });

@@ -1,5 +1,6 @@
 import { sourceMatchState } from './match-lifecycle.mjs';
 import { isEuropeanYouthLeague } from './match-visibility.mjs';
+import { isSelectedBroadcast } from './broadcast-selection.mjs';
 
 const MAX_SNAPSHOT_AGE_MS = 30 * 60_000;
 const MAX_SCHEDULE_AGE_MS = 48 * 60 * 60_000;
@@ -38,6 +39,7 @@ export function normalizeWebsiteMatch(input = {}) {
   return {
     ...row,
     matchId: row.matchId || row.match_id || row.id,
+    selectedForBroadcast: isSelectedBroadcast(row.matchId || row.match_id || row.id),
     homeTeam: { name: homeName, logo: logoOf(homeValue, payload.homeLogo) },
     awayTeam: { name: awayName, logo: logoOf(awayValue, payload.awayLogo) },
     scheduledAt,
@@ -177,10 +179,10 @@ export async function loadWebsiteMatchFeed(apiOrigin, {
     if (!scheduleFallback || generatedAt > scheduleFallback.generatedAt) scheduleFallback = { matches, generatedAt };
   };
 
-  // Live polls use the small cached public file, not an old pinned Git commit or the streaming API.
+  // Poll GitHub directly so a retired streaming host cannot delay schedule updates.
   if (force) {
     try {
-      return await fetchSnapshot(new URL('/site-metadata/matches.json', apiBase), { fetchImpl, force, now, onStaleSchedule });
+      return await fetchSnapshot(snapshotTarget, { fetchImpl, force, now, mutable: true, onStaleSchedule });
     } catch (error) { snapshotError = error; }
   }
 
