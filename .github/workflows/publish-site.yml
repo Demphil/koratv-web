@@ -101,7 +101,7 @@ jobs:
           node --test scripts/news-images.test.cjs
           node --test scripts/news-pages.test.cjs
           node --test scripts/match-loading.test.cjs scripts/match-refresh.test.cjs
-          node --test scripts/public-match-feed.test.mjs scripts/match-opening.test.mjs scripts/match-ordering.test.mjs scripts/broadcast-selection.test.mjs
+          node --test scripts/public-match-feed.test.mjs scripts/match-opening.test.mjs scripts/match-ordering.test.mjs scripts/broadcast-selection.test.mjs scripts/runtime-broadcast-selection.test.mjs
           node --test scripts/korafabor-theme.test.cjs
           node --test scripts/monetag-window.test.cjs scripts/ad-window-integration.test.cjs
 

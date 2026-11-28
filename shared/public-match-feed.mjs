@@ -1,6 +1,6 @@
 import { sourceMatchState } from './match-lifecycle.mjs';
 import { isEuropeanYouthLeague } from './match-visibility.mjs';
-import { isSelectedBroadcast } from './broadcast-selection.mjs';
+import { isSelectedBroadcast, refreshBroadcastSelection } from './broadcast-selection.mjs?v=20261128-broadcasts';
 
 const MAX_SNAPSHOT_AGE_MS = 30 * 60_000;
 const MAX_SCHEDULE_AGE_MS = 48 * 60 * 60_000;
@@ -171,6 +171,7 @@ export async function loadWebsiteMatchFeed(apiOrigin, {
   snapshotUrl = 'https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json',
   fetchImpl = fetch, force = false, now = Date.now(), metadataOrigin = apiOrigin,
 } = {}) {
+  await refreshBroadcastSelection({ fetchImpl, now, force });
   const apiBase = safeOrigin(apiOrigin, 'match API');
   const metadataBase = safeOrigin(metadataOrigin, 'match metadata');
   const snapshotTarget = safeSnapshotUrl(snapshotUrl);

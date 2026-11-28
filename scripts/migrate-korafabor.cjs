@@ -11,7 +11,7 @@ const SITE = 'https://korafabor.pro';
 const BRAND = 'كورة فابور';
 const TITLE = HOME_TITLE;
 const DESCRIPTION = HOME_DESCRIPTION;
-const MODULE_VERSION = '20261127-feed-backup';
+const MODULE_VERSION = '20261128-broadcasts';
 function versionModuleImports(source) {
   const program = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
   const edits = [];

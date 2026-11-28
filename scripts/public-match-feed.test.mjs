@@ -7,7 +7,7 @@ test('the AWS public metadata fallback is separate from the retired playback API
   const matches = await loadWebsiteMatchFeed('https://stream-api.koratv.click', {
     metadataOrigin: 'https://aws-stream.koratv.click', now, force: true,
     fetchImpl: async url => {
-      calls.push(url);
+      if (!String(url).includes('view=selection')) calls.push(url);
       if (url === 'https://aws-stream.koratv.click/site-metadata/matches.json') return Response.json({
         version: 1, generatedAt: new Date(now).toISOString(), matches: [{ id: 'backup', source: 'kooora', active: true,
           home_team: 'Home', away_team: 'Away', kickoff_time: '2026-11-27T19:45:00Z', payload: {} }],
@@ -73,7 +73,7 @@ test('live polls read the public GitHub file without touching the retired stream
     league: 'الدوري الإنجليزي الممتاز', kickoff_time: '2026-11-13T20:00:00Z', payload: { status: 'FIXTURE' } };
   const feedUrl = 'https://raw.githubusercontent.com/Demphil/koratv-web/public-match-feed/site-metadata/matches.json';
   const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click/', { now, force: true, snapshotUrl: feedUrl, fetchImpl: async (url, options) => {
-    calls.push([url, options]);
+    if (!String(url).includes('view=selection')) calls.push([url, options]);
     if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
       return Response.json({ ref: 'refs/heads/public-match-feed', object: { sha, type: 'commit' } });
     }
@@ -94,7 +94,7 @@ test('the public GitHub feed is independent from the website API origin', async 
   const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', {
     snapshotUrl: feedUrl, now,
     fetchImpl: async url => {
-      calls.push(url);
+      if (!String(url).includes('view=selection')) calls.push(url);
       if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
         return Response.json({ ref: 'refs/heads/public-match-feed', object: { sha, type: 'commit' } });
       }
@@ -113,7 +113,7 @@ test('a valid empty snapshot does not send avoidable traffic to the legacy API',
   const calls = [];
   const sha = 'c'.repeat(40);
   const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl: async url => {
-    calls.push(url);
+    if (!String(url).includes('view=selection')) calls.push(url);
     if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
       return Response.json({ ref: 'refs/heads/public-match-feed', object: { sha, type: 'commit' } });
     }
@@ -129,7 +129,7 @@ test('a resolved feed commit is reused for ten minutes within the page session',
   const sha = 'd'.repeat(40);
   const calls = [];
   const fetchImpl = async url => {
-    calls.push(url);
+    if (!String(url).includes('view=selection')) calls.push(url);
     if (url === 'https://stream-api.koratv.click/site-metadata/matches.json') return new Response('', { status: 503 });
     if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
       return Response.json({ ref: 'refs/heads/public-match-feed', object: { sha, type: 'commit' } });
@@ -147,7 +147,7 @@ test('the legacy API is used only when the static snapshot request fails', async
   const now = Date.parse('2026-11-13T18:00:00Z');
   const calls = [];
   const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, fetchImpl: async url => {
-    calls.push(url);
+    if (!String(url).includes('view=selection')) calls.push(url);
     if (url === 'https://api.github.com/repos/Demphil/koratv-web/git/ref/heads/public-match-feed') {
       return new Response('', { status: 503 });
     }
@@ -172,7 +172,7 @@ test('fresh lightweight metadata replaces a stale GitHub feed without calling th
   const now = Date.parse('2026-11-17T18:00:00Z');
   const calls = [];
   const rows = await loadWebsiteMatchFeed('https://stream-api.koratv.click', { now, force: true, fetchImpl: async url => {
-    calls.push(url);
+    if (!String(url).includes('view=selection')) calls.push(url);
     if (url.includes('/git/ref/')) return new Response('', { status: 503 });
     const generatedAt = url.startsWith('https://raw.githubusercontent.com/') ? now - 3600_000 : now;
     return Response.json({ version: 1, generatedAt: new Date(generatedAt).toISOString(), matches: [{

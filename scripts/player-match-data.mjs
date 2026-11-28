@@ -3,7 +3,7 @@ import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { createApiFootballClient } from '../secure-streaming/scripts/api-football-client.mjs';
-import { SELECTED_BROADCAST_IDS } from '../shared/broadcast-selection.mjs';
+import { SELECTED_BROADCAST_IDS, validateBroadcastSelection } from '../shared/broadcast-selection.mjs';
 import { publicMatchId } from '../shared/public-match-id.mjs';
 import { sameFixture, teamIdentity } from '../shared/match-broadcasts.mjs';
 import { sourceMatchState } from '../shared/match-lifecycle.mjs';
@@ -14,7 +14,12 @@ const aliases = new Map([
   ['بريست', ['Brest', 'Stade Brestois 29']], ['باريس', ['Paris FC']],
   ['فينيسيا', ['Venezia']], ['بولونيا', ['Bologna']],
   ['ليفانتي', ['Levante']], ['راسينج سانتاندير', ['Racing Santander', 'Racing']],
-  ['نوتنجهام فوريست', ['Nottingham Forest']], ['تشيلسي', ['Chelsea']]
+  ['نوتنجهام فوريست', ['Nottingham Forest']], ['تشيلسي', ['Chelsea']],
+  ['الاتفاق', ['Al-Ettifaq', 'Al Ettifaq']], ['الهلال', ['Al-Hilal Saudi FC', 'Al Hilal', 'Al-Hilal']],
+  ['ريال بيتيس', ['Real Betis', 'Betis']], ['رايو فاليكانو', ['Rayo Vallecano']],
+  ['كولن', ['FC Koln', 'FC Köln', '1. FC Köln']], ['إيلفيرسبيرج', ['SV Elversberg', 'Elversberg']],
+  ['هامبورج', ['Hamburger SV', 'Hamburg']], ['بايرن ميونخ', ['Bayern Munich', 'Bayern München']],
+  ['الحزم', ['Al Hazm', 'Al-Hazm']], ['النصر', ['Al Nassr', 'Al-Nassr']]
 ]);
 const text = (value, max = 160) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const number = value => value != null && Number.isFinite(Number(value)) ? Number(value) : null;
@@ -191,7 +196,11 @@ async function main() {
   let state;
   try { state = await readJson(join(directory, 'state.json'), 16 * 1024 * 1024); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const result = await refreshMatchData({ snapshot: await readJson(env.PLAYER_MATCH_SCHEDULE || '/var/lib/koratv-public/matches.json'), state, client });
+  const response = await fetch('http://127.0.0.1:8795/api/broadcast-control?view=selection', { signal: AbortSignal.timeout(3000) });
+  if (!response.ok) throw Error('Selection unavailable');
+  const selection = validateBroadcastSelection(await response.json());
+  const result = await refreshMatchData({ snapshot: await readJson(env.PLAYER_MATCH_SCHEDULE || '/var/lib/koratv-public/matches.json'),
+    state, client, selectedIds: selection.matches });
   await atomicJson(join(directory, 'state.json'), result.state, 0o600);
   await atomicJson(env.PLAYER_MATCH_OUTPUT || '/var/lib/koratv-public/match-details.json', result.publicData, 0o644);
   console.log(JSON.stringify({ event: 'player_match_data_refreshed', ...result.diagnostics, quota: client?.quota() || null }));
