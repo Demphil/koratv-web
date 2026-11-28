@@ -193,11 +193,13 @@ function renderMatch(match) {
   const isPaused = match.broadcastPaused === true || match.resourceStatus === 'PAUSED';
   const isSoon = diffMins > 0 && diffMins <= 60; 
   const hasKnownSource = match.sourceAvailable === true || Boolean(match.channelName);
-  const canOpenSecurePlayer = (isLive || isPaused) && !isEnded && (match.scheduleOnly !== true || selectedWindow);
+  const canOpenSecurePlayer = match.selectedForBroadcast === true && (isLive || isPaused) && !isEnded && (match.scheduleOnly !== true || selectedWindow);
   const disabledReason = isEnded
     ? 'ended'
     : match.scheduleOnly === true && !selectedWindow
       ? 'status_pending'
+    : match.selectedForBroadcast !== true
+      ? 'not_selected'
     : !isLive
       ? 'upcoming'
       : !hasKnownSource
@@ -348,6 +350,7 @@ function setupSecurePlayerLinks() {
       upcoming: 'سيُفتح البث قبل بداية المباراة بثلاثين دقيقة.',
       status_pending: 'جاري تحديث حالة المباراة. الموعد ظاهر في البطاقة وستتحدث الحالة تلقائيًا عند وصول البيانات.',
       ended: 'انتهت المباراة وتم إغلاق البث.',
+      not_selected: 'هذه المباراة غير متاحة للمشاهدة.',
       channel_unavailable: 'لم تُحدد القناة الناقلة بعد.',
       source_unavailable: 'القناة معروفة لكن مصدر التشغيل لم يجهز بعد. سيتم تحديثها تلقائياً.'
     };
@@ -364,6 +367,7 @@ function matchRenderSignature(match) {
     match.score || '',
     match.playbackState || '',
     match.scheduleOnly === true,
+    match.selectedForBroadcast === true,
     match.liveExtraMinute || 0,
     frontendMatchState(match, minutesUntilStart),
     minutesUntilStart > 0 && minutesUntilStart <= 60,

@@ -52,13 +52,13 @@ test('the rendered card links to the player before kickoff, not to the wait dial
     scoreMarkup: value => value, cleanScore: value => value, cleanText: value => value || '',
     renderLiveData: () => '', renderApiFootballMap: () => '',
   });
-  const match = { matchId: 'pre-match', status: 'FIXTURE', playbackState: 'upcoming',
+  const match = { matchId: 'pre-match', selectedForBroadcast: true, status: 'FIXTURE', playbackState: 'upcoming',
     homeTeam: { name: 'Home' }, awayTeam: { name: 'Away' }, score: 'VS' };
   const renderAt = minutes => render({ ...match, scheduledAt: new Date(Date.now() + minutes * 60000).toISOString() });
   assert.match(renderAt(29), /href="https:\/\/fabor\.sbs\/739184\.html\?match=123"/);
   assert.doesNotMatch(renderAt(29), /href="#wait-modal"/);
   assert.match(renderAt(31), /href="#wait-modal"/);
-  const stale = render({ ...match, scheduleOnly: true, status: 'LIVE', scheduledAt: new Date(Date.now() - 60000).toISOString() });
+  const stale = render({ ...match, selectedForBroadcast: false, scheduleOnly: true, status: 'LIVE', scheduledAt: new Date(Date.now() - 60000).toISOString() });
   assert.match(stale, /data-disabled-reason="status_pending"/);
   assert.doesNotMatch(stale, /data-secure-match-id=/);
   const selected = render({ ...match, selectedForBroadcast: true, scheduleOnly: true,
@@ -71,4 +71,9 @@ test('the rendered card links to the player before kickoff, not to the wait dial
   const finished = render({ ...match, selectedForBroadcast: true, status: 'RESULT',
     scheduledAt: new Date(Date.now() - 90 * 60000).toISOString() });
   assert.doesNotMatch(finished, /data-secure-match-id=/);
+  const unselected = render({ ...match, selectedForBroadcast: false, status: 'LIVE',
+    scheduledAt: new Date(Date.now() - 60000).toISOString() });
+  assert.doesNotMatch(unselected, /data-secure-match-id=|match-watch-action/);
+  assert.match(unselected, /data-disabled-reason="not_selected"/);
+  assert.match(source.slice(source.indexOf('function matchRenderSignature('), source.indexOf('function createMatchElement(')), /match\.selectedForBroadcast === true/);
 });
